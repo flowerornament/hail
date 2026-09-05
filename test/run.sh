@@ -517,18 +517,30 @@ s28() { # identity: label moved -> send refused (exit 3); who shows it; hello = 
   expect "who label" contains "$out" "label: worker" || ok=1
   expect "who registered" contains "$out" "registered: $RECV" || ok=1
   expect "who wearing" contains "$out" "wearing: $SENDER" || ok=1
-  expect "who incarnation" contains "$out" "incarnation: $RECV@" || ok=1
+  expect "who incarnation" re "$out" 'incarnation: [0-9]{4}T[0-9]{6}-[0-9a-f]{4}' || ok=1
   expect "who last event" re "$out" 'last inbox event: [0-9]{4}-.*Z' || ok=1
   expect "who pane tail" contains "$out" "pane tail:" || ok=1
   as "$SENDER" name "$SENDER" boss
   as "$SENDER" name "$RECV" worker
   send "$SENDER" worker "back on the registered pane" --kind fyi
   expect "re-registered send rc=0" eq "$RC" 0 || ok=1
-  local inc; inc=$(as "$RECV" hello)
-  expect "hello prints an incarnation" re "$inc" '^[0-9]{4}T[0-9]{6}-[0-9a-f]{4}$' || ok=1
-  expect "who shows new incarnation" contains "$(as "$SENDER" who worker)" "incarnation: $inc" || ok=1
+  local reg inc
+  reg=$(sed -n 's/^incarnation: //p' "$XDG_STATE_HOME/hail/identity/worker")
+  expect "name minted the incarnation" re "$reg" '^[0-9]{4}T[0-9]{6}-[0-9a-f]{4}$' || ok=1
+  expect "incarnation file written by name" eq "$(cat "$XDG_STATE_HOME/hail/incarnation/${RECV/\%/_}")" "$reg" || ok=1
+  inc=$(as "$RECV" hello)
+  expect "hello is idempotent (keeps the minted id)" eq "$inc" "$reg" || ok=1
+  expect "hello needs no server" eq "$(HAIL_SOCKET=/nonexistent/socket as "$RECV" hello)" "$reg" || ok=1
   send "$SENDER" worker "after hello" --kind fyi
-  expect "new incarnation refused rc=3" eq "$RC" 3 || ok=1
+  expect "send still works after hello rc=0" eq "$RC" 0 || ok=1
+  # a real restart: the pane's process is replaced; the incarnation file is now stale
+  sleep 1.1; "${T[@]}" respawn-pane -k -t "$RECV" cat; sleep 0.3
+  inc=$(as "$RECV" hello)
+  expect "hello after restart mints a new id" re "$inc" '^[0-9]{4}T[0-9]{6}-[0-9a-f]{4}$' || ok=1
+  expect "new id differs" eq "$([[ "$inc" != "$reg" ]] && echo differs)" differs || ok=1
+  expect "hello then stays put" eq "$(as "$RECV" hello)" "$inc" || ok=1
+  send "$SENDER" worker "after restart" --kind fyi
+  expect "restarted pane refused rc=3" eq "$RC" 3 || ok=1
   expect "message names incarnations" contains "$ERR" "now on $RECV ($inc) — run hail name to re-register" || ok=1
   expect "brief on the new incarnation still lists the obligation" contains "$(as "$RECV" brief)" "open obligations on me (1)" || ok=1
   as "$SENDER" name "$RECV" worker
@@ -614,7 +626,7 @@ scenario 24 "brief: silent when empty, inbox, sends without receipt" s24
 scenario 25 "hold/block -> release by issuer, refused for another; re:/scope:" s25
 scenario 26 "go/ruling -> done closes exactly one; wrong re fails; survives a read" s26
 scenario 27 "headline over cap refused (control kind too); missing kind refused" s27
-scenario 28 "identity: moved label refused (exit 3), who, hello" s28
+scenario 28 "identity: moved label refused (exit 3), who, name mints, hello idempotent, restart" s28
 scenario 29 "bare-target send form" s29
 scenario 30 "send submits; --no-submit keeps the read mark" s30
 scenario 31 "guards: permission dialog, unsent draft, --force" s31

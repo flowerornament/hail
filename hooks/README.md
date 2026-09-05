@@ -26,7 +26,7 @@ server: `$TMUX_PANE` is inherited from the pane the agent runs in. The
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "[ -n \"$TMUX_PANE\" ] || exit 0; hail hello >/dev/null; hail brief" }
+          { "type": "command", "command": "[ -n \"$TMUX_PANE\" ] || exit 0; hail brief" }
         ]
       }
     ]
@@ -52,7 +52,7 @@ install.
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "[ -n \"$TMUX_PANE\" ] || exit 0; hail hello >/dev/null; hail brief" }
+          { "type": "command", "command": "[ -n \"$TMUX_PANE\" ] || exit 0; hail brief" }
         ]
       }
     ]
@@ -65,17 +65,17 @@ install.
 | event | command | output |
 |---|---|---|
 | `UserPromptSubmit` | `hail deliver --format <harness>` | `{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"<unread bodies>"}}`, or nothing. Marks each body `injected <UTC time>`. |
-| `SessionStart` | `hail hello >/dev/null; hail brief` | A new incarnation id for the pane (silenced), then the brief as plain text (injected as context), or nothing. |
+| `SessionStart` | `hail brief` | The brief as plain text (injected as context), or nothing. |
 
 `deliver` is idempotent and takes about 15 ms with nothing unread; it runs on
 every prompt-like event (on Claude Code, task notifications too). The
 injected body is not retained through compaction; the file under
 `~/.local/state/hail/inbox/` and the bead comment are.
 
-After `hail hello` the pane has a new incarnation, so a label registered
-before the restart no longer matches: run `hail name "$(hail id)" <label>`
-once in the new session. `hail brief` works before that; it finds the label
-through the registration.
+`hail name` mints the pane's incarnation; the hook does not run `hail hello`
+(Codex fires SessionStart at the first prompt, after `name`), and `hello` never
+replaces an incarnation the pane already has. After a real restart the brief
+prints `label <l>: pane restarted — run: hail name "$(hail id)" <l>`.
 
 ## Codex: hooks must be trusted before they run
 

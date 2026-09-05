@@ -110,8 +110,8 @@ Rules:
 ## Identity
 
 ```bash
-hail hello                            # new incarnation for this pane (SessionStart hook runs it)
-hail name "$(hail id)" murail-1b      # label this pane and register label = pane + incarnation
+hail name "$(hail id)" murail-1b      # label this pane; mints its incarnation and registers both
+hail hello                            # print the incarnation; creates one only if the pane has none
 hail list                             # every pane with its label
 hail who [label]                      # pane, label, incarnation, last inbox event, last 2 pane lines
 ```
@@ -119,8 +119,9 @@ hail who [label]                      # pane, label, incarnation, last inbox eve
 Inboxes and `from:` are keyed on labels. `send` resolves a label through its
 registration and refuses (exit 3, `label X moved: registered on %N, now on
 %M — run hail name to re-register`) when a different pane now wears the label
-or the registered pane has a new incarnation. Run `hail name` again after a
-restart. `hail who <label>` shows both sides without interpreting them.
+or the registered pane's process was restarted. The brief then prints
+`label <l>: pane restarted — run: hail name "$(hail id)" <l>`; `hail who
+<label>` shows both sides.
 
 ## Hooks
 
@@ -128,10 +129,9 @@ The hooks deliver bodies and the brief without a tool call. Snippets are in
 `hooks/README.md` of the hail repo; they are copied config.
 
 - Codex `.codex/hooks.json`: `UserPromptSubmit` → `hail deliver --format codex`;
-  `SessionStart` → `hail hello >/dev/null; hail brief`. Trust once per project
-  with `/hooks`.
+  `SessionStart` → `hail brief`. Trust once per project with `/hooks`.
 - Claude Code `.claude/settings.json`: `UserPromptSubmit` →
-  `hail deliver --format claude`; `SessionStart` → `hail hello >/dev/null; hail brief`.
+  `hail deliver --format claude`; `SessionStart` → `hail brief`.
 
 Hooks are read at session start; a new session picks up an install.
 

@@ -185,7 +185,7 @@ Receive:
 
 Identity:
   name <target> <label>     Label a pane and register label = pane + incarnation
-  hello                     Start a new incarnation for this pane (SessionStart hook)
+  hello                     Print this pane's incarnation; create one only if it has none
   who [label]               Pane, label, incarnation, last inbox event, last 2 lines
   list                      All panes (target, session, size, process, label, cwd)
   resolve <label>           Pane id for a label
@@ -297,11 +297,51 @@ require_args() {
 # incarnation/<pane>: id written by `hail hello`; without one the incarnation is
 # the pane id plus the start time of the pane's process.
 
+pane_pid_of() { tmx display-message -t "$1" -p '#{pane_pid}' 2>/dev/null || true; }
+
+# Epoch seconds at which a process started (from its elapsed time).
+proc_start_epoch() {
+  local et d=0 h=0 m=0 sec=0 rest
+  et=$(ps -o etime= -p "$1" 2>/dev/null | tr -d ' ') || true
+  [[ -n "$et" ]] || return 1
+  if [[ "$et" == *-* ]]; then d="${et%%-*}"; et="${et#*-}"; fi
+  rest="$et"
+  case "$rest" in
+    *:*:*) h="${rest%%:*}"; rest="${rest#*:}" ;;
+  esac
+  m="${rest%%:*}"; sec="${rest#*:}"
+  echo $(( $(date +%s) - (10#$d * 86400 + 10#$h * 3600 + 10#$m * 60 + 10#$sec) ))
+}
+
+file_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+
+# An incarnation file counts only while the pane's process is the one it was
+# written under: a file older than the pane's process start is stale.
+fresh_incarnation_file() {
+  local pane="$1" f pid start mtime
+  f="$(incarnation_root)/${pane//%/_}"
+  [[ -f "$f" ]] || return 1
+  pid=$(pane_pid_of "$pane")
+  [[ -n "$pid" ]] || { echo "$f"; return 0; }
+  start=$(proc_start_epoch "$pid") || { echo "$f"; return 0; }
+  mtime=$(file_mtime "$f")
+  (( mtime >= start )) || return 1
+  echo "$f"
+}
+
+new_incarnation_id() {
+  echo "$(date -u +%m%dT%H%M%S)-$(printf '%04x' $(( RANDOM % 65536 )))"
+}
+
+write_incarnation() {
+  mkdir -p "$(incarnation_root)"
+  echo "$2" > "$(incarnation_root)/${1//%/_}"
+}
+
 incarnation_for() {
   local pane="$1" f pid start
-  f="$(incarnation_root)/${pane//%/_}"
-  if [[ -f "$f" ]]; then cat -- "$f"; return; fi
-  pid=$(tmx display-message -t "$pane" -p '#{pane_pid}' 2>/dev/null || true)
+  if f=$(fresh_incarnation_file "$pane"); then cat -- "$f"; return; fi
+  pid=$(pane_pid_of "$pane")
   start=""
   if [[ -n "$pid" ]]; then
     start=$(ps -o lstart= -p "$pid" 2>/dev/null | tr -s ' ' '_' | sed 's/^_//; s/_$//')
@@ -1000,21 +1040,26 @@ cmd_name() {
   [[ "$label" == *$'\n'* ]] && die "label must be one line"
 
   tmx set-option -p -t "$target" @name "$label"
+  # Registering mints the incarnation, so a later `hello` cannot invalidate it.
+  local inc; inc=$(new_incarnation_id)
+  write_incarnation "$target" "$inc"
   mkdir -p "$(identity_root)"
   {
     echo "label: $label"
     echo "pane: $target"
-    echo "incarnation: $(incarnation_for "$target")"
+    echo "incarnation: $inc"
     echo "time: $(utc_now)"
   } > "$(identity_root)/$(key_of_label "$label")"
 }
 
+# Idempotent: prints the pane's incarnation, creating one only when the pane
+# has none (or only a stale one from a previous process).
 cmd_hello() {
-  local pane="${TMUX_PANE:-}" inc
+  local pane="${TMUX_PANE:-}" inc f
   [[ -n "$pane" ]] || die "not running inside a tmux pane (\$TMUX_PANE is unset)"
-  inc="$(date -u +%m%dT%H%M%S)-$(printf '%04x' $(( RANDOM % 65536 )))"
-  mkdir -p "$(incarnation_root)"
-  echo "$inc" > "$(incarnation_root)/${pane//%/_}"
+  if f=$( { init_socket 2>/dev/null || true; fresh_incarnation_file "$pane"; } 2>/dev/null); then cat -- "$f"; return 0; fi
+  inc=$(new_incarnation_id)
+  write_incarnation "$pane" "$inc"
   echo "$inc"
 }
 
