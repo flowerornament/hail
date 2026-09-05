@@ -5,7 +5,7 @@
 # `inbox`, and `await` on top of receipts. See DESIGN.md.
 set -euo pipefail
 
-VERSION="0.2.1"
+VERSION="0.2.2"
 
 KINDS="ruling go nogo ask fyi done stop hold block release announce"
 
@@ -210,6 +210,8 @@ Panes:
 Kinds:
   ruling go ask             Create an obligation on the recipient; 'done --re <id>'
                             from the recipient closes it.
+  A message with no --body is complete in the envelope: no fetch hint, and
+  the hook injects nothing for it (the receipt is still written).
   done                      Close one obligation; --re required, --scope optional.
   hold block                Record a hold; 'release --re <id>' by the issuer lifts it.
   release                   Lift a hold; --re required; refused for another issuer.
@@ -698,7 +700,9 @@ cmd_send() {
   # Envelope. Never truncated: the headline was checked against the cap above.
   local head="[hail kind:${kind} from:${from} reply:${sender_pane} id:${id}${bead:+ bead:$bead}${re:+ re:$re}${scope:+ scope:$scope}]"
   local envelope
-  if is_inline_kind "$kind"; then
+  # No fetch hint when the envelope is complete: a control kind, or no --body
+  # (the headline is the whole message; the file stays unread for receipts).
+  if is_inline_kind "$kind" || [[ -z "$body_src" ]]; then
     envelope="${head} ${text}"
   else
     envelope="${head} ${text} — hail inbox"
@@ -799,6 +803,15 @@ json_escape() {
   printf '%s' "$s"
 }
 
+# True when a message's body is just its headline (sent without --body): the
+# recipient already has it in the envelope.
+body_is_headline() {
+  local f="$1" ask body
+  ask=$(hdr "$f" ask)
+  body=$(awk 'blank { print } /^$/ && !blank { blank = 1 }' "$f")
+  [[ "$body" == "$ask" ]]
+}
+
 # Drain hook JSON from stdin when something is piped in; never block on it.
 drain_stdin() {
   [[ -t 0 ]] && return 0
@@ -826,10 +839,12 @@ cmd_deliver() {
       [[ -f "$f" ]] || continue
       id="${f##*/}"; id="${id%.md}"
       [[ -f "$dir/$id.read" ]] && continue
+      # A headline-only message is already in the prompt: receipt, no text.
+      echo "injected $(utc_now)" > "$dir/$id.read"
+      body_is_headline "$f" && continue
       (( n > 0 )) && text+=$'\n---\n'
       text+=$(cat -- "$f")
       n=$(( n + 1 ))
-      echo "injected $(utc_now)" > "$dir/$id.read"
     done
   done
   (( n == 0 )) && return 0

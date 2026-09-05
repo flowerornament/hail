@@ -73,7 +73,9 @@ hail murail-1b 'convert at the receipt, not the producer' --kind ruling --bead m
 
 `send`, `message` and `msg` are accepted before the target. `--re <id>` names
 the message this answers, closes or lifts; `--scope` says what it applies to;
-`--no-submit` skips Enter; `--force` skips the dialog and draft guards.
+`--no-submit` skips Enter; `--force` skips the dialog and draft guards. A
+message with no `--body` is complete in the envelope: no `— hail inbox` hint
+and nothing injected by the hook; the receipt is still written.
 
 Receive: with the hooks installed the body arrives with the envelope. Otherwise:
 
@@ -120,7 +122,7 @@ waiting for `y`.
 ## Development
 
 ```bash
-test/run.sh         # 33 scenarios on a scratch tmux server; never touches yours
+test/run.sh         # 34 scenarios on a scratch tmux server; never touches yours
 bash -n bin/hail && shellcheck bin/hail
 ```
 

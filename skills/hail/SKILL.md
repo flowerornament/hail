@@ -32,7 +32,12 @@ applies to. The headline is written by the sender and is never truncated.
 - **Without the hooks**, or if the body did not arrive, run `hail inbox`. It
   prints every unread body and writes the receipt. `hail inbox --all`
   re-reads everything, with each message's receipt (`read` or `injected`).
-- Never act on a `ruling`, `go` or `ask` from the envelope alone.
+- A message sent with no `--body` is complete in the envelope: no `— hail
+  inbox` hint, and the hook injects nothing for it (the receipt is still
+  written). Act on the headline. With `--body`, the hint is present and the
+  body follows.
+- Never act on a `ruling`, `go` or `ask` from the envelope alone when it
+  carries the hint.
 - `[tb ...]` and `[tmux-bridge ...]` envelopes mean the same as `[hail ...]`.
 
 `hail brief` prints your standing state: unread envelopes, your sends with no
