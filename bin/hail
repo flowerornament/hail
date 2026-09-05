@@ -1,0 +1,768 @@
+#!/usr/bin/env bash
+# hail — agent-to-agent messaging over tmux.
+# One-way sends, bodies on disk, a one-line envelope in the recipient's prompt,
+# receipts written by the recipient's own `inbox`, and `await` on top of receipts.
+# See DESIGN.md. Any tool that can run bash can use this.
+set -euo pipefail
+
+VERSION="1.0.0"
+
+# --- Helpers ---
+
+die() { echo "error: $*" >&2; exit 1; }
+
+# All state lives under one root, outside every repo tree (DESIGN.md §8).
+state_root() {
+  echo "${XDG_STATE_HOME:-$HOME/.local/state}/hail"
+}
+
+# --- Read Guard ---
+# Enforces read-before-act: agents must read a pane before typing/keys.
+
+read_guard_path() {
+  local pane_id="$1"
+  # Sanitize: %66 → _66
+  echo "$(state_root)/read/${pane_id//%/_}"
+}
+
+mark_read() {
+  mkdir -p "$(state_root)/read"
+  touch "$(read_guard_path "$1")"
+}
+
+require_read() {
+  local guard
+  guard=$(read_guard_path "$1")
+  if [[ ! -f "$guard" ]]; then
+    die "must read the pane before interacting. Run: hail read $1"
+  fi
+}
+
+clear_read() {
+  rm -f "$(read_guard_path "$1")"
+}
+
+# Detect the correct tmux server socket.
+# Priority: HAIL_SOCKET env (TMUX_BRIDGE_SOCKET accepted as a fallback)
+#           > $TMUX (if socket alive) > scan for pane owner.
+socket_override() {
+  if [[ -n "${HAIL_SOCKET:-}" ]]; then echo "$HAIL_SOCKET"
+  elif [[ -n "${TMUX_BRIDGE_SOCKET:-}" ]]; then echo "$TMUX_BRIDGE_SOCKET"
+  fi
+}
+
+detect_socket() {
+  # Explicit override
+  local override
+  override=$(socket_override)
+  if [[ -n "$override" ]]; then
+    if [[ -S "$override" ]]; then
+      echo "$override"
+      return
+    fi
+    die "HAIL_SOCKET=$override is not a valid socket"
+  fi
+
+  # Extract from $TMUX (format: "socket_path,pid,session_index")
+  if [[ -n "${TMUX:-}" ]]; then
+    local socket="${TMUX%%,*}"
+    if [[ -S "$socket" ]]; then
+      # Verify the socket is actually reachable
+      if tmux -S "$socket" list-sessions &>/dev/null; then
+        echo "$socket"
+        return
+      fi
+    fi
+  fi
+
+  # Fallback: scan tmux server sockets for one that owns $TMUX_PANE
+  local pane="${TMUX_PANE:-}"
+  if [[ -n "$pane" ]]; then
+    local uid
+    uid=$(id -u)
+    # Check both /tmp and /private/tmp (macOS symlinks /tmp → /private/tmp,
+    # but some sandboxed environments only see one or the other)
+    local sock_dirs=("/tmp/tmux-${uid}" "/private/tmp/tmux-${uid}")
+    for sock_dir in "${sock_dirs[@]}"; do
+      [[ -d "$sock_dir" ]] || continue
+      for sock in "$sock_dir"/*; do
+        [[ -S "$sock" ]] || continue
+        if tmux -S "$sock" display-message -t "$pane" -p '#{pane_id}' &>/dev/null; then
+          echo "$sock"
+          return
+        fi
+      done
+    done
+    # Also try the default socket (no -S flag)
+    if tmux display-message -t "$pane" -p '#{pane_id}' &>/dev/null; then
+      echo "__default__"
+      return
+    fi
+  fi
+
+  # Last resort: try default tmux server
+  if tmux list-sessions &>/dev/null; then
+    echo "__default__"
+    return
+  fi
+
+  die "cannot find a reachable tmux server (TMUX=${TMUX:-<unset>}, TMUX_PANE=${TMUX_PANE:-<unset>})"
+}
+
+# Resolved once at startup, used by tmx() for all tmux calls.
+TMUX_SOCKET=""
+
+init_socket() {
+  TMUX_SOCKET=$(detect_socket)
+}
+
+# Wrapper: run tmux with the detected socket.
+tmx() {
+  if [[ "$TMUX_SOCKET" == "__default__" || -z "$TMUX_SOCKET" ]]; then
+    tmux "$@"
+  else
+    tmux -S "$TMUX_SOCKET" "$@"
+  fi
+}
+
+usage() {
+  cat <<'EOF'
+hail — agent-to-agent messaging over tmux
+
+Usage: hail <command> [args...]
+
+Messaging:
+  send <target> <ask> [--kind k] [--bead id] [--body <file>|-]
+                            Deliver a message: the body is written to the target's
+                            inbox file and only a short envelope is typed into the
+                            pane. Prints id=<id> (and bead=<id> comment=<n>).
+                            'message' and 'msg' are aliases of 'send'.
+  inbox [--peek] [--all]    Print unread inbox messages for this pane and write the
+                            receipt (--peek: do not mark; --all: include already-read)
+  sent <id>                 Delivery status: 'read <time>' | 'delivered' | 'unknown'
+  await <id>... [--timeout SECONDS] [--any]
+                            Block until every id (or any, with --any) has a receipt.
+                            Default timeout 600. Prints one line per id and exits 0
+                            when satisfied, 1 on timeout. Needs no tmux server.
+
+Addressing:
+  list                      Show all panes (target, pid, command, size, label)
+  name <target> <label>     Label a pane (visible in tmux border)
+  resolve <label>           Print pane target for a label
+  id                        Print this pane's ID ($TMUX_PANE)
+
+Non-agent panes only (a plain shell, a running process):
+  read <target> [lines]     Read last N lines from pane (default: 50)
+  type <target> <text>      Type text without pressing Enter (verified)
+  keys <target> <key>...    Send special keys (Enter, Escape, C-c, etc.)
+
+  doctor                    Diagnose tmux connectivity issues
+  version                   Print version
+
+Target resolution:
+  Targets can be tmux native (session:window.pane, %N) or a label set via 'name'.
+  Labels are resolved automatically — e.g. 'hail send codex "hello"' works.
+
+Message kinds (--kind, default: ask):
+  ruling go nogo announce ask fyi stop hold
+  stop, hold, nogo and announce are typed in full into the pane (no fetch needed).
+  Every other kind types an envelope (<= 160 chars) and puts the full text in the
+  inbox; the recipient runs 'hail inbox' to fetch it.
+  Envelope: [hail kind:<k> from:<label>/<pane> reply:<pane> id:<id> [bead:<id>]] <ask> — hail inbox
+
+Beads:
+  If --bead <id> is given, or the text names a beads issue id (e.g. murail-ke7is),
+  the body is also posted with 'bd comment <id>' and the envelope cites bead:<id>.
+  bd is opportunistic: if it is missing or fails, the message still goes file-only
+  (one warning on stderr).
+
+State:
+  Everything lives under $XDG_STATE_HOME/hail (default ~/.local/state/hail):
+  inbox/<label>/<id>.md and <id>.read, keyed on the recipient pane's label (see
+  'name'), falling back to its pane id. Keep XDG_STATE_HOME outside any git
+  checkout: it is scratch state and must not be hashed by a repo gate.
+
+Environment:
+  HAIL_SOCKET          Override the tmux server socket path (skips auto-detection);
+                       TMUX_BRIDGE_SOCKET is accepted as a fallback
+  XDG_STATE_HOME       State root (default: ~/.local/state)
+EOF
+  exit 0
+}
+
+require_tmux() {
+  command -v tmux >/dev/null 2>&1 || die "tmux is not installed or not in PATH"
+}
+
+# Resolve a target: if it looks like a tmux target (%N, session:win.pane, pure digits),
+# use it directly; otherwise treat it as a @name label and resolve.
+resolve_target() {
+  local target="$1"
+
+  # tmux pane ID like %0, %12
+  if [[ "$target" =~ ^%[0-9]+$ ]]; then
+    echo "$target"; return
+  fi
+
+  # Looks like a tmux target with colon or dot (session:win.pane)
+  if [[ "$target" == *:* ]] || [[ "$target" == *.* ]]; then
+    echo "$target"; return
+  fi
+
+  # Pure numeric — treat as window index
+  if [[ "$target" =~ ^[0-9]+$ ]]; then
+    echo "$target"; return
+  fi
+
+  # Otherwise resolve as a @name label
+  resolve_label "$target"
+}
+
+resolve_label() {
+  local label="$1"
+  local result
+  result=$(tmx list-panes -a -F '#{pane_id} #{@name}' 2>/dev/null \
+    | awk -v lbl="$label" '$2 == lbl { print $1; exit }')
+  if [[ -z "$result" ]]; then
+    die "no pane found with label '$label'"
+  fi
+  echo "$result"
+}
+
+validate_target() {
+  local target="$1"
+  tmx display-message -t "$target" -p '#{pane_id}' >/dev/null 2>&1 \
+    || die "invalid target: $target"
+}
+
+require_args() {
+  local need="$1" have="$2" cmd="$3"
+  if (( have < need )); then
+    die "'$cmd' requires at least $need argument(s). Run 'hail' for usage."
+  fi
+}
+
+# --- Commands ---
+
+cmd_list() {
+  require_tmux
+  printf "%-8s %-16s %-10s %-25s %-10s %s\n" "TARGET" "SESSION:WIN" "SIZE" "PROCESS" "LABEL" "CWD"
+  tmx list-panes -a \
+    -F '#{pane_id}|#{session_name}|#{window_index}|#{window_name}|#{pane_pid}|#{pane_width}x#{pane_height}|#{@name}|#{pane_current_path}' \
+    2>/dev/null | while IFS='|' read -r id sess widx _ pid size label cwd; do
+      # Get the actual running process (deepest child of pane pid)
+      local proc child_pid
+      proc=$(ps -o comm= -p "$pid" 2>/dev/null || echo "?")
+      # Find child process (e.g. claude/node running inside zsh) — works on macOS + Linux
+      child_pid=$(pgrep -P "$pid" 2>/dev/null | head -1 || true)
+      if [[ -n "$child_pid" ]]; then
+        local child_proc
+        child_proc=$(ps -o comm= -p "$child_pid" 2>/dev/null || true)
+        if [[ -n "$child_proc" ]]; then
+          proc="$child_proc"
+        fi
+      fi
+      # Shorten home dir in cwd
+      cwd="${cwd/#$HOME/~}"
+      printf "%-8s %-16s %-10s %-25s %-10s %s\n" \
+        "$id" "${sess}:${widx}" "$size" "$proc" "${label:--}" "$cwd"
+    done
+}
+
+# Type text into a pane and PROVE it arrived, repairing once if it did not.
+#
+# A vim-mode input box rests in Normal mode and swallows typed text as
+# commands until a literal "i" enters Insert mode, so the head of a message
+# disappears and the tail still reads as a complete sentence. The mode is not
+# reliably observable: codex prints "Vim: Normal" in its status bar, Claude
+# Code prints "-- INSERT --" only while inserting and nothing at all in Normal
+# mode, and a working agent shows progress there instead of its composer. So
+# do not model the mode. Type, look for the text's own opening words in the
+# pane, and only if they are absent enter Insert mode, clear what partially
+# landed, and type once more.
+send_text_verified() {
+  local target="$1" text="$2" probe flat i
+  # LC_ALL=C keeps both sides byte-oriented: head -c can split a multibyte
+  # character, and tr refuses an invalid sequence in a UTF-8 locale. Comparing
+  # bytes is sound because a split character's leading bytes still prefix the
+  # whole character in the capture. Whitespace goes because the composer wraps.
+  probe=$(printf '%s' "$text" | head -c 40 | LC_ALL=C tr -d '[:space:]')
+  tmx send-keys -t "$target" -l -- "$text"
+  sleep 0.15
+  flat=$(tmx capture-pane -t "$target" -p | LC_ALL=C tr -d '[:space:]')
+  if [[ -n "$probe" && "$flat" != *"$probe"* ]]; then
+    tmx send-keys -t "$target" -l -- "i"
+    sleep 0.1
+    # A draft may hold several lines and C-u clears one, so clear repeatedly.
+    # Retyping over a partial draft is what doubles a message.
+    for i in 1 2 3 4 5 6 7 8; do tmx send-keys -t "$target" C-u; done
+    sleep 0.15
+    tmx send-keys -t "$target" -l -- "$text"
+    sleep 0.15
+    flat=$(tmx capture-pane -t "$target" -p | LC_ALL=C tr -d '[:space:]')
+    if [[ "$flat" != *"$probe"* ]]; then
+      printf 'hail: could not confirm the text landed in %s; submitting nothing.\n' "$target" >&2
+      printf 'hail: a composer renders only its most recent lines, so a message past\n' >&2
+      printf 'hail: roughly 400 characters cannot be verified this way. Put the content\n' >&2
+      printf 'hail: on a bead and send a short pointer, which durable coordination wants anyway.\n' >&2
+      return 1
+    fi
+  fi
+}
+
+cmd_type() {
+  require_args 2 $# "type"
+  require_tmux
+  local target
+  target=$(resolve_target "$1")
+  validate_target "$target"
+  require_read "$target"
+
+  send_text_verified "$target" "$2" || return 1
+  clear_read "$target"
+}
+
+# --- Inbox ---
+# A message's body lives on disk under the recipient's inbox; only a short
+# envelope is typed into the pane. Codex-style compaction keeps every user
+# message verbatim but drops tool output, so a fetched body costs nothing after
+# the next compaction while a typed body rides on every call forever.
+
+inbox_root() {
+  echo "$(state_root)/inbox"
+}
+
+# Inbox key for a pane: its @name label when set, else the pane id.
+# Labels survive pane-id shifts after a restart; ids do not.
+inbox_key_for() {
+  local pane="$1" label
+  label=$(tmx display-message -t "$pane" -p '#{@name}' 2>/dev/null || true)
+  if [[ -n "$label" ]]; then echo "${label//\//_}"; else echo "$pane"; fi
+}
+
+new_msg_id() {
+  printf '%s-%04x' "$(date -u +%m%dT%H%M%S)" $(( RANDOM % 65536 ))
+}
+
+is_kind() {
+  case "$1" in ruling|go|nogo|announce|ask|fyi|stop|hold) return 0 ;; *) return 1 ;; esac
+}
+
+# Stop-class kinds are complete in the envelope and never sit behind a fetch.
+is_inline_kind() {
+  case "$1" in stop|hold|nogo|announce) return 0 ;; *) return 1 ;; esac
+}
+
+# First token that looks like a beads issue id (prefix-hash[.n]). The hash
+# must contain a digit so ordinary hyphenated words (tmux-bridge, read-only)
+# are not mistaken for an issue.
+detect_bead() {
+  local tok
+  for tok in $(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' ' '); do
+    tok="${tok%%.}"
+    if [[ "$tok" =~ ^[a-z]+-[a-z0-9]{4,6}(\.[0-9]+)?$ && "${tok#*-}" =~ [0-9] ]]; then
+      echo "$tok"; return 0
+    fi
+  done
+  return 1
+}
+
+# Post a body to a bead, opportunistically. Prints the comment number (or
+# nothing) on stdout; returns nonzero on any failure.
+post_bead_comment() {
+  local bead="$1" body_file="$2" out num=""
+  command -v bd >/dev/null 2>&1 || return 1
+  out=$(bd comment "$bead" --file "$body_file" --json 2>/dev/null) || return 1
+  num=$(printf '%s' "$out" | grep -oE '"id"[[:space:]]*:[[:space:]]*"?[0-9]+' | head -1 | grep -oE '[0-9]+$' || true)
+  echo "$num"
+}
+
+cmd_send() {
+  require_tmux
+  local kind="ask" bead="" body_src="" target_arg="" text="" positional=()
+  while (( $# )); do
+    case "$1" in
+      --kind) [[ $# -ge 2 ]] || die "--kind needs a value"; kind="$2"; shift 2 ;;
+      --kind=*) kind="${1#*=}"; shift ;;
+      --bead) [[ $# -ge 2 ]] || die "--bead needs a value"; bead="$2"; shift 2 ;;
+      --bead=*) bead="${1#*=}"; shift ;;
+      --body) [[ $# -ge 2 ]] || die "--body needs a file or -"; body_src="$2"; shift 2 ;;
+      --body=*) body_src="${1#*=}"; shift ;;
+      --) shift; positional+=("$@"); break ;;
+      *) positional+=("$1"); shift ;;
+    esac
+  done
+  require_args 2 ${#positional[@]} "send"
+  target_arg="${positional[0]}"; text="${positional[1]}"
+  is_kind "$kind" || die "unknown kind '$kind' (ruling go nogo announce ask fyi stop hold)"
+
+  local target
+  target=$(resolve_target "$target_arg")
+  validate_target "$target"
+  require_read "$target"
+
+  # Sender identity
+  local sender_pane="${TMUX_PANE:-}"
+  if [[ -z "$sender_pane" ]]; then
+    die "not running inside a tmux pane (\$TMUX_PANE is unset)"
+  fi
+  local sender_label from
+  sender_label=$(tmx display-message -t "$sender_pane" -p '#{@name}' 2>/dev/null || true)
+  if [[ -n "$sender_label" ]]; then from="${sender_label}/${sender_pane}"; else from="$sender_pane"; fi
+
+  # Body: --body file, stdin when '-', else the text itself.
+  local body
+  if [[ -z "$body_src" ]]; then
+    body="$text"
+  elif [[ "$body_src" == "-" ]]; then
+    body=$(cat)
+  else
+    [[ -r "$body_src" ]] || die "cannot read body file: $body_src"
+    body=$(cat -- "$body_src")
+  fi
+
+  # Bead-first: explicit --bead, else the first issue id named in the text.
+  if [[ -z "$bead" ]]; then bead=$(detect_bead "$text" || true); fi
+
+  local id key dir file
+  id=$(new_msg_id)
+  key=$(inbox_key_for "$target")
+  dir="$(inbox_root)/$key"
+  mkdir -p "$dir"
+  file="$dir/$id.md"
+
+  local comment="" bead_line=""
+  if [[ -n "$bead" ]]; then
+    local tmp
+    tmp=$(mktemp "${TMPDIR:-/tmp}/hail-body.XXXXXX")
+    printf '%s\n' "$body" > "$tmp"
+    if comment=$(post_bead_comment "$bead" "$tmp"); then
+      bead_line="bead: $bead${comment:+ (comment $comment)}"
+    else
+      comment=""
+      bead_line="bead: $bead (not posted)"
+      echo "hail: warning: could not post to bead $bead with bd; message is file-only" >&2
+    fi
+    rm -f "$tmp"
+  fi
+
+  {
+    echo "from: $from"
+    echo "reply: $sender_pane"
+    echo "kind: $kind"
+    echo "id: $id"
+    echo "time: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    [[ -n "$bead_line" ]] && echo "$bead_line"
+    [[ -n "$comment" ]] && echo "see: bd show $bead"
+    echo "ask: $text"
+    echo
+    printf '%s\n' "$body"
+  } > "$file"
+
+  # Envelope
+  local head="[hail kind:${kind} from:${from} reply:${sender_pane} id:${id}${bead:+ bead:$bead}]"
+  local envelope
+  if is_inline_kind "$kind"; then
+    envelope="${head} ${text}"
+  else
+    local tail=" — hail inbox" ask="$text"
+    local budget=$(( 160 - ${#head} - 1 - ${#tail} ))
+    (( budget > 120 )) && budget=120
+    if (( ${#ask} > budget )); then
+      (( budget < 8 )) && budget=8
+      ask="${ask:0:budget-1}…"
+    fi
+    envelope="${head} ${ask}${tail}"
+  fi
+
+  if ! send_text_verified "$target" "$envelope"; then
+    echo "id=$id"
+    [[ -n "$bead" && -n "$comment" ]] && echo "bead=$bead comment=$comment"
+    echo "hail: envelope not confirmed in $target; body is at $file" >&2
+    return 1
+  fi
+  clear_read "$target"
+  echo "id=$id"
+  [[ -n "$bead" && -n "$comment" ]] && echo "bead=$bead comment=$comment"
+  return 0
+}
+
+cmd_inbox() {
+  require_tmux
+  local peek=false all=false
+  while (( $# )); do
+    case "$1" in
+      --peek) peek=true ;;
+      --all) all=true ;;
+      *) die "unknown option for inbox: $1" ;;
+    esac
+    shift
+  done
+  local pane="${TMUX_PANE:-}"
+  [[ -n "$pane" ]] || die "not running inside a tmux pane (\$TMUX_PANE is unset)"
+  local key dir
+  key=$(inbox_key_for "$pane")
+  dir="$(inbox_root)/$key"
+
+  local shown=0 f id
+  if [[ -d "$dir" ]]; then
+    for f in "$dir"/*.md; do
+      [[ -f "$f" ]] || continue
+      id="${f##*/}"; id="${id%.md}"
+      if [[ -f "$dir/$id.read" ]] && ! $all; then continue; fi
+      (( shown > 0 )) && echo "---"
+      cat -- "$f"
+      shown=$(( shown + 1 ))
+      if ! $peek && [[ ! -f "$dir/$id.read" ]]; then
+        date -u +%Y-%m-%dT%H:%M:%SZ > "$dir/$id.read"
+      fi
+    done
+  fi
+  (( shown == 0 )) && echo "(inbox empty)"
+  return 0
+}
+
+# Receipt for a message id: prints the read time (contents of <id>.read) and
+# returns 0 when it exists; returns 1 otherwise. Searches every inbox because
+# the sender does not need to remember which label it sent to.
+receipt_time() {
+  local id="$1" root f
+  root=$(inbox_root)
+  for f in "$root"/*/"$id".read; do
+    [[ -f "$f" ]] || continue
+    cat -- "$f"
+    return 0
+  done
+  return 1
+}
+
+cmd_sent() {
+  require_args 1 $# "sent"
+  local id="$1" root f when
+  if when=$(receipt_time "$id"); then
+    echo "read $when"
+    return 0
+  fi
+  root=$(inbox_root)
+  for f in "$root"/*/"$id".md; do
+    [[ -f "$f" ]] || continue
+    echo "delivered"
+    return 0
+  done
+  echo "unknown"
+  return 0
+}
+
+# Block until every id (or any, with --any) has a receipt. The only verb that
+# waits (DESIGN.md: "no polling helper"). Wakes on the receipt file with
+# fswatch when it is on PATH and re-checks at least every 5 s so an event that
+# lands between a check and the watch starting cannot be missed; without
+# fswatch it polls once a second.
+cmd_await() {
+  local timeout=600 any=false ids=()
+  while (( $# )); do
+    case "$1" in
+      --timeout) [[ $# -ge 2 ]] || die "--timeout needs a value"; timeout="$2"; shift 2 ;;
+      --timeout=*) timeout="${1#*=}"; shift ;;
+      --any) any=true; shift ;;
+      --) shift; ids+=("$@"); break ;;
+      -*) die "unknown option for await: $1" ;;
+      *) ids+=("$1"); shift ;;
+    esac
+  done
+  require_args 1 ${#ids[@]} "await"
+  [[ "$timeout" =~ ^[0-9]+$ ]] || die "--timeout must be a whole number of seconds"
+
+  local root watcher="" deadline now remaining wake
+  root=$(inbox_root)
+  mkdir -p "$root"
+  command -v fswatch >/dev/null 2>&1 && watcher=fswatch
+  deadline=$(( $(date +%s) + timeout ))
+
+  # One line per id: "<id> read <time>" | "<id> timeout" | "<id> pending".
+  # pending only appears with --any, for the ids not yet read when another was.
+  report() {
+    local outcome="$1" i when
+    for i in "${ids[@]}"; do
+      if when=$(receipt_time "$i"); then echo "$i read $when"; else echo "$i $outcome"; fi
+    done
+  }
+  satisfied() {
+    local i n=0
+    for i in "${ids[@]}"; do receipt_time "$i" >/dev/null && n=$(( n + 1 )); done
+    if $any; then (( n > 0 )); else (( n == ${#ids[@]} )); fi
+  }
+
+  while :; do
+    if satisfied; then report pending; return 0; fi
+    now=$(date +%s)
+    remaining=$(( deadline - now ))
+    if (( remaining <= 0 )); then report timeout; return 1; fi
+    if [[ "$watcher" == fswatch ]]; then
+      wake=$remaining; (( wake > 5 )) && wake=5
+      local pid
+      exec 9< <(fswatch -1 -r -- "$root" 2>/dev/null)
+      pid=$!
+      read -r -t "$wake" -u 9 _ || true
+      kill "$pid" 2>/dev/null || true
+      exec 9<&-
+    else
+      sleep 1
+    fi
+  done
+}
+
+cmd_read() {
+  require_tmux
+  require_args 1 $# "read"
+  local target
+  target=$(resolve_target "$1")
+  validate_target "$target"
+  local lines="${2:-50}"
+
+  tmx capture-pane -t "$target" -p -J -S "-${lines}"
+  mark_read "$target"
+}
+
+cmd_keys() {
+  require_args 2 $# "keys"
+  require_tmux
+  local target
+  target=$(resolve_target "$1")
+  validate_target "$target"
+  require_read "$target"
+  shift
+
+  for key in "$@"; do
+    tmx send-keys -t "$target" "$key"
+  done
+  clear_read "$target"
+}
+
+cmd_name() {
+  require_args 2 $# "name"
+  require_tmux
+  local target
+  target=$(resolve_target "$1")
+  validate_target "$target"
+
+  tmx set-option -p -t "$target" @name "$2"
+}
+
+cmd_resolve() {
+  require_args 1 $# "resolve"
+  require_tmux
+  resolve_label "$1"
+}
+
+cmd_id() {
+  if [[ -z "${TMUX_PANE:-}" ]]; then
+    die "not running inside a tmux pane (\$TMUX_PANE is unset)"
+  fi
+  echo "$TMUX_PANE"
+}
+
+cmd_doctor() {
+  require_tmux
+  local ok=true
+
+  echo "hail doctor v${VERSION}"
+  echo "---"
+
+  # Environment
+  echo "TMUX_PANE:          ${TMUX_PANE:-<unset>}"
+  echo "TMUX:               ${TMUX:-<unset>}"
+  echo "HAIL_SOCKET:        ${HAIL_SOCKET:-<unset>}"
+  [[ -n "${TMUX_BRIDGE_SOCKET:-}" ]] && echo "TMUX_BRIDGE_SOCKET: $TMUX_BRIDGE_SOCKET (fallback)"
+
+  # Socket from $TMUX
+  if [[ -n "${TMUX:-}" ]]; then
+    local env_socket="${TMUX%%,*}"
+    if [[ -S "$env_socket" ]]; then
+      if tmux -S "$env_socket" list-sessions &>/dev/null; then
+        echo "\$TMUX socket:       $env_socket (reachable)"
+      else
+        echo "\$TMUX socket:       $env_socket (exists but not responding)"
+        ok=false
+      fi
+    else
+      echo "\$TMUX socket:       $env_socket (MISSING — stale env)"
+      ok=false
+    fi
+  fi
+
+  # Detected socket
+  echo "---"
+  local detected
+  detected=$(detect_socket 2>/dev/null || echo "__failed__")
+  if [[ "$detected" == "__failed__" ]]; then
+    echo "Detected socket:    FAILED — no reachable tmux server found"
+    ok=false
+  elif [[ "$detected" == "__default__" ]]; then
+    echo "Detected socket:    (default tmux server)"
+  else
+    echo "Detected socket:    $detected"
+  fi
+
+  # Pane visibility
+  echo "---"
+  if [[ -n "${TMUX_PANE:-}" && "$detected" != "__failed__" ]]; then
+    if tmx display-message -t "$TMUX_PANE" -p '#{pane_id}' &>/dev/null; then
+      echo "This pane ($TMUX_PANE): visible to server"
+    else
+      echo "This pane ($TMUX_PANE): NOT visible to server"
+      ok=false
+    fi
+  fi
+
+  # Pane count
+  if [[ "$detected" != "__failed__" ]]; then
+    local count
+    count=$(tmx list-panes -a -F '#{pane_id}' 2>/dev/null | wc -l | tr -d ' ')
+    echo "Total panes:        $count"
+    local labeled
+    labeled=$(tmx list-panes -a -F '#{@name}' 2>/dev/null | grep -cv '^$' || echo 0)
+    echo "Labeled panes:      $labeled"
+  fi
+
+  echo "---"
+  if $ok; then
+    echo "Status: OK"
+  else
+    echo "Status: ISSUES DETECTED"
+    echo ""
+    echo "Likely cause: \$TMUX env var is stale (terminal was restarted)."
+    echo "Fix: re-source tmux env or set HAIL_SOCKET explicitly."
+    return 1
+  fi
+}
+
+# --- Main ---
+
+[[ $# -eq 0 ]] && usage
+
+# id, version, sent and await need no tmux server: they are files-only.
+case "$1" in
+  id)      shift; cmd_id "$@"; exit ;;
+  -h|--help|help) usage ;;
+  version) echo "hail $VERSION"; exit ;;
+  sent)    shift; cmd_sent "$@"; exit ;;
+  await)   shift; cmd_await "$@"; exit ;;
+esac
+
+# All other commands need the socket
+require_tmux
+init_socket
+
+case "$1" in
+  list)    shift; cmd_list "$@" ;;
+  type)    shift; cmd_type "$@" ;;
+  send|message|msg) shift; cmd_send "$@" ;;
+  inbox)   shift; cmd_inbox "$@" ;;
+  read)    shift; cmd_read "$@" ;;
+  keys)    shift; cmd_keys "$@" ;;
+  name)    shift; cmd_name "$@" ;;
+  resolve) shift; cmd_resolve "$@" ;;
+  doctor)  shift; cmd_doctor "$@" ;;
+  *)       die "unknown command: $1. Run 'hail' for usage." ;;
+esac
