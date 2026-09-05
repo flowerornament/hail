@@ -1,36 +1,102 @@
 # hail
 
-Agent-to-agent messaging for coding agents that share a machine, over tmux.
-A `send` writes the body to a file and types a one-line `[hail ...]` envelope
-into the recipient's prompt; the recipient's own `hail inbox` fetches the body
-and writes the receipt; `hail sent` and `hail await` read that receipt. Nobody
-reads a pane to find out whether a message landed. No daemon; state is files
-under `$XDG_STATE_HOME/hail`.
+Messaging between coding agents that share a machine and a tmux server.
 
-Design and rationale: [DESIGN.md](DESIGN.md). Agent instructions: [skills/hail/SKILL.md](skills/hail/SKILL.md).
+Agents in different panes (Claude Code, Codex, anything with a prompt) need to
+hand each other rulings, permissions, stops and results. Typing a whole message
+into another agent's prompt makes it part of that agent's context for the life
+of the session. hail types a one-line envelope instead, keeps the body in a file,
+and tells the sender when the recipient has read it.
 
-## Install (nix overlay)
+```
+[hail ruling from:murail-1a id:0905T1712-a3f1 bead:murail-ke7is] convert at the receipt, not the producer — hail inbox
+```
 
-`package.nix` is flake-free. In an overlay:
+- **Envelope** in the pane: kind, sender, id, optional bead, a headline you wrote.
+- **Body** on disk, fetched by the recipient with one command.
+- **Receipt** written by that fetch. The sender checks or waits on it; nobody
+  reads another pane to see whether a message landed.
+- **Control kinds** (`stop`, `hold`, `nogo`, `announce`) are typed in full, so
+  they work even if nothing is fetched.
+- No daemon, no database. State is files under `~/.local/state/hail`.
+
+## Install
+
+Nix flake with a home-manager module:
 
 ```nix
-(final: prev: {
-  hail = final.callPackage /path/to/hail/package.nix { };
-})
+# flake.nix inputs
+hail = { url = "git+ssh://git@github.com/flowerornament/hail"; inputs.nixpkgs.follows = "nixpkgs"; };
+
+# home-manager
+imports = [ inputs.hail.homeManagerModules.default ];
+programs.hail = {
+  enable = true;
+  skill.enable = true;                       # links skills/hail into the paths below
+  skill.targets = [ ".agents/skills/hail" ".claude/skills/hail" ];
+  # envelopeMax = 400;                       # HAIL_ENVELOPE_MAX
+};
 ```
 
-then add `hail` to your packages. It installs `bin/hail`, a `tmux-bridge`
-symlink (compatibility, one week), and the skill at `share/hail/skills/hail`.
-Requires `tmux` at runtime; `fswatch` is optional (`await` polls without it).
+Or `nix build .#` and put `result/bin/hail` on your PATH. Requires `tmux`.
+`fswatch` is optional; `await` polls without it. `bd` (beads) is optional; when a
+message names an issue id the body is also posted there.
 
-## The three commands an agent needs
+## Use
+
+Label your pane once. Inboxes and envelopes use labels, not pane ids.
 
 ```bash
-hail send murail-1b 'convert at the receipt' --kind ruling --bead murail-ke7is --body ruling.md
-#   → id=0905T1712-a3f1
-hail inbox                              # recipient: print unread bodies, write receipts
-hail await 0905T1712-a3f1 --timeout 600 # sender: block until it is read (or: hail sent <id>)
+hail name "$(hail id)" murail-1b
+hail list                                   # every pane, with labels
 ```
 
-Label panes first (`hail name "$(hail id)" murail-1b`); inboxes are keyed on labels.
-`hail --help` lists every verb. Tests: `test/run.sh` (scratch tmux server only).
+Send. Read the target first (the read guard), then send, then submit.
+
+```bash
+hail read murail-1b 5
+hail send murail-1b 'convert at the receipt, not the producer' --kind ruling --bead murail-ke7is --body ruling.md
+#   id=0905T1712-a3f1  bead=murail-ke7is comment=7
+hail keys murail-1b Enter
+```
+
+Receive. When an envelope appears in your prompt:
+
+```bash
+hail inbox                                  # print unread bodies, write receipts
+hail inbox --peek                           # look without marking read
+```
+
+Confirm delivery without reading the other pane:
+
+```bash
+hail sent 0905T1712-a3f1                    # delivered | read <time> | unknown
+hail await 0905T1712-a3f1 --timeout 600     # block until read; --any for several ids
+```
+
+Kinds: `ruling go nogo ask fyi stop hold announce`. Default is `ask`.
+The headline is capped at `HAIL_ENVELOPE_MAX` characters (default 400); the
+body has no limit. `hail --help` documents every verb and flag.
+
+`read`, `type` and `keys` still drive non-agent panes: a shell, a gate run, a
+prompt waiting for `y`.
+
+## For agents
+
+`skills/hail/SKILL.md` is the agent-facing instruction set. With the module's
+`skill.enable`, it is linked where Claude Code and Codex discover skills.
+
+## Compatibility
+
+`tmux-bridge` is installed as an alias of `hail` and `message` as an alias of
+`send`, for one week after switching from smux. Envelopes tagged `[tb …]` or
+`[tmux-bridge …]` mean the same as `[hail …]`.
+
+## Development
+
+```bash
+test/run.sh         # 20 scenarios on a scratch tmux server; never touches yours
+bash -n bin/hail && shellcheck bin/hail
+```
+
+Design, rationale and the reviewed roadmap: [DESIGN.md](DESIGN.md).
