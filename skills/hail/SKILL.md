@@ -1,145 +1,166 @@
 ---
 name: hail
-description: "Agent-to-agent messaging over tmux with hail. Use this skill whenever the user mentions sending a message to another agent or pane, a `[hail ...]` (or `[tb ...]`/`[tmux-bridge ...]`) envelope appears in your prompt, you need to know whether another agent has read something, or you must drive a non-agent tmux pane (a shell, a running process). Includes the hail CLI: send, inbox, sent, await, labels, and a minimal raw-tmux fallback."
+description: "Agent-to-agent messaging over tmux with hail. Use this skill whenever the user mentions sending a message to another agent or pane, a `[hail ...]` (or `[tb ...]`/`[tmux-bridge ...]`) envelope appears in your prompt, you need to know whether another agent has read something, you must answer or close a ruling, go, ask, hold or block, or you must drive a non-agent tmux pane (a shell, a running process). Includes the hail CLI: send, deliver, brief, inbox, sent, await, kinds with state, labels, and a minimal raw-tmux fallback."
 metadata:
   { "openclaw": { "emoji": "📯", "os": ["darwin", "linux"], "requires": { "bins": ["tmux", "hail"] } } }
 ---
 
 # hail
 
-One-way messages between coding agents that share a machine. The body goes to a
-file; a one-line envelope goes into the other agent's prompt; the recipient's own
-`hail inbox` writes the receipt; `hail sent` / `hail await` read it. Nothing waits
-inside `send`, and nobody reads a pane to find out whether a message landed.
+One-way messages between coding agents that share a machine. The body goes to
+a file; a one-line envelope goes into the other agent's prompt; the hook
+delivers the body on the recipient's next turn and writes the receipt;
+`hail sent` / `hail await` read it.
 
-## If you see an envelope, run `hail inbox`
+## Receiving
 
-An envelope looks like this, as one line in your prompt:
+An envelope is one line in your prompt:
 
 ```
-[hail kind:ruling from:murail-1a/%5 reply:%5 id:0905T1712-a3f1 bead:murail-ke7is] convert at the receipt… — hail inbox
+[hail kind:ruling from:murail-1a/%5 reply:%5 id:0905T1712-a3f1 bead:murail-ke7is re:0905T1650-1c2e scope:commit] convert at the receipt — hail inbox
 ```
 
-- `kind` — what to do with it (see Kinds). `from` — sender's label/pane.
-  `reply` — the pane to answer. `id` — for receipts. `bead` — the issue the body
-  is also posted to, when there is one. Then a one-line ask, truncated with `…`.
-- **Run `hail inbox`.** It prints every unread body as tool output and writes the
-  receipt the sender is waiting on. Never act on a `ruling`, `go`, `ask` or `fyi`
-  from the envelope alone: the envelope is a pointer with a why, not the ruling.
-- The body is tool output, so it vanishes at your next compaction; the file and
-  the bead comment do not. `hail inbox --all` re-reads everything.
-- **Alias week:** for one week after install, `[tb ...]` and `[tmux-bridge ...]`
-  envelopes mean exactly the same thing as `[hail ...]`. Treat them identically;
-  `hail inbox` fetches them too.
+`kind` says what to do (see Kinds). `from` is the sender's label/pane. `id`
+is for receipts and `--re`. `bead` is the issue the body is also posted to.
+`re` names the message this answers, closes or lifts. `scope` is what it
+applies to. The headline is written by the sender and is never truncated.
+
+- **With the hooks installed** (see below) the body arrives with the envelope
+  as hook context on the same turn, and the receipt is written for you. Read
+  it there. It is not retained through compaction; the file and the bead are.
+- **Without the hooks**, or if the body did not arrive, run `hail inbox`. It
+  prints every unread body and writes the receipt. `hail inbox --all`
+  re-reads everything, with each message's receipt (`read` or `injected`).
+- Never act on a `ruling`, `go` or `ask` from the envelope alone.
+- `[tb ...]` and `[tmux-bridge ...]` envelopes mean the same as `[hail ...]`.
+
+`hail brief` prints your standing state: unread envelopes, your sends with no
+receipt after two minutes, holds and blocks in effect, and open obligations on
+you. It prints nothing when there is nothing. The SessionStart hook runs it;
+run it yourself after a compaction or when unsure what you owe.
 
 ## Kinds
 
-`ruling go nogo announce ask fyi stop hold` (default `ask`).
+| kind | effect |
+|---|---|
+| `ruling` `go` `ask` | Creates an obligation on the recipient, listed in its brief until it sends `done --re <id>`. |
+| `done` | Closes one obligation. `--re <id>` required; `--scope` names the part done. Only the obligated party can close it. |
+| `nogo` `fyi` | No state. `fyi` for status; `ask` only when you expect a reply. |
+| `hold` `block` | Records a hold in effect (`--scope` says on what). Listed in every brief until released. |
+| `release` | Lifts one hold or block: `--re <id>`. Refused for anyone but its issuer. |
+| `stop` `announce` | No state. |
 
-- **Inline, complete in the envelope:** `stop`, `hold`, `nogo`, `announce`. The
-  full text is typed into the pane with no fetch hint. Act on it immediately, even
-  if you never run `inbox`; a red gate or a hold-before-land cannot sit behind a
-  fetch. (The body is still written to your inbox for the record.)
-- **Envelope + fetch:** `ruling`, `go`, `ask`, `fyi`. The pane gets ≤160 chars;
-  the full text is in your inbox.
+`stop hold block release announce` are control kinds: typed in full, no fetch
+hint, act on them at once. The others carry the body through the hook or
+`hail inbox`. `--kind` is required. Every headline is capped at
+`HAIL_ENVELOPE_MAX` characters (default 400); a longer one is refused (exit 2).
+Put detail in `--body` or on a bead.
 
-## Sending: send, await, sent
+## Sending
 
 ```bash
-hail send <target> <ask> [--kind k] [--bead id] [--body file|-]
+hail read <target> 5                                   # read guard
+hail <target> '<headline>' --kind <kind> [--bead id] [--re id] [--scope s] [--body file|-]
 #   → id=0905T1712-a3f1            (and bead=<id> comment=<n> when posted)
-hail sent <id>                     # delivered | read <time> | unknown
-hail await <id>... [--timeout SECONDS] [--any]
-#   blocks until every id (or any, with --any) has a receipt; default 600 s
-#   prints one line per id: "<id> read <time>" | "<id> timeout" | "<id> pending"
-#   exit 0 when satisfied, 1 on timeout. Needs no tmux server.
 ```
 
-`<target>` is a label (preferred) or a pane id. `<ask>` is the one-line summary
-that goes in the envelope; `--body` supplies a longer body from a file or stdin
-(`-`); without it the ask is the body. `send` verifies the envelope landed
-(vim-Normal-mode repair, one retry) and returns. It presses nothing: submit with
-`hail keys <target> Enter` if the recipient's composer needs it.
+`send` presses Enter for you. Read, send, done. `--no-submit` types without
+Enter. Before typing, `send` refuses a pane that shows a permission dialog
+(exit 4: on Claude Code the text is discarded and Enter approves the command)
+or an unsent draft that is not an envelope (exit 5); `--force` overrides.
+`hail send`, `message` and `msg` are accepted before the target.
+
+```bash
+hail sent <id>                     # delivered | read <time> | injected <time> | unknown
+hail await <id>... [--timeout SECONDS] [--any]
+#   blocks until every id (or any) has a receipt; one line per id; exit 1 on timeout
+```
 
 Typical exchange:
 
 ```bash
-hail read codex 5                                        # read guard (see below)
-id=$(hail send codex 'Review src/auth.ts against murail-ke7is; verdict on the bead' --kind ask)
-hail keys codex Enter
+hail read codex 5
+id=$(hail codex 'Review src/auth.ts against murail-ke7is; verdict on the bead' --kind ask)
 id=${id#id=}
-# ... do other work ...
-hail await "$id" --timeout 900                           # blocks until codex ran `hail inbox`
-hail sent "$id"                                          # or just check, any time later
+hail await "$id" --timeout 900      # returns when codex's hook injected the body
 ```
 
-Rules for senders:
-
-- **Do not read the target pane** to see whether the text landed (`send` verified
-  it) or to look for a reply (replies arrive in *your* pane as envelopes, and
-  `await`/`sent` tell you when yours was read).
-- **Do not poll.** `await` is the one verb that waits; use it, or move on.
-- **One recipient per message.** A coordinator loops over targets.
-- **Bead-first for rulings.** `--bead <id>` (or an issue id in the ask) posts the
-  body as a bead comment and cites `bead:<id>` in the envelope. If `bd` is missing
-  or fails you get one warning and the message goes file-only.
-- Keep the ask short; it is what survives the recipient's compaction.
-
-Replying is just another send, to the `reply:` pane (or better, the `from` label):
+Answering, closing, lifting:
 
 ```bash
-hail inbox                                               # fetch, write the receipt
 hail read murail-1a 5
-hail send murail-1a '87% line coverage; OAuth refresh path (142-168) uncovered' --kind fyi
-hail keys murail-1a Enter
+hail murail-1a '87% line coverage; OAuth refresh uncovered' --kind fyi --re 0905T1712-a3f1
+hail murail-1a 'committed on base abc123' --kind done --re 0905T1712-a3f1 --scope commit
+hail murail-1b 'gate green' --kind release --re 0905T1650-1c2e
 ```
 
-## Labels
+Rules:
 
-Inbox directories and `from:` are keyed on the pane's label, because pane ids
-shift after a restart. Label yourself first, then discover others:
+- A receipt means the body was injected into the recipient's context, not
+  that it was attended to. Obligations stay in the brief until `done`.
+- Do not read an agent pane to check delivery or look for a reply; `sent`,
+  `await` and your own inbox tell you. `await` is the only verb that waits.
+- One recipient per message; loop for several.
+- `--bead <id>` (or an issue id in the headline) posts the body as a bead
+  comment. If `bd` is missing or fails: one warning, message goes file-only.
+- `--re` when a message answers, closes or lifts another. `--scope` on `go`
+  names the permitted action (`commit`, `push`) and the base; on `hold` the
+  thing held; on `done` the part completed.
+
+## Identity
 
 ```bash
-hail name "$(hail id)" murail-1b      # label this pane (the inbox is keyed on it)
-hail list                             # TARGET SESSION:WIN SIZE PROCESS LABEL CWD
-hail resolve murail-1a                # → %5
+hail hello                            # new incarnation for this pane (SessionStart hook runs it)
+hail name "$(hail id)" murail-1b      # label this pane and register label = pane + incarnation
+hail list                             # every pane with its label
+hail who [label]                      # pane, label, incarnation, last inbox event, last 2 pane lines
 ```
 
-An unlabeled pane's inbox is keyed on its id; that works but does not survive a
-restart. Labels with `/` are stored with `_`.
+Inboxes and `from:` are keyed on labels. `send` resolves a label through its
+registration and refuses (exit 3, `label X moved: registered on %N, now on
+%M — run hail name to re-register`) when a different pane now wears the label
+or the registered pane has a new incarnation. Run `hail name` again after a
+restart. `hail who <label>` shows both sides without interpreting them.
+
+## Hooks
+
+The hooks deliver bodies and the brief without a tool call. Snippets are in
+`hooks/README.md` of the hail repo; they are copied config.
+
+- Codex `.codex/hooks.json`: `UserPromptSubmit` → `hail deliver --format codex`;
+  `SessionStart` → `hail hello >/dev/null; hail brief`. Trust once per project
+  with `/hooks`.
+- Claude Code `.claude/settings.json`: `UserPromptSubmit` →
+  `hail deliver --format claude`; `SessionStart` → `hail hello >/dev/null; hail brief`.
+
+Hooks are read at session start; a new session picks up an install.
 
 ## Non-agent panes: read, type, keys
 
-For a plain shell or a running process, there is nobody to run `inbox`, so you
-drive the pane directly and you *do* read it to see output. The CLI enforces a
-read guard: `read` marks the pane, `type`/`keys`/`send` require the mark and
-clear it, so every action is read → act → read.
+For a plain shell or a running process you drive the pane and read its
+output. `read` marks the pane; `type`, `keys` and `send` require the mark and
+consume it.
 
 ```bash
-hail read worker 10                   # see the prompt
-hail type worker "y"                  # type (verified, no Enter)
-hail read worker 10                   # verify
-hail keys worker Enter                # submit; Escape, C-c, C-d, Up ... also work
-hail read worker 20                   # see the result
+hail read worker 10
+hail type worker "y"                  # verified, no Enter
+hail keys worker Enter                # Escape, C-c, C-d, Up ... also work
+hail read worker 20
 ```
 
-```
-$ hail type worker "y"
-error: must read the pane before interacting. Run: hail read worker
-```
-
-`type` never presses Enter and cannot verify text past ~400 chars (a composer
-shows only its last lines): put long content on a bead or in `--body` instead.
+`type` cannot verify text past ~400 characters; put long content on a bead or
+in `--body`.
 
 ## State and environment
 
-- Files: `$XDG_STATE_HOME/hail/inbox/<label>/<id>.md` and `<id>.read` (default
-  `~/.local/state/hail`). Keep `XDG_STATE_HOME` outside every git checkout; the
-  inbox is scratch state and must not be hashed by a repo gate.
-- `HAIL_SOCKET` overrides tmux server detection (`TMUX_BRIDGE_SOCKET` still
-  works). `hail doctor` explains why a server is not reachable.
-- `hail --help` lists everything. `message`/`msg` are aliases of `send`;
-  `tmux-bridge` is a symlink to `hail` for the alias week.
+- `$XDG_STATE_HOME/hail` (default `~/.local/state/hail`): `inbox/<label>/<id>.md`
+  and `<id>.read`, `obligations/<label>/<id>`, `holds/<id>`, `identity/<label>`,
+  `incarnation/<pane>`, `sent/<label>/<id>`. Keep it outside every checkout.
+- `HAIL_SOCKET` overrides tmux server detection (`TMUX_BRIDGE_SOCKET` also
+  works). `hail doctor` reports why a server is unreachable.
+- Exit codes: 1 usage/state, 2 headline over cap, 3 label moved, 4 permission
+  dialog in target, 5 unsent draft in target.
+- `hail --help` lists everything.
 
 ## Raw tmux (only when hail cannot do it)
 
@@ -147,10 +168,10 @@ shows only its last lines): put long content on a bead or in `--body` instead.
 tmux capture-pane -t %5 -p | tail -20          # last 20 lines of a pane
 tmux send-keys -t %5 -l -- "text"              # type literally, no Enter
 tmux send-keys -t %5 Enter                     # press a key
-tmux split-window -h -t SESSION                # new pane (prefer over windows)
+tmux split-window -h -t SESSION                # new pane
 tmux select-layout -t SESSION tiled            # re-balance
 tmux list-sessions; tmux new-session -d -s NAME; tmux kill-session -t NAME
 ```
 
-Prefer `hail read`/`type`/`keys`: they resolve labels, verify typed text, and
-keep the read guard honest.
+Prefer `hail read`/`type`/`keys`: they resolve labels, verify typed text and
+keep the read guard.
