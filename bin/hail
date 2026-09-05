@@ -135,9 +135,16 @@ init_socket() {
   TMUX_SOCKET=$(detect_socket)
 }
 
+# For verbs that work without a server: never fall back to the default server.
+init_socket_quiet() {
+  TMUX_SOCKET=$(detect_socket 2>/dev/null) || TMUX_SOCKET="__none__"
+}
+
 # Wrapper: run tmux with the detected socket.
 tmx() {
-  if [[ "$TMUX_SOCKET" == "__default__" || -z "$TMUX_SOCKET" ]]; then
+  if [[ "$TMUX_SOCKET" == "__none__" ]]; then
+    return 1
+  elif [[ "$TMUX_SOCKET" == "__default__" || -z "$TMUX_SOCKET" ]]; then
     tmux "$@"
   else
     tmux -S "$TMUX_SOCKET" "$@"
@@ -299,33 +306,16 @@ require_args() {
 
 pane_pid_of() { tmx display-message -t "$1" -p '#{pane_pid}' 2>/dev/null || true; }
 
-# Epoch seconds at which a process started (from its elapsed time).
-proc_start_epoch() {
-  local et d=0 h=0 m=0 sec=0 rest
-  et=$(ps -o etime= -p "$1" 2>/dev/null | tr -d ' ') || true
-  [[ -n "$et" ]] || return 1
-  if [[ "$et" == *-* ]]; then d="${et%%-*}"; et="${et#*-}"; fi
-  rest="$et"
-  case "$rest" in
-    *:*:*) h="${rest%%:*}"; rest="${rest#*:}" ;;
-  esac
-  m="${rest%%:*}"; sec="${rest#*:}"
-  echo $(( $(date +%s) - (10#$d * 86400 + 10#$h * 3600 + 10#$m * 60 + 10#$sec) ))
-}
-
-file_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
-
-# An incarnation file counts only while the pane's process is the one it was
-# written under: a file older than the pane's process start is stale.
+# An incarnation file records the pane's process id when it was written. It
+# counts only while that process is still the pane's: a respawned or relaunched
+# pane has a new pid and the file is stale. Without a server the file counts.
 fresh_incarnation_file() {
-  local pane="$1" f pid start mtime
+  local pane="$1" f pid rec
   f="$(incarnation_root)/${pane//%/_}"
   [[ -f "$f" ]] || return 1
   pid=$(pane_pid_of "$pane")
-  [[ -n "$pid" ]] || { echo "$f"; return 0; }
-  start=$(proc_start_epoch "$pid") || { echo "$f"; return 0; }
-  mtime=$(file_mtime "$f")
-  (( mtime >= start )) || return 1
+  rec=$(hdr "$f" pid)
+  if [[ -n "$pid" && -n "$rec" && "$pid" != "$rec" ]]; then return 1; fi
   echo "$f"
 }
 
@@ -334,13 +324,16 @@ new_incarnation_id() {
 }
 
 write_incarnation() {
+  local pid; pid=$(pane_pid_of "$1")
   mkdir -p "$(incarnation_root)"
-  echo "$2" > "$(incarnation_root)/${1//%/_}"
+  { echo "$2"; [[ -n "$pid" ]] && echo "pid: $pid"; true; } > "$(incarnation_root)/${1//%/_}"
 }
+
+incarnation_id_of_file() { head -1 -- "$1"; }
 
 incarnation_for() {
   local pane="$1" f pid start
-  if f=$(fresh_incarnation_file "$pane"); then cat -- "$f"; return; fi
+  if f=$(fresh_incarnation_file "$pane"); then incarnation_id_of_file "$f"; return; fi
   pid=$(pane_pid_of "$pane")
   start=""
   if [[ -n "$pid" ]]; then
@@ -368,7 +361,7 @@ self_key() {
   [[ -n "$pane" ]] || die "not running inside a tmux pane (\$TMUX_PANE is unset)"
   label=$(identity_label_for_pane "$pane")
   if [[ -z "$label" ]]; then
-    label=$( (init_socket && tmx display-message -t "$pane" -p '#{@name}') 2>/dev/null || true)
+    label=$( (init_socket_quiet && tmx display-message -t "$pane" -p '#{@name}') 2>/dev/null || true)
   fi
   if [[ -n "$label" ]]; then key_of_label "$label"; else echo "$pane"; fi
 }
@@ -845,10 +838,28 @@ envelope_of_file() {
   echo "[hail $(hdr "$f" kind) from:$from id:$(hdr "$f" id)${bead:+ bead:$bead}${re:+ re:$re}${scope:+ scope:$scope}] $(hdr "$f" ask)"
 }
 
+# One line when this pane's registered label no longer matches its incarnation
+# (the pane's process was restarted). Silent without a reachable tmux server.
+label_status_line() {
+  local pane="${TMUX_PANE:-}" label idf reg now
+  label=$(identity_label_for_pane "$pane")
+  [[ -n "$label" ]] || return 0
+  idf="$(identity_root)/$(key_of_label "$label")"
+  reg=$(hdr "$idf" incarnation)
+  init_socket_quiet
+  [[ "$TMUX_SOCKET" != "__none__" ]] || return 0
+  now=$(incarnation_for "$pane" 2>/dev/null) || return 0
+  if [[ -n "$now" && "$now" != "$reg" ]]; then
+    echo "label $label: pane restarted — run: hail name \"\$(hail id)\" $label"
+  fi
+}
+
 cmd_brief() {
   drain_stdin
   local me out="" lines="" n f id dir
   me=$(self_key)
+  lines=$(label_status_line)
+  [[ -n "$lines" ]] && out+="$lines"$'\n'
 
   # inbox
   n=0; lines=""
@@ -1061,7 +1072,8 @@ cmd_name() {
 cmd_hello() {
   local pane="${TMUX_PANE:-}" inc f
   [[ -n "$pane" ]] || die "not running inside a tmux pane (\$TMUX_PANE is unset)"
-  if f=$( { init_socket 2>/dev/null || true; fresh_incarnation_file "$pane"; } 2>/dev/null); then cat -- "$f"; return 0; fi
+  init_socket_quiet
+  if f=$(fresh_incarnation_file "$pane" 2>/dev/null); then incarnation_id_of_file "$f"; return 0; fi
   inc=$(new_incarnation_id)
   write_incarnation "$pane" "$inc"
   echo "$inc"
@@ -1102,8 +1114,16 @@ cmd_who() {
   echo "label: ${label:--}"
   [[ -n "$reg_pane" ]] && echo "registered: $reg_pane"
   [[ -n "$wearer" ]] && echo "wearing: $wearer"
-  echo "incarnation: $(incarnation_for "$pane")"
+  local now_inc; now_inc=$(incarnation_for "$pane")
+  echo "incarnation: $now_inc"
   [[ -n "$reg_inc" ]] && echo "registered incarnation: $reg_inc"
+  if [[ -n "$wearer" && -n "$reg_pane" && "$wearer" != "$reg_pane" ]]; then
+    echo "status: label moved to $wearer; registered on $reg_pane — run: hail name $wearer $label"
+  elif [[ -n "$reg_inc" && "$now_inc" != "$reg_inc" ]]; then
+    echo "status: pane restarted since registration — run: hail name \"\$(hail id)\" $label"
+  elif [[ -n "$reg_inc" ]]; then
+    echo "status: ok"
+  fi
   local key; key=$(key_of_label "${label:-$pane}")
   echo "last inbox event: $(last_inbox_event "$(inbox_root)/$key")"
   echo "pane tail:"

@@ -517,6 +517,7 @@ s28() { # identity: label moved -> send refused (exit 3); who shows it; hello = 
   expect "who label" contains "$out" "label: worker" || ok=1
   expect "who registered" contains "$out" "registered: $RECV" || ok=1
   expect "who wearing" contains "$out" "wearing: $SENDER" || ok=1
+  expect "who status moved" contains "$out" "status: label moved to $SENDER; registered on $RECV — run: hail name $SENDER worker" || ok=1
   expect "who incarnation" re "$out" 'incarnation: [0-9]{4}T[0-9]{6}-[0-9a-f]{4}' || ok=1
   expect "who last event" re "$out" 'last inbox event: [0-9]{4}-.*Z' || ok=1
   expect "who pane tail" contains "$out" "pane tail:" || ok=1
@@ -527,14 +528,14 @@ s28() { # identity: label moved -> send refused (exit 3); who shows it; hello = 
   local reg inc
   reg=$(sed -n 's/^incarnation: //p' "$XDG_STATE_HOME/hail/identity/worker")
   expect "name minted the incarnation" re "$reg" '^[0-9]{4}T[0-9]{6}-[0-9a-f]{4}$' || ok=1
-  expect "incarnation file written by name" eq "$(cat "$XDG_STATE_HOME/hail/incarnation/${RECV/\%/_}")" "$reg" || ok=1
+  expect "incarnation file written by name" eq "$(head -1 "$XDG_STATE_HOME/hail/incarnation/${RECV/\%/_}")" "$reg" || ok=1
   inc=$(as "$RECV" hello)
   expect "hello is idempotent (keeps the minted id)" eq "$inc" "$reg" || ok=1
   expect "hello needs no server" eq "$(HAIL_SOCKET=/nonexistent/socket as "$RECV" hello)" "$reg" || ok=1
   send "$SENDER" worker "after hello" --kind fyi
   expect "send still works after hello rc=0" eq "$RC" 0 || ok=1
   # a real restart: the pane's process is replaced; the incarnation file is now stale
-  sleep 1.1; "${T[@]}" respawn-pane -k -t "$RECV" cat; sleep 0.3
+  "${T[@]}" respawn-pane -k -t "$RECV" cat; sleep 0.3
   inc=$(as "$RECV" hello)
   expect "hello after restart mints a new id" re "$inc" '^[0-9]{4}T[0-9]{6}-[0-9a-f]{4}$' || ok=1
   expect "new id differs" eq "$([[ "$inc" != "$reg" ]] && echo differs)" differs || ok=1
@@ -542,10 +543,17 @@ s28() { # identity: label moved -> send refused (exit 3); who shows it; hello = 
   send "$SENDER" worker "after restart" --kind fyi
   expect "restarted pane refused rc=3" eq "$RC" 3 || ok=1
   expect "message names incarnations" contains "$ERR" "now on $RECV ($inc) — run hail name to re-register" || ok=1
-  expect "brief on the new incarnation still lists the obligation" contains "$(as "$RECV" brief)" "open obligations on me (1)" || ok=1
+  out=$(as "$RECV" brief)
+  expect "brief on the new incarnation still lists the obligation" contains "$out" "open obligations on me (1)" || ok=1
+  expect "brief says the pane restarted" contains "$out" 'label worker: pane restarted — run: hail name "$(hail id)" worker' || ok=1
+  expect "brief line first" re "$out" '^label worker: pane restarted' || ok=1
+  expect "who shows the restart" contains "$(as "$SENDER" who worker)" 'status: pane restarted since registration — run: hail name "$(hail id)" worker' || ok=1
+  expect "brief without a server has no false restart line" not_contains "$(HAIL_SOCKET=/nonexistent/socket as "$RECV" brief)" "pane restarted" || ok=1
   as "$SENDER" name "$RECV" worker
   send "$SENDER" worker "after re-register" --kind fyi
   expect "send after re-register rc=0" eq "$RC" 0 || ok=1
+  expect "brief clean after re-register" not_contains "$(as "$RECV" brief)" "restarted" || ok=1
+  expect "who ok after re-register" contains "$(as "$SENDER" who worker)" "status: ok" || ok=1
   reset_recv; return "$ok"
 }
 
