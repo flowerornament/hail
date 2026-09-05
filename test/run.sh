@@ -13,6 +13,7 @@ T=(tmux -L "$SOCKNAME")
 unset TMUX TMUX_PANE HAIL_SOCKET TMUX_BRIDGE_SOCKET
 
 SCRATCH=$(mktemp -d "${TMPDIR:-/tmp}/hailtest.XXXXXX")
+export HAIL_ENVELOPE_MAX=160   # scenarios were written against the original cap; the tool default is 400
 export XDG_STATE_HOME="$SCRATCH/state"
 INBOX="$XDG_STATE_HOME/hail/inbox"
 
