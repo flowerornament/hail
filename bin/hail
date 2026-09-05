@@ -481,7 +481,7 @@ cmd_send() {
     echo "hail: envelope not confirmed in $target; body is at $file" >&2
     return 1
   fi
-  clear_read "$target"
+  # keep the read mark: the preceding read is still valid for the Enter that follows
   echo "id=$id"
   [[ -n "$bead" && -n "$comment" ]] && echo "bead=$bead comment=$comment"
   return 0

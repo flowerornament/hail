@@ -332,6 +332,7 @@ s20() { # tmux-bridge symlink + TMUX_BRIDGE_SOCKET fallback
   expect "symlink version" eq "$("$SCRATCH/bin/tmux-bridge" version)" "hail 1.0.0" || ok=1
   out=$(env -u HAIL_SOCKET TMUX_BRIDGE_SOCKET="$HAIL_SOCKET" TMUX_PANE="$SENDER" "$SCRATCH/bin/tmux-bridge" resolve worker)
   expect "TMUX_BRIDGE_SOCKET fallback" eq "$out" "$RECV" || ok=1
+  as "$SENDER" keys worker Escape >/dev/null 2>&1 || true   # consume any standing read mark
   expect "read guard error names hail" contains "$(as "$SENDER" type worker x 2>&1)" "Run: hail read" || ok=1
   return "$ok"
 }
