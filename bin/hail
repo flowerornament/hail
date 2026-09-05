@@ -173,7 +173,7 @@ Send:
     --no-submit             Type the envelope but do not press Enter (the default
                             when the target runs a shell, which would execute it)
     --force                 Skip the dialog and draft guards; submit into a shell
-  sent <id>                 delivered | read <time> | injected <time> | unknown
+  sent <id>                 delivered | read <time> | injected <time> | inline <time> | unknown
   await <id>... [--timeout SECONDS] [--any]
                             Block until every id (or any, with --any) has a receipt.
                             Default timeout 600. One line per id; exit 0 when
@@ -690,6 +690,11 @@ cmd_send() {
     printf '%s\n' "$body"
   } > "$file"
 
+  # A control kind is complete in the envelope: pre-write its receipt so
+  # deliver/inbox do not hand the body over a second time. sent/await/brief
+  # still see the message and the holds state is unaffected.
+  if is_inline_kind "$kind"; then echo "inline $now" > "$dir/$id.read"; fi
+
   # Envelope. Never truncated: the headline was checked against the cap above.
   local head="[hail kind:${kind} from:${from} reply:${sender_pane} id:${id}${bead:+ bead:$bead}${re:+ re:$re}${scope:+ scope:$scope}]"
   local envelope
@@ -742,11 +747,12 @@ cmd_send() {
   return "$rc"
 }
 
-# Receipt text for a message: "read <time>" | "injected <time>". The .read
-# file holds either a bare time (inbox) or "injected <time>" (deliver).
+# Receipt text for a message: "read <time>" | "injected <time>" | "inline
+# <time>". The .read file holds a bare time (inbox), "injected <time>"
+# (deliver) or "inline <time>" (a control kind, complete in the envelope).
 receipt_status_of_file() {
   local c; c=$(cat -- "$1")
-  case "$c" in injected\ *) echo "$c" ;; *) echo "read $c" ;; esac
+  case "$c" in injected\ *|inline\ *) echo "$c" ;; *) echo "read $c" ;; esac
 }
 
 cmd_inbox() {

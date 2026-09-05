@@ -184,6 +184,13 @@ s7() { # --kind stop, 120 chars typed inline
   expect "no …" not_contains "$line" "…" || ok=1
   expect "no fetch hint" not_contains "$line" "hail inbox" || ok=1
   expect "file still written" exists "$INBOX/worker/$id.md" || ok=1
+  expect "receipt pre-written as inline" grep -qE '^inline [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$' "$INBOX/worker/$id.read" || ok=1
+  expect "sent -> inline <time>" re "$(as "$SENDER" sent "$id")" '^inline [0-9]{4}-.*Z$' || ok=1
+  expect "deliver does not hand it over again" not_contains "$(as "$RECV" deliver)" "id: $id" || ok=1
+  expect "inbox does not either" not_contains "$(as "$RECV" inbox)" "id: $id" || ok=1
+  expect "inbox --all shows the inline receipt" contains "$(as "$RECV" inbox --all)" "receipt: inline " || ok=1
+  expect "brief does not list it as unread" not_contains "$(as "$RECV" brief)" "id:$id" || ok=1
+  expect "await sees it" contains "$(as "$SENDER" await "$id" --timeout 1)" "$id inline " || ok=1
   reset_recv; return "$ok"
 }
 
@@ -642,7 +649,7 @@ scenario 3  "sent before read -> delivered" s3
 scenario 4  "inbox --peek leaves no receipt" s4
 scenario 5  "inbox writes receipt; sent -> read; --all" s5
 scenario 6  "sent unknown id -> unknown" s6
-scenario 7  "--kind stop typed inline in full" s7
+scenario 7  "--kind stop typed inline in full; receipt pre-written as inline" s7
 scenario 8  "hyphenated words are not beads" s8
 scenario 9  "--bead with --body file" s9
 scenario 10 "--kind bogus rejected" s10
