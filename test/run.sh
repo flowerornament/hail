@@ -250,7 +250,7 @@ s13() { # no bd on PATH, --kind hold
 
 s14() { # version resolve id list doctor help
   local ok=0
-  expect "version" eq "$(as "$SENDER" version)" "hail 1.0.0" || ok=1
+  expect "version" eq "$(as "$SENDER" version)" "hail 0.1.0" || ok=1
   expect "resolve worker" eq "$(as "$SENDER" resolve worker)" "$RECV" || ok=1
   expect "id" eq "$(as "$SENDER" id)" "$SENDER" || ok=1
   expect "list shows label" contains "$(as "$SENDER" list)" "worker" || ok=1
@@ -330,7 +330,7 @@ s19() { # alias message / msg
 
 s20() { # tmux-bridge symlink + TMUX_BRIDGE_SOCKET fallback
   local ok=0 out
-  expect "symlink version" eq "$("$SCRATCH/bin/tmux-bridge" version)" "hail 1.0.0" || ok=1
+  expect "symlink version" eq "$("$SCRATCH/bin/tmux-bridge" version)" "hail 0.1.0" || ok=1
   out=$(env -u HAIL_SOCKET TMUX_BRIDGE_SOCKET="$HAIL_SOCKET" TMUX_PANE="$SENDER" "$SCRATCH/bin/tmux-bridge" resolve worker)
   expect "TMUX_BRIDGE_SOCKET fallback" eq "$out" "$RECV" || ok=1
   as "$SENDER" keys worker Escape >/dev/null 2>&1 || true   # consume any standing read mark
