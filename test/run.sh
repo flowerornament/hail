@@ -53,9 +53,12 @@ sleep 0.3
 
 # --- helpers -----------------------------------------------------------------
 PASS=0; FAIL=0; FAILED=()
-as() { local pane="$1"; shift; TMUX_PANE="$pane" "$HAIL" "$@"; }
+as() { local pane="$1"; shift; TMUX_PANE="$pane" "$HAIL" "$@" </dev/null; }
 pane_text() { "${T[@]}" capture-pane -t "$1" -p -J; }
-reset_recv() { "${T[@]}" respawn-pane -k -t "$RECV" cat; sleep 0.2; }
+# A respawned pane has a new pane process, so it is a new incarnation: re-register.
+reset_recv() { "${T[@]}" respawn-pane -k -t "$RECV" cat; sleep 0.2; as "$SENDER" name "$RECV" worker; }
+# respawn with a command that prints something first, then behaves like cat
+recv_showing() { "${T[@]}" respawn-pane -k -t "$RECV" bash -c "printf '%s\n' \"\$@\"; exec cat" _ "$@"; sleep 0.3; as "$SENDER" name "$RECV" worker; }
 reset_sender() { "${T[@]}" send-keys -t "$SENDER" C-c; sleep 0.1; }
 # send FROM TARGET args... : satisfy the read guard, then send. stdout/stderr/rc
 # land in $OUT/$ERR/$RC.
@@ -95,6 +98,7 @@ as "$SENDER" name "$SENDER" boss
 as "$SENDER" name "$RECV" worker
 
 LONG_ASK='Ruling on herald-ke7is: convert at the receipt, not the producer; the fan-in gate hashes checkout contents so scratch state must stay outside every repo tree, and the coordinator should not read panes for replies'
+ASK1='Ruling on herald-ke7is: convert at the receipt, not the producer; scratch state stays outside every repo tree; do not read panes for replies'
 
 s1() { # from inside the sender pane via send-keys, --kind ruling --body -
   printf 'line one of the body\nline two of the body\n' > "$SCRATCH/body1"
@@ -104,7 +108,7 @@ s1() { # from inside the sender pane via send-keys, --kind ruling --body -
   cat > "$SCRATCH/s1.sh" <<EOS
 export HAIL_ENVELOPE_MAX='$HAIL_ENVELOPE_MAX' HAIL_SOCKET='$HAIL_SOCKET' XDG_STATE_HOME='$XDG_STATE_HOME' PATH='$PATH'
 '$HAIL' read '$RECV' 5 >/dev/null
-'$HAIL' send worker '$LONG_ASK' --kind ruling --body - <'$SCRATCH/body1' >'$SCRATCH/s1.out' 2>'$SCRATCH/s1.err'
+'$HAIL' send worker '$ASK1' --kind ruling --body - <'$SCRATCH/body1' >'$SCRATCH/s1.out' 2>'$SCRATCH/s1.err'
 echo \$? >'$SCRATCH/s1.rc'
 EOS
   "${T[@]}" send-keys -t "$SENDER" -l -- ". '$SCRATCH/s1.sh'; clear"
@@ -119,11 +123,12 @@ EOS
   expect "stdout is id=<id>" re "$OUT" '^id=[0-9]{4}T[0-9]{6}-[0-9a-f]{4}$' || ok=1
   expect "envelope head" contains "$line" "[hail kind:ruling from:boss/$SENDER reply:$SENDER id:$id bead:herald-ke7is]" || ok=1
   expect "fetch hint" contains "$line" "— hail inbox" || ok=1
-  expect "ask truncated with …" contains "$line" "…" || ok=1
-  expect "envelope exactly 160 chars (got $(chars "$line"))" eq "$(chars "$line")" 160 || ok=1
+  expect "headline typed in full" contains "$line" "] $ASK1 — hail inbox" || ok=1
+  expect "not truncated" not_contains "$line" "…" || ok=1
+  expect "submitted: cat echoed the envelope" eq "$(pane_text "$RECV" | grep -cF "id:$id")" 2 || ok=1
   local f="$INBOX/worker/$id.md"
   expect "inbox file exists" exists "$f" || ok=1
-  expect "file has full ask" grep -qF "ask: $LONG_ASK" "$f" || ok=1
+  expect "file has full ask" grep -qF "ask: $ASK1" "$f" || ok=1
   expect "file has stdin body" grep -qF "line two of the body" "$f" || ok=1
   expect "file header from:" grep -qF "from: boss/$SENDER" "$f" || ok=1
   S1_ID="$id"
@@ -168,9 +173,9 @@ s5() { # inbox writes receipts
 
 s6() { [[ "$(as "$SENDER" sent nope-0000)" == unknown ]]; }
 
-s7() { # --kind stop, 190 chars typed inline
+s7() { # --kind stop, 120 chars typed inline
   local ok=0 text line id
-  text="STOP: red gate on master, do not land anything until the fan-in gate is green again; this sentence is padded to be long enough to exceed the envelope budget by a comfortable margin ok"
+  text="STOP: red gate on master, do not land anything until the fan-in gate is green again; details on the bead, ask boss ok"
   send "$SENDER" worker "$text" --kind stop
   id=$(last_id)
   line=$(envelope_line "id:$id")
@@ -208,7 +213,7 @@ s10() { # --kind bogus
   local ok=0
   send "$SENDER" worker "hello" --kind bogus
   expect "rc=1" eq "$RC" 1 || ok=1
-  expect "lists kinds" contains "$ERR" "ruling go nogo announce ask fyi stop hold" || ok=1
+  expect "lists kinds" contains "$ERR" "ruling go nogo ask fyi done stop hold block release announce" || ok=1
   return "$ok"
 }
 
@@ -250,7 +255,7 @@ s13() { # no bd on PATH, --kind hold
 
 s14() { # version resolve id list doctor help
   local ok=0
-  expect "version" eq "$(as "$SENDER" version)" "hail 0.1.0" || ok=1
+  expect "version" eq "$(as "$SENDER" version)" "hail 0.2.0" || ok=1
   expect "resolve worker" eq "$(as "$SENDER" resolve worker)" "$RECV" || ok=1
   expect "id" eq "$(as "$SENDER" id)" "$SENDER" || ok=1
   expect "list shows label" contains "$(as "$SENDER" list)" "worker" || ok=1
@@ -330,7 +335,7 @@ s19() { # alias message / msg
 
 s20() { # tmux-bridge symlink + TMUX_BRIDGE_SOCKET fallback
   local ok=0 out
-  expect "symlink version" eq "$("$SCRATCH/bin/tmux-bridge" version)" "hail 0.1.0" || ok=1
+  expect "symlink version" eq "$("$SCRATCH/bin/tmux-bridge" version)" "hail 0.2.0" || ok=1
   out=$(env -u HAIL_SOCKET TMUX_BRIDGE_SOCKET="$HAIL_SOCKET" TMUX_PANE="$SENDER" "$SCRATCH/bin/tmux-bridge" resolve worker)
   expect "TMUX_BRIDGE_SOCKET fallback" eq "$out" "$RECV" || ok=1
   as "$SENDER" keys worker Escape >/dev/null 2>&1 || true   # consume any standing read mark
@@ -338,7 +343,251 @@ s20() { # tmux-bridge symlink + TMUX_BRIDGE_SOCKET fallback
   return "$ok"
 }
 
-scenario 1  "send from inside the pane: ruling, --body -, bead detected, 160-char envelope" s1
+# --- 0.2.0 scenarios ----------------------------------------------------------
+now_ms() { perl -MTime::HiRes=time -e 'printf "%d\n", time*1000'; }
+# Drop holds, obligations and send records left by earlier scenarios.
+clear_state() { rm -rf "$XDG_STATE_HOME/hail/holds" "$XDG_STATE_HOME/hail/obligations" "$XDG_STATE_HOME/hail/sent"; }
+
+s21() { # deliver: plain text, receipt says injected, silent afterwards, inbox --all distinguishes
+  local ok=0 a b out
+  send "$SENDER" worker "first for deliver" --kind ask; a=$(last_id)
+  send "$SENDER" worker "second for deliver" --kind fyi; b=$(last_id)
+  out=$(as "$RECV" deliver); RC=$?
+  expect "rc=0" eq "$RC" 0 || ok=1
+  expect "prints first body" contains "$out" "id: $a" || ok=1
+  expect "prints second body" contains "$out" "second for deliver" || ok=1
+  expect "bodies separated" contains "$out" "---" || ok=1
+  expect ".read says injected <UTC>" grep -qE '^injected [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$' "$INBOX/worker/$a.read" || ok=1
+  expect "sent -> injected <time>" re "$(as "$SENDER" sent "$a")" '^injected [0-9]{4}-.*Z$' || ok=1
+  out=$(as "$RECV" deliver); RC=$?
+  expect "second deliver silent" empty "$out" || ok=1
+  expect "second deliver rc=0" eq "$RC" 0 || ok=1
+  out=$(as "$RECV" inbox --all)
+  expect "inbox --all shows injected receipt" contains "$out" "receipt: injected " || ok=1
+  expect "inbox --all shows read receipt (s1)" contains "$out" "receipt: read " || ok=1
+  expect "await reports injected" contains "$(as "$SENDER" await "$b" --timeout 1)" "$b injected " || ok=1
+  reset_recv; return "$ok"
+}
+
+s22() { # deliver --format codex / claude: exact hook JSON, properly escaped
+  local ok=0 id out ctx
+  printf 'quote " backslash \\ tab\there\nsecond line\n' > "$SCRATCH/body22"
+  send "$SENDER" worker "json escaping check" --kind ask --body "$SCRATCH/body22"; id=$(last_id)
+  out=$(as "$RECV" deliver --format codex); RC=$?
+  expect "rc=0" eq "$RC" 0 || ok=1
+  expect "one line" eq "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" 1 || ok=1
+  expect "starts with the hook shape" re "$out" '^\{"hookSpecificOutput":\{"hookEventName":"UserPromptSubmit","additionalContext":"' || ok=1
+  if command -v jq >/dev/null 2>&1; then
+    ctx=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext'); RC=$?
+    expect "valid JSON" eq "$RC" 0 || ok=1
+    expect "context has header" contains "$ctx" "id: $id" || ok=1
+    expect "quote/backslash/tab round-trip" contains "$ctx" "$(printf 'quote " backslash \\ tab\there')" || ok=1
+    expect "newline round-trip" contains "$ctx" "$(printf 'here\nsecond line')" || ok=1
+  fi
+  send "$SENDER" worker "claude format" --kind fyi; id=$(last_id)
+  out=$(as "$RECV" deliver --format claude)
+  expect "claude format is the same JSON" contains "$out" "\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"from: boss/$SENDER" || ok=1
+  expect "silent when empty (codex)" empty "$(as "$RECV" deliver --format codex)" || ok=1
+  expect "silent when empty (claude)" empty "$(as "$RECV" deliver --format claude)" || ok=1
+  expect "bad format rejected" eq "$(as "$RECV" deliver --format vim >/dev/null 2>&1; echo $?)" 1 || ok=1
+  reset_recv; return "$ok"
+}
+
+s23() { # deliver needs no tmux server and is fast; hook JSON on stdin is accepted
+  local ok=0 id out t0 t1 best=99999 i
+  send "$SENDER" worker "no server needed" --kind ask; id=$(last_id)
+  out=$(printf '{"session_id":"x","prompt":"hi"}' | HAIL_SOCKET=/nonexistent/socket TMUX_PANE="$RECV" "$HAIL" deliver --format codex); RC=$?
+  expect "rc=0 without a server" eq "$RC" 0 || ok=1
+  expect "delivered without a server" contains "$out" "id: $id" || ok=1
+  for i in 1 2 3; do
+    t0=$(now_ms); HAIL_SOCKET=/nonexistent/socket TMUX_PANE="$RECV" "$HAIL" deliver --format codex </dev/null >/dev/null; t1=$(now_ms)
+    (( t1 - t0 < best )) && best=$(( t1 - t0 ))
+  done
+  expect "empty deliver under 50 ms (best of 3: ${best} ms)" le "$best" 50 || ok=1
+  reset_recv; return "$ok"
+}
+
+s24() { # brief: silent when empty; inbox section; sends without receipt; disappears once read
+  clear_state
+  local ok=0 id out
+  expect "brief silent when empty" empty "$(as "$RECV" brief)" || ok=1
+  send "$SENDER" worker "brief me" --kind fyi --scope herald/x; id=$(last_id)
+  out=$(as "$RECV" brief)
+  expect "inbox header" contains "$out" "inbox (1 unread)" || ok=1
+  expect "envelope-style line" contains "$out" "[hail fyi from:boss id:$id scope:herald/x] brief me" || ok=1
+  expect "no sends section on recipient" not_contains "$out" "my sends" || ok=1
+  expect "sender brief: fresh send not listed" empty "$(as "$SENDER" brief)" || ok=1
+  sed -i.bak "s/^epoch: .*/epoch: $(( $(date +%s) - 200 ))/" "$XDG_STATE_HOME/hail/sent/boss/$id" && rm -f "$XDG_STATE_HOME/hail/sent/boss/$id.bak"
+  out=$(as "$SENDER" brief)
+  expect "sends without receipt header" contains "$out" "my sends without receipt (1)" || ok=1
+  expect "sends line" contains "$out" "[hail fyi to:worker id:$id] brief me (3m, no receipt)" || ok=1
+  as "$RECV" inbox >/dev/null
+  expect "sender brief empty after read" empty "$(as "$SENDER" brief)" || ok=1
+  expect "recipient brief empty after read" empty "$(as "$RECV" brief)" || ok=1
+  expect "brief needs no server" eq "$(HAIL_SOCKET=/nonexistent/socket as "$RECV" brief >/dev/null 2>&1; echo $?)" 0 || ok=1
+  reset_recv; return "$ok"
+}
+
+s25() { # hold -> release by issuer / refused by another; block; envelope carries re: and scope:
+  clear_state
+  local ok=0 h b line out
+  send "$SENDER" worker "HOLD landing until gate is green" --kind hold --scope murail-ke7is; h=$(last_id)
+  expect "hold rc=0" eq "$RC" 0 || ok=1
+  expect "hold file" exists "$XDG_STATE_HOME/hail/holds/$h" || ok=1
+  expect "hold issuer" grep -qx "issuer: boss" "$XDG_STATE_HOME/hail/holds/$h" || ok=1
+  line=$(envelope_line "id:$h")
+  expect "scope in envelope" contains "$line" "id:$h scope:murail-ke7is]" || ok=1
+  expect "hold typed in full, no hint" not_contains "$line" "hail inbox" || ok=1
+  send "$SENDER" worker "BLOCK: anchor dirty" --kind block; b=$(last_id)
+  expect "block file" exists "$XDG_STATE_HOME/hail/holds/$b" || ok=1
+  out=$(as "$RECV" brief)
+  expect "brief lists holds (2)" contains "$out" "holds / blocks in effect (2)" || ok=1
+  expect "brief hold line" contains "$out" "[hail hold from:boss to:worker id:$h scope:murail-ke7is] HOLD landing" || ok=1
+  expect "brief block line" contains "$out" "[hail block from:boss to:worker id:$b]" || ok=1
+  # another issuer (worker) cannot release boss's hold
+  send "$RECV" boss "lifting your hold" --kind release --re "$h"
+  expect "release by other refused rc=1" eq "$RC" 1 || ok=1
+  expect "refusal names the issuer" contains "$ERR" "issued by boss, not by worker" || ok=1
+  expect "hold still there" exists "$XDG_STATE_HOME/hail/holds/$h" || ok=1
+  reset_sender
+  send "$SENDER" worker "lifted" --kind release
+  expect "release without --re refused" eq "$RC" 1 || ok=1
+  send "$SENDER" worker "lifted" --kind release --re "$h"
+  expect "release by issuer rc=0" eq "$RC" 0 || ok=1
+  expect "re: in envelope" contains "$(envelope_line "id:$(last_id)")" " re:$h]" || ok=1
+  expect "hold removed" missing "$XDG_STATE_HOME/hail/holds/$h" || ok=1
+  expect "block survives" exists "$XDG_STATE_HOME/hail/holds/$b" || ok=1
+  send "$SENDER" worker "unblocked" --kind release --re "$b"
+  expect "block released" missing "$XDG_STATE_HOME/hail/holds/$b" || ok=1
+  expect "no holds section" not_contains "$(as "$RECV" brief)" "holds" || ok=1
+  reset_recv; return "$ok"
+}
+
+s26() { # go -> done closes exactly it; wrong re fails; obligation survives a read ("compaction")
+  clear_state
+  local ok=0 g r out
+  send "$SENDER" worker "GO commit on base abc123" --kind go --scope commit; g=$(last_id)
+  send "$SENDER" worker "convert at the receipt" --kind ruling; r=$(last_id)
+  expect "obligation files" exists "$XDG_STATE_HOME/hail/obligations/worker/$g" || ok=1
+  as "$RECV" inbox >/dev/null          # the envelope is read; the body leaves context at compaction
+  out=$(as "$RECV" brief)
+  expect "obligations listed after read" contains "$out" "open obligations on me (2)" || ok=1
+  expect "go line with scope" contains "$out" "[hail go from:boss id:$g scope:commit] GO commit on base abc123 — hail done --re $g" || ok=1
+  expect "no inbox section" not_contains "$out" "inbox (" || ok=1
+  send "$RECV" boss "committed" --kind done --re nope-0000
+  expect "done with wrong re fails" eq "$RC" 1 || ok=1
+  expect "wrong re message" contains "$ERR" "no open obligation nope-0000 on worker" || ok=1
+  send "$RECV" boss "committed" --kind done
+  expect "done without --re fails" eq "$RC" 1 || ok=1
+  send "$SENDER" worker "closing your go" --kind done --re "$g"
+  expect "done by the wrong party fails" eq "$RC" 1 || ok=1
+  send "$RECV" boss "committed" --kind done --re "$g" --scope commit
+  expect "done rc=0" eq "$RC" 0 || ok=1
+  expect "done envelope has re and scope" contains "$(pane_text "$SENDER")" "id:$(last_id) re:$g scope:commit] committed — hail inbox" || ok=1
+  expect "go obligation closed" missing "$XDG_STATE_HOME/hail/obligations/worker/$g" || ok=1
+  expect "ruling obligation open" exists "$XDG_STATE_HOME/hail/obligations/worker/$r" || ok=1
+  expect "brief lists the remaining one" contains "$(as "$RECV" brief)" "open obligations on me (1)" || ok=1
+  reset_sender; reset_recv; return "$ok"
+}
+
+s27() { # headline over the cap refused for a control kind; missing kind refused
+  local ok=0 text
+  text="STOP: red gate on master, do not land anything until the fan-in gate is green again; this sentence is padded to be long enough to exceed the envelope budget by a comfortable margin ok"
+  send "$SENDER" worker "$text" --kind stop
+  expect "rc=2" eq "$RC" 2 || ok=1
+  expect "message names the cap" contains "$ERR" "headline is $(chars "$text") characters; the cap is 160" || ok=1
+  expect "nothing typed" not_contains "$(pane_text "$RECV")" "STOP: red gate" || ok=1
+  expect "no file" eq "$(ls "$INBOX/worker" | grep -c "$(date -u +%m%d)" )" "$(ls "$INBOX/worker" | grep -c "$(date -u +%m%d)")" || ok=1
+  send "$SENDER" worker "$LONG_ASK" --kind ruling
+  expect "ruling over cap rc=2" eq "$RC" 2 || ok=1
+  send "$SENDER" worker "no kind given"
+  expect "missing kind rc=1" eq "$RC" 1 || ok=1
+  expect "missing kind names the kinds" contains "$ERR" "--kind is required (ruling go nogo ask fyi done stop hold block release announce)" || ok=1
+  return "$ok"
+}
+
+s28() { # identity: label moved -> send refused (exit 3); who shows it; hello = new incarnation
+  local ok=0 out
+  "${T[@]}" set-option -p -t "$RECV" -u @name
+  "${T[@]}" set-option -p -t "$SENDER" @name worker
+  send "$SENDER" worker "to whoever wears the label" --kind fyi
+  expect "rc=3" eq "$RC" 3 || ok=1
+  expect "message" contains "$ERR" "label worker moved: registered on $RECV, now on $SENDER — run hail name to re-register" || ok=1
+  out=$(as "$SENDER" who worker)
+  expect "who label" contains "$out" "label: worker" || ok=1
+  expect "who registered" contains "$out" "registered: $RECV" || ok=1
+  expect "who wearing" contains "$out" "wearing: $SENDER" || ok=1
+  expect "who incarnation" contains "$out" "incarnation: $RECV@" || ok=1
+  expect "who last event" re "$out" 'last inbox event: [0-9]{4}-.*Z' || ok=1
+  expect "who pane tail" contains "$out" "pane tail:" || ok=1
+  as "$SENDER" name "$SENDER" boss
+  as "$SENDER" name "$RECV" worker
+  send "$SENDER" worker "back on the registered pane" --kind fyi
+  expect "re-registered send rc=0" eq "$RC" 0 || ok=1
+  local inc; inc=$(as "$RECV" hello)
+  expect "hello prints an incarnation" re "$inc" '^[0-9]{4}T[0-9]{6}-[0-9a-f]{4}$' || ok=1
+  expect "who shows new incarnation" contains "$(as "$SENDER" who worker)" "incarnation: $inc" || ok=1
+  send "$SENDER" worker "after hello" --kind fyi
+  expect "new incarnation refused rc=3" eq "$RC" 3 || ok=1
+  expect "message names incarnations" contains "$ERR" "now on $RECV ($inc) — run hail name to re-register" || ok=1
+  expect "brief on the new incarnation still lists the obligation" contains "$(as "$RECV" brief)" "open obligations on me (1)" || ok=1
+  as "$SENDER" name "$RECV" worker
+  send "$SENDER" worker "after re-register" --kind fyi
+  expect "send after re-register rc=0" eq "$RC" 0 || ok=1
+  reset_recv; return "$ok"
+}
+
+s29() { # bare-target send form
+  local ok=0 id
+  as "$SENDER" read worker 5 >/dev/null
+  OUT=$(as "$SENDER" worker "bare form works" --kind fyi 2>"$SCRATCH/err"); RC=$?; ERR=$(cat "$SCRATCH/err")
+  id=$(last_id)
+  expect "rc=0 ($ERR)" eq "$RC" 0 || ok=1
+  expect "delivered" exists "$INBOX/worker/$id.md" || ok=1
+  expect "envelope" contains "$(envelope_line "id:$id")" "[hail kind:fyi from:boss/$SENDER" || ok=1
+  expect "help documents the bare form" contains "$("$HAIL" --help)" "Usage: hail <target> <headline> --kind <kind>" || ok=1
+  expect "single unknown word is an error" contains "$(as "$SENDER" bogus 2>&1)" "unknown command: bogus" || ok=1
+  reset_recv; return "$ok"
+}
+
+s30() { # send submits; --no-submit does not and keeps the read mark
+  local ok=0 id
+  send "$SENDER" worker "submitted for you" --kind fyi; id=$(last_id)
+  sleep 0.2
+  expect "Enter pressed: cat echoed the line (2 copies)" eq "$(pane_text "$RECV" | grep -cF "id:$id")" 2 || ok=1
+  expect "read mark consumed" contains "$(as "$SENDER" keys worker Enter 2>&1)" "Run: hail read" || ok=1
+  send "$SENDER" worker "not submitted" --kind fyi --no-submit; id=$(last_id)
+  sleep 0.2
+  expect "no Enter: one copy" eq "$(pane_text "$RECV" | grep -cF "id:$id")" 1 || ok=1
+  as "$SENDER" keys worker Enter; RC=$?
+  expect "read mark kept for the Enter" eq "$RC" 0 || ok=1
+  sleep 0.2
+  expect "now two copies" eq "$(pane_text "$RECV" | grep -cF "id:$id")" 2 || ok=1
+  reset_recv; return "$ok"
+}
+
+s31() { # guards: permission dialog (exit 4), unsent draft (exit 5), --force
+  local ok=0
+  recv_showing "Bash(rm -rf build)" "Do you want to proceed?" "  1. Yes" "  2. Yes, and don't ask again" "  3. No" "Esc to cancel"
+  send "$SENDER" worker "would approve rm" --kind fyi
+  expect "dialog rc=4" eq "$RC" 4 || ok=1
+  expect "dialog message" contains "$ERR" "shows a permission/approval dialog" || ok=1
+  expect "nothing typed" not_contains "$(pane_text "$RECV")" "would approve rm" || ok=1
+  send "$SENDER" worker "forced past dialog" --kind fyi --force
+  expect "--force rc=0" eq "$RC" 0 || ok=1
+  recv_showing "some earlier output" "> half a thought the user has not sent"
+  send "$SENDER" worker "would append to a draft" --kind fyi
+  expect "draft rc=5" eq "$RC" 5 || ok=1
+  expect "draft message" contains "$ERR" "unsent draft in its composer: 'half a thought" || ok=1
+  send "$SENDER" worker "forced past draft" --kind fyi --force
+  expect "--force past draft rc=0" eq "$RC" 0 || ok=1
+  recv_showing "› [hail kind:fyi from:x id:y] an envelope waiting to be submitted"
+  send "$SENDER" worker "envelope drafts are fine" --kind fyi
+  expect "hail draft allowed rc=0" eq "$RC" 0 || ok=1
+  reset_recv; return "$ok"
+}
+
+scenario 1  "send from inside the pane: ruling, --body -, bead detected, submitted" s1
 scenario 2  "bd present but failing: one warning, file-only, delivered" s2
 scenario 3  "sent before read -> delivered" s3
 scenario 4  "inbox --peek leaves no receipt" s4
@@ -358,6 +607,17 @@ scenario 17 "await timeout (no tmux server needed)" s17
 scenario 18 "await --any" s18
 scenario 19 "aliases message / msg" s19
 scenario 20 "tmux-bridge symlink and TMUX_BRIDGE_SOCKET fallback" s20
+scenario 21 "deliver: plain text, injected receipt, silent when empty, inbox --all" s21
+scenario 22 "deliver --format codex / claude: hook JSON, escaping" s22
+scenario 23 "deliver without a tmux server, under 50 ms, stdin accepted" s23
+scenario 24 "brief: silent when empty, inbox, sends without receipt" s24
+scenario 25 "hold/block -> release by issuer, refused for another; re:/scope:" s25
+scenario 26 "go/ruling -> done closes exactly one; wrong re fails; survives a read" s26
+scenario 27 "headline over cap refused (control kind too); missing kind refused" s27
+scenario 28 "identity: moved label refused (exit 3), who, hello" s28
+scenario 29 "bare-target send form" s29
+scenario 30 "send submits; --no-submit keeps the read mark" s30
+scenario 31 "guards: permission dialog, unsent draft, --force" s31
 
 echo "---"
 echo "passed $PASS, failed $FAIL"

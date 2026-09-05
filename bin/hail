@@ -1,20 +1,39 @@
 #!/usr/bin/env bash
 # hail — agent-to-agent messaging over tmux.
 # One-way sends, bodies on disk, a one-line envelope in the recipient's prompt,
-# receipts written by the recipient's own `inbox`, and `await` on top of receipts.
-# See DESIGN.md. Any tool that can run bash can use this.
+# receipts written by delivery (`deliver`, from a hook) or by the recipient's own
+# `inbox`, and `await` on top of receipts. See DESIGN.md.
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.2.0"
+
+KINDS="ruling go nogo ask fyi done stop hold block release announce"
 
 # --- Helpers ---
 
 die() { echo "error: $*" >&2; exit 1; }
+# die with a specific exit code: die_rc <code> <message>
+die_rc() { local rc="$1"; shift; echo "error: $*" >&2; exit "$rc"; }
+
+utc_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 # All state lives under one root, outside every repo tree (DESIGN.md §8).
 state_root() {
   echo "${XDG_STATE_HOME:-$HOME/.local/state}/hail"
 }
+
+inbox_root()       { echo "$(state_root)/inbox"; }
+holds_root()       { echo "$(state_root)/holds"; }
+obligations_root() { echo "$(state_root)/obligations"; }
+identity_root()    { echo "$(state_root)/identity"; }
+incarnation_root() { echo "$(state_root)/incarnation"; }
+sent_root()        { echo "$(state_root)/sent"; }
+
+# First value of a "field: value" header line in a message/state file.
+hdr() { sed -n "s/^$2: //p" "$1" 2>/dev/null | head -1; }
+
+# Sanitize a label for use as a directory name.
+key_of_label() { echo "${1//\//_}"; }
 
 # --- Read Guard ---
 # Enforces read-before-act: agents must read a pane before typing/keys.
@@ -129,63 +148,89 @@ usage() {
   cat <<'EOF'
 hail — agent-to-agent messaging over tmux
 
-Usage: hail <command> [args...]
+Usage: hail <target> <headline> --kind <kind> [options]
+       hail <command> [args...]
 
-Messaging:
-  send <target> <ask> [--kind k] [--bead id] [--body <file>|-]
-                            Deliver a message: the body is written to the target's
-                            inbox file and only a short envelope is typed into the
-                            pane. Prints id=<id> (and bead=<id> comment=<n>).
-                            'message' and 'msg' are aliases of 'send'.
-  inbox [--peek] [--all]    Print unread inbox messages for this pane and write the
-                            receipt (--peek: do not mark; --all: include already-read)
-  sent <id>                 Delivery status: 'read <time>' | 'delivered' | 'unknown'
+Send:
+  <target> <headline> --kind k [--bead id] [--re id] [--scope s]
+                      [--body <file>|-] [--no-submit] [--force]
+                            Write the body to the target's inbox, type a one-line
+                            envelope into the pane, press Enter. Prints id=<id>
+                            (and bead=<id> comment=<n>). Requires a prior
+                            'hail read <target>'. 'send', 'message' and 'msg'
+                            are accepted before <target>.
+    --kind k                Required. One of: ruling go nogo ask fyi done stop
+                            hold block release announce
+    --re id                 The message this answers, closes or lifts
+    --scope s               What the message applies to (bead, ref, path, action)
+    --no-submit             Type the envelope but do not press Enter
+    --force                 Skip the dialog and draft guards
+  sent <id>                 delivered | read <time> | injected <time> | unknown
   await <id>... [--timeout SECONDS] [--any]
                             Block until every id (or any, with --any) has a receipt.
-                            Default timeout 600. Prints one line per id and exits 0
-                            when satisfied, 1 on timeout. Needs no tmux server.
+                            Default timeout 600. One line per id; exit 0 when
+                            satisfied, 1 on timeout. Needs no tmux server.
 
-Addressing:
-  list                      Show all panes (target, pid, command, size, label)
-  name <target> <label>     Label a pane (visible in tmux border)
-  resolve <label>           Print pane target for a label
-  id                        Print this pane's ID ($TMUX_PANE)
+Receive:
+  deliver [--format claude|codex]
+                            Print this pane's unread bodies and mark them
+                            'injected'. For UserPromptSubmit hooks: JSON with
+                            --format, plain text without, nothing when empty.
+  brief                     Unread envelopes, my sends without receipt (>2 min),
+                            holds/blocks in effect, open obligations on me.
+                            Nothing when every section is empty. For SessionStart
+                            hooks and humans.
+  inbox [--peek] [--all]    Print unread bodies and write receipts (--peek: do not
+                            mark; --all: include read ones with their receipt)
 
-Non-agent panes only (a plain shell, a running process):
-  read <target> [lines]     Read last N lines from pane (default: 50)
-  type <target> <text>      Type text without pressing Enter (verified)
-  keys <target> <key>...    Send special keys (Enter, Escape, C-c, etc.)
+Identity:
+  name <target> <label>     Label a pane and register label = pane + incarnation
+  hello                     Start a new incarnation for this pane (SessionStart hook)
+  who [label]               Pane, label, incarnation, last inbox event, last 2 lines
+  list                      All panes (target, session, size, process, label, cwd)
+  resolve <label>           Pane id for a label
+  id                        This pane's id ($TMUX_PANE)
 
-  doctor                    Diagnose tmux connectivity issues
+Panes:
+  read <target> [lines]     Last N lines of a pane (default 50); sets the read mark
+  type <target> <text>      Type text without Enter (verified)
+  keys <target> <key>...    Send keys (Enter, Escape, C-c, ...)
+
+  doctor                    Diagnose tmux connectivity
   version                   Print version
 
-Target resolution:
-  Targets can be tmux native (session:window.pane, %N) or a label set via 'name'.
-  Labels are resolved automatically — e.g. 'hail send codex "hello"' works.
+Kinds:
+  ruling go ask             Create an obligation on the recipient; 'done --re <id>'
+                            from the recipient closes it.
+  done                      Close one obligation; --re required, --scope optional.
+  hold block                Record a hold; 'release --re <id>' by the issuer lifts it.
+  release                   Lift a hold; --re required; refused for another issuer.
+  nogo fyi announce stop    No state.
+  stop hold block release announce are typed in full. The others type the
+  envelope with a fetch hint; the body reaches the recipient through the
+  UserPromptSubmit hook ('hail deliver') or 'hail inbox'.
+  The headline is at most HAIL_ENVELOPE_MAX characters (default 400) for every
+  kind; a longer one is refused (exit 2).
+  Envelope: [hail kind:<k> from:<label>/<pane> reply:<pane> id:<id> [bead:<id>]
+            [re:<id>] [scope:<s>]] <headline> [— hail inbox]
 
-Message kinds (--kind, default: ask):
-  ruling go nogo announce ask fyi stop hold
-  stop, hold, nogo and announce are typed in full into the pane (no fetch needed).
-  Every other kind types an envelope (<= $HAIL_ENVELOPE_MAX chars, default 400) and puts the full text in the
-  inbox; the recipient runs 'hail inbox' to fetch it.
-  Envelope: [hail kind:<k> from:<label>/<pane> reply:<pane> id:<id> [bead:<id>]] <ask> — hail inbox
+Exit codes:
+  1 usage or state error   2 headline over cap   3 label moved (re-register)
+  4 target shows a permission dialog   5 target has an unsent draft
 
 Beads:
-  If --bead <id> is given, or the text names a beads issue id (e.g. murail-ke7is),
-  the body is also posted with 'bd comment <id>' and the envelope cites bead:<id>.
-  bd is opportunistic: if it is missing or fails, the message still goes file-only
-  (one warning on stderr).
+  With --bead <id>, or a beads issue id in the headline, the body is also posted
+  with 'bd comment <id>' and the envelope cites bead:<id>. When bd is missing or
+  fails the message is file-only, with one warning.
 
-State:
-  Everything lives under $XDG_STATE_HOME/hail (default ~/.local/state/hail):
-  inbox/<label>/<id>.md and <id>.read, keyed on the recipient pane's label (see
-  'name'), falling back to its pane id. Keep XDG_STATE_HOME outside any git
-  checkout: it is scratch state and must not be hashed by a repo gate.
+State ($XDG_STATE_HOME/hail, default ~/.local/state/hail; keep outside repos):
+  inbox/<label>/<id>.md, <id>.read     obligations/<label>/<id>
+  holds/<id>   identity/<label>   incarnation/<pane>   sent/<label>/<id>
 
 Environment:
-  HAIL_SOCKET          Override the tmux server socket path (skips auto-detection);
-                       TMUX_BRIDGE_SOCKET is accepted as a fallback
-  XDG_STATE_HOME       State root (default: ~/.local/state)
+  HAIL_SOCKET          tmux server socket (TMUX_BRIDGE_SOCKET accepted)
+  HAIL_ENVELOPE_MAX    headline cap in characters (default 400)
+  XDG_STATE_HOME       state root (default ~/.local/state)
 EOF
   exit 0
 }
@@ -218,11 +263,16 @@ resolve_target() {
   resolve_label "$target"
 }
 
+# Pane currently wearing a label, or nothing.
+label_wearer() {
+  tmx list-panes -a -F '#{pane_id} #{@name}' 2>/dev/null \
+    | awk -v lbl="$1" '$2 == lbl { print $1; exit }'
+}
+
 resolve_label() {
   local label="$1"
   local result
-  result=$(tmx list-panes -a -F '#{pane_id} #{@name}' 2>/dev/null \
-    | awk -v lbl="$label" '$2 == lbl { print $1; exit }')
+  result=$(label_wearer "$label")
   if [[ -z "$result" ]]; then
     die "no pane found with label '$label'"
   fi
@@ -240,6 +290,57 @@ require_args() {
   if (( have < need )); then
     die "'$cmd' requires at least $need argument(s). Run 'hail' for usage."
   fi
+}
+
+# --- Identity ---
+# identity/<label>: the pane that registered the label and its incarnation.
+# incarnation/<pane>: id written by `hail hello`; without one the incarnation is
+# the pane id plus the start time of the pane's process.
+
+incarnation_for() {
+  local pane="$1" f pid start
+  f="$(incarnation_root)/${pane//%/_}"
+  if [[ -f "$f" ]]; then cat -- "$f"; return; fi
+  pid=$(tmx display-message -t "$pane" -p '#{pane_pid}' 2>/dev/null || true)
+  start=""
+  if [[ -n "$pid" ]]; then
+    start=$(ps -o lstart= -p "$pid" 2>/dev/null | tr -s ' ' '_' | sed 's/^_//; s/_$//')
+  fi
+  echo "${pane}@${start:-unknown}"
+}
+
+# Label registered for a pane, from identity files only (no tmux needed).
+identity_label_for_pane() {
+  local pane="$1" f
+  [[ -d "$(identity_root)" ]] || return 0
+  # Newest registration first.
+  while IFS= read -r f; do
+    f="$(identity_root)/$f"
+    [[ -f "$f" ]] || continue
+    if [[ "$(hdr "$f" pane)" == "$pane" ]]; then echo "${f##*/}"; return; fi
+  done < <(ls -t "$(identity_root)" 2>/dev/null)
+}
+
+# Inbox key for this process's pane: registered label, else the tmux label
+# (quietly, if a server is reachable), else the pane id.
+self_key() {
+  local pane="${TMUX_PANE:-}" label
+  [[ -n "$pane" ]] || die "not running inside a tmux pane (\$TMUX_PANE is unset)"
+  label=$(identity_label_for_pane "$pane")
+  if [[ -z "$label" ]]; then
+    label=$( (init_socket && tmx display-message -t "$pane" -p '#{@name}') 2>/dev/null || true)
+  fi
+  if [[ -n "$label" ]]; then key_of_label "$label"; else echo "$pane"; fi
+}
+
+# Inbox directories for this pane, in SELF_DIRS: the label's and the pane id's.
+SELF_DIRS=()
+self_dirs() {
+  local key pane="${TMUX_PANE:-}"
+  key=$(self_key)
+  SELF_DIRS=("$(inbox_root)/$key")
+  [[ "$key" != "$pane" ]] && SELF_DIRS+=("$(inbox_root)/$pane")
+  return 0
 }
 
 # --- Commands ---
@@ -310,6 +411,30 @@ send_text_verified() {
   fi
 }
 
+# Refuse to type into a pane that shows a permission dialog (Claude Code
+# discards text typed over one and its Enter approves the command) or an
+# unsent composer draft that is not a hail envelope.
+DIALOG_RE="Yes, and don't ask again|Do you want to proceed|\\(y/n\\)|Allow once|Approve|Esc to cancel"
+
+pane_guard() {
+  local target="$1" tail8 last draft
+  tail8=$(tmx capture-pane -t "$target" -p -J | grep -v '^[[:space:]]*$' | tail -8 || true)
+  if printf '%s\n' "$tail8" | grep -qE "$DIALOG_RE"; then
+    die_rc 4 "$target shows a permission/approval dialog; text typed there is discarded and Enter approves it. Resolve the dialog first (or --force)."
+  fi
+  last=$(printf '%s\n' "$tail8" | tail -1 | sed -E 's/^[[:space:]│┃|]+//; s/[[:space:]│┃|]+$//')
+  draft=""
+  case "$last" in
+    '>'*)  draft="${last#>}" ;;
+    '›'*)  draft="${last#›}" ;;
+    '❯'*)  draft="${last#❯}" ;;
+  esac
+  draft="${draft#"${draft%%[![:space:]]*}"}"
+  if [[ -n "$draft" && "$draft" != \[hail* && "$draft" != \[tb* && "$draft" != \[tmux-bridge* ]]; then
+    die_rc 5 "$target has an unsent draft in its composer: '${draft:0:60}'. Not appending to it (or --force)."
+  fi
+}
+
 cmd_type() {
   require_args 2 $# "type"
   require_tmux
@@ -328,16 +453,12 @@ cmd_type() {
 # message verbatim but drops tool output, so a fetched body costs nothing after
 # the next compaction while a typed body rides on every call forever.
 
-inbox_root() {
-  echo "$(state_root)/inbox"
-}
-
 # Inbox key for a pane: its @name label when set, else the pane id.
 # Labels survive pane-id shifts after a restart; ids do not.
 inbox_key_for() {
   local pane="$1" label
   label=$(tmx display-message -t "$pane" -p '#{@name}' 2>/dev/null || true)
-  if [[ -n "$label" ]]; then echo "${label//\//_}"; else echo "$pane"; fi
+  if [[ -n "$label" ]]; then key_of_label "$label"; else echo "$pane"; fi
 }
 
 new_msg_id() {
@@ -345,12 +466,12 @@ new_msg_id() {
 }
 
 is_kind() {
-  case "$1" in ruling|go|nogo|announce|ask|fyi|stop|hold) return 0 ;; *) return 1 ;; esac
+  case "$1" in ruling|go|nogo|ask|fyi|done|stop|hold|block|release|announce) return 0 ;; *) return 1 ;; esac
 }
 
-# Stop-class kinds are complete in the envelope and never sit behind a fetch.
+# Control kinds are complete in the envelope and never sit behind a fetch.
 is_inline_kind() {
-  case "$1" in stop|hold|nogo|announce) return 0 ;; *) return 1 ;; esac
+  case "$1" in stop|hold|block|release|announce) return 0 ;; *) return 1 ;; esac
 }
 
 # First token that looks like a beads issue id (prefix-hash[.n]). The hash
@@ -377,9 +498,31 @@ post_bead_comment() {
   echo "$num"
 }
 
+# Resolve a send target. A label registered with `hail name` must still be on
+# the registered pane with the registered incarnation; otherwise exit 3.
+resolve_send_target() {
+  local target_arg="$1" idf reg_pane reg_inc now_pane now_inc
+  if [[ "$target_arg" =~ ^%[0-9]+$ || "$target_arg" == *:* || "$target_arg" == *.* || "$target_arg" =~ ^[0-9]+$ ]]; then
+    echo "$target_arg"; return
+  fi
+  idf="$(identity_root)/$(key_of_label "$target_arg")"
+  if [[ ! -f "$idf" ]]; then resolve_label "$target_arg"; return; fi
+  reg_pane=$(hdr "$idf" pane); reg_inc=$(hdr "$idf" incarnation)
+  now_pane=$(label_wearer "$target_arg")
+  if [[ -n "$now_pane" && "$now_pane" != "$reg_pane" ]]; then
+    die_rc 3 "label $target_arg moved: registered on $reg_pane, now on $now_pane — run hail name to re-register"
+  fi
+  now_inc=$(incarnation_for "$reg_pane")
+  if [[ "$now_inc" != "$reg_inc" ]]; then
+    die_rc 3 "label $target_arg moved: registered on $reg_pane ($reg_inc), now on $reg_pane ($now_inc) — run hail name to re-register"
+  fi
+  echo "$reg_pane"
+}
+
 cmd_send() {
   require_tmux
-  local kind="ask" bead="" body_src="" target_arg="" text="" positional=()
+  local kind="" bead="" body_src="" re="" scope="" submit=true force=false
+  local target_arg="" text="" positional=()
   while (( $# )); do
     case "$1" in
       --kind) [[ $# -ge 2 ]] || die "--kind needs a value"; kind="$2"; shift 2 ;;
@@ -388,16 +531,34 @@ cmd_send() {
       --bead=*) bead="${1#*=}"; shift ;;
       --body) [[ $# -ge 2 ]] || die "--body needs a file or -"; body_src="$2"; shift 2 ;;
       --body=*) body_src="${1#*=}"; shift ;;
+      --re) [[ $# -ge 2 ]] || die "--re needs a message id"; re="$2"; shift 2 ;;
+      --re=*) re="${1#*=}"; shift ;;
+      --scope) [[ $# -ge 2 ]] || die "--scope needs a value"; scope="$2"; shift 2 ;;
+      --scope=*) scope="${1#*=}"; shift ;;
+      --no-submit) submit=false; shift ;;
+      --force) force=true; shift ;;
       --) shift; positional+=("$@"); break ;;
+      -*) die "unknown option for send: $1" ;;
       *) positional+=("$1"); shift ;;
     esac
   done
   require_args 2 ${#positional[@]} "send"
   target_arg="${positional[0]}"; text="${positional[1]}"
-  is_kind "$kind" || die "unknown kind '$kind' (ruling go nogo announce ask fyi stop hold)"
+  [[ -n "$kind" ]] || die "--kind is required ($KINDS)"
+  is_kind "$kind" || die "unknown kind '$kind' ($KINDS)"
+  [[ "$re" == */* ]] && die "--re must be a message id"
+  [[ -n "$scope" && "$scope" == *$'\n'* ]] && die "--scope must be one line"
+
+  local max=${HAIL_ENVELOPE_MAX:-400}
+  if (( ${#text} > max )); then
+    die_rc 2 "headline is ${#text} characters; the cap is $max (HAIL_ENVELOPE_MAX). Shorten it and put the rest in --body or on a bead."
+  fi
+  case "$kind" in
+    done|release) [[ -n "$re" ]] || die "--kind $kind requires --re <id>" ;;
+  esac
 
   local target
-  target=$(resolve_target "$target_arg")
+  target=$(resolve_send_target "$target_arg")
   validate_target "$target"
   require_read "$target"
 
@@ -406,9 +567,32 @@ cmd_send() {
   if [[ -z "$sender_pane" ]]; then
     die "not running inside a tmux pane (\$TMUX_PANE is unset)"
   fi
-  local sender_label from
+  local sender_label from from_key
   sender_label=$(tmx display-message -t "$sender_pane" -p '#{@name}' 2>/dev/null || true)
-  if [[ -n "$sender_label" ]]; then from="${sender_label}/${sender_pane}"; else from="$sender_pane"; fi
+  if [[ -n "$sender_label" ]]; then
+    from="${sender_label}/${sender_pane}"; from_key=$(key_of_label "$sender_label")
+  else
+    from="$sender_pane"; from_key="$sender_pane"
+  fi
+  local key
+  key=$(inbox_key_for "$target")
+
+  # State preconditions, checked before anything is typed.
+  local holdf="" oblf=""
+  case "$kind" in
+    release)
+      holdf="$(holds_root)/$re"
+      [[ -f "$holdf" ]] || die "no hold or block in effect with id $re"
+      local issuer; issuer=$(hdr "$holdf" issuer)
+      [[ "$issuer" == "$from_key" ]] || die "hold $re was issued by $issuer, not by $from_key; only its issuer can release it"
+      ;;
+    done)
+      oblf="$(obligations_root)/$from_key/$re"
+      [[ -f "$oblf" ]] || die "no open obligation $re on $from_key (see: hail brief)"
+      ;;
+  esac
+
+  $force || pane_guard "$target"
 
   # Body: --body file, stdin when '-', else the text itself.
   local body
@@ -424,9 +608,9 @@ cmd_send() {
   # Bead-first: explicit --bead, else the first issue id named in the text.
   if [[ -z "$bead" ]]; then bead=$(detect_bead "$text" || true); fi
 
-  local id key dir file
+  local id dir file now
   id=$(new_msg_id)
-  key=$(inbox_key_for "$target")
+  now=$(utc_now)
   dir="$(inbox_root)/$key"
   mkdir -p "$dir"
   file="$dir/$id.md"
@@ -451,45 +635,76 @@ cmd_send() {
     echo "reply: $sender_pane"
     echo "kind: $kind"
     echo "id: $id"
-    echo "time: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "time: $now"
     [[ -n "$bead_line" ]] && echo "$bead_line"
     [[ -n "$comment" ]] && echo "see: bd show $bead"
+    [[ -n "$re" ]] && echo "re: $re"
+    [[ -n "$scope" ]] && echo "scope: $scope"
     echo "ask: $text"
     echo
     printf '%s\n' "$body"
   } > "$file"
 
-  # Envelope
-  local head="[hail kind:${kind} from:${from} reply:${sender_pane} id:${id}${bead:+ bead:$bead}]"
+  # Envelope. Never truncated: the headline was checked against the cap above.
+  local head="[hail kind:${kind} from:${from} reply:${sender_pane} id:${id}${bead:+ bead:$bead}${re:+ re:$re}${scope:+ scope:$scope}]"
   local envelope
   if is_inline_kind "$kind"; then
     envelope="${head} ${text}"
   else
-    local tail=" — hail inbox" ask="$text"
-    local max=${HAIL_ENVELOPE_MAX:-400}
-    local budget=$(( max - ${#head} - 1 - ${#tail} ))
-    (( budget > max - 40 )) && budget=$(( max - 40 ))
-    if (( ${#ask} > budget )); then
-      (( budget < 8 )) && budget=8
-      ask="${ask:0:budget-1}…"
-    fi
-    envelope="${head} ${ask}${tail}"
+    envelope="${head} ${text} — hail inbox"
   fi
 
+  local rc=0
   if ! send_text_verified "$target" "$envelope"; then
-    echo "id=$id"
-    [[ -n "$bead" && -n "$comment" ]] && echo "bead=$bead comment=$comment"
     echo "hail: envelope not confirmed in $target; body is at $file" >&2
-    return 1
+    rc=1
+  elif $submit; then
+    sleep 0.3
+    tmx send-keys -t "$target" Enter
+    clear_read "$target"
   fi
-  # keep the read mark: the preceding read is still valid for the Enter that follows
+  # else: keep the read mark for the Enter the caller sends.
+
+  # State transitions, recorded once the envelope is delivered (or written).
+  case "$kind" in
+    hold|block)
+      mkdir -p "$(holds_root)"
+      {
+        echo "id: $id"; echo "kind: $kind"; echo "issuer: $from_key"; echo "to: $key"
+        echo "scope: $scope"; echo "time: $now"; [[ -n "$re" ]] && echo "re: $re"
+        echo "headline: $text"
+      } > "$(holds_root)/$id"
+      ;;
+    release) rm -f "$holdf" ;;
+    go|ruling|ask)
+      mkdir -p "$(obligations_root)/$key"
+      {
+        echo "id: $id"; echo "kind: $kind"; echo "issuer: $from_key"; echo "to: $key"
+        echo "scope: $scope"; echo "time: $now"; [[ -n "$re" ]] && echo "re: $re"
+        echo "headline: $text"
+      } > "$(obligations_root)/$key/$id"
+      ;;
+    done) rm -f "$oblf" ;;
+  esac
+  mkdir -p "$(sent_root)/$from_key"
+  {
+    echo "id: $id"; echo "kind: $kind"; echo "to: $key"; echo "epoch: $(date +%s)"
+    echo "headline: $text"
+  } > "$(sent_root)/$from_key/$id"
+
   echo "id=$id"
   [[ -n "$bead" && -n "$comment" ]] && echo "bead=$bead comment=$comment"
-  return 0
+  return "$rc"
+}
+
+# Receipt text for a message: "read <time>" | "injected <time>". The .read
+# file holds either a bare time (inbox) or "injected <time>" (deliver).
+receipt_status_of_file() {
+  local c; c=$(cat -- "$1")
+  case "$c" in injected\ *) echo "$c" ;; *) echo "read $c" ;; esac
 }
 
 cmd_inbox() {
-  require_tmux
   local peek=false all=false
   while (( $# )); do
     case "$1" in
@@ -499,39 +714,174 @@ cmd_inbox() {
     esac
     shift
   done
-  local pane="${TMUX_PANE:-}"
-  [[ -n "$pane" ]] || die "not running inside a tmux pane (\$TMUX_PANE is unset)"
-  local key dir
-  key=$(inbox_key_for "$pane")
-  dir="$(inbox_root)/$key"
-
-  local shown=0 f id
-  if [[ -d "$dir" ]]; then
+  local shown=0 f id dir
+  self_dirs
+  for dir in "${SELF_DIRS[@]}"; do
+    [[ -d "$dir" ]] || continue
     for f in "$dir"/*.md; do
       [[ -f "$f" ]] || continue
       id="${f##*/}"; id="${id%.md}"
       if [[ -f "$dir/$id.read" ]] && ! $all; then continue; fi
       (( shown > 0 )) && echo "---"
+      [[ -f "$dir/$id.read" ]] && echo "receipt: $(receipt_status_of_file "$dir/$id.read")"
       cat -- "$f"
       shown=$(( shown + 1 ))
       if ! $peek && [[ ! -f "$dir/$id.read" ]]; then
-        date -u +%Y-%m-%dT%H:%M:%SZ > "$dir/$id.read"
+        utc_now > "$dir/$id.read"
       fi
     done
-  fi
+  done
   (( shown == 0 )) && echo "(inbox empty)"
   return 0
 }
 
-# Receipt for a message id: prints the read time (contents of <id>.read) and
-# returns 0 when it exists; returns 1 otherwise. Searches every inbox because
-# the sender does not need to remember which label it sent to.
+# Escape a string for a JSON string literal. Control characters other than
+# newline, tab and CR are dropped.
+json_escape() {
+  local s
+  s=$(printf '%s' "$1" | LC_ALL=C tr -d '\000-\010\013\014\016-\037')
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\t'/\\t}
+  s=${s//$'\r'/\\r}
+  printf '%s' "$s"
+}
+
+# Drain hook JSON from stdin when something is piped in; never block on it.
+drain_stdin() {
+  [[ -t 0 ]] && return 0
+  read -r -t 1 -d '' _ 2>/dev/null || true
+}
+
+# Print unread bodies for this pane and mark them "injected <time>". For the
+# UserPromptSubmit hook: silent when there is nothing, JSON with --format.
+cmd_deliver() {
+  local format=""
+  while (( $# )); do
+    case "$1" in
+      --format) [[ $# -ge 2 ]] || die "--format needs claude or codex"; format="$2"; shift 2 ;;
+      --format=*) format="${1#*=}"; shift ;;
+      *) die "unknown option for deliver: $1" ;;
+    esac
+  done
+  case "$format" in ""|claude|codex) ;; *) die "--format must be claude or codex" ;; esac
+  drain_stdin
+  local text="" f id dir n=0
+  self_dirs
+  for dir in "${SELF_DIRS[@]}"; do
+    [[ -d "$dir" ]] || continue
+    for f in "$dir"/*.md; do
+      [[ -f "$f" ]] || continue
+      id="${f##*/}"; id="${id%.md}"
+      [[ -f "$dir/$id.read" ]] && continue
+      (( n > 0 )) && text+=$'\n---\n'
+      text+=$(cat -- "$f")
+      n=$(( n + 1 ))
+      echo "injected $(utc_now)" > "$dir/$id.read"
+    done
+  done
+  (( n == 0 )) && return 0
+  if [[ -n "$format" ]]; then
+    printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' "$(json_escape "$text")"
+  else
+    printf '%s\n' "$text"
+  fi
+}
+
+# One line of at most 200 characters.
+brief_line() {
+  local s="$1"
+  if (( ${#s} > 200 )); then s="${s:0:199}…"; fi
+  printf '%s\n' "$s"
+}
+
+# Envelope-style line for a message file.
+envelope_of_file() {
+  local f="$1" from bead re scope
+  from=$(hdr "$f" from); from="${from%%/*}"
+  bead=$(hdr "$f" bead); bead="${bead%% *}"
+  re=$(hdr "$f" re); scope=$(hdr "$f" scope)
+  echo "[hail $(hdr "$f" kind) from:$from id:$(hdr "$f" id)${bead:+ bead:$bead}${re:+ re:$re}${scope:+ scope:$scope}] $(hdr "$f" ask)"
+}
+
+cmd_brief() {
+  drain_stdin
+  local me out="" lines="" n f id dir
+  me=$(self_key)
+
+  # inbox
+  n=0; lines=""
+  self_dirs
+  for dir in "${SELF_DIRS[@]}"; do
+    [[ -d "$dir" ]] || continue
+    for f in "$dir"/*.md; do
+      [[ -f "$f" ]] || continue
+      id="${f##*/}"; id="${id%.md}"
+      [[ -f "$dir/$id.read" ]] && continue
+      lines+="$(brief_line "  $(envelope_of_file "$f")")"$'\n'
+      n=$(( n + 1 ))
+    done
+  done
+  (( n > 0 )) && out+="inbox ($n unread)"$'\n'"$lines"
+
+  # my sends without receipt, older than 2 minutes
+  n=0; lines=""
+  local now epoch age to
+  now=$(date +%s)
+  dir="$(sent_root)/$me"
+  if [[ -d "$dir" ]]; then
+    for f in "$dir"/*; do
+      [[ -f "$f" ]] || continue
+      id="${f##*/}"; to=$(hdr "$f" to)
+      [[ -f "$(inbox_root)/$to/$id.read" ]] && continue
+      epoch=$(hdr "$f" epoch); age=$(( now - ${epoch:-0} ))
+      (( age >= 120 )) || continue
+      lines+="$(brief_line "  [hail $(hdr "$f" kind) to:$to id:$id] $(hdr "$f" headline) ($(( age / 60 ))m, no receipt)")"$'\n'
+      n=$(( n + 1 ))
+    done
+  fi
+  (( n > 0 )) && out+="my sends without receipt ($n)"$'\n'"$lines"
+
+  # holds / blocks in effect
+  n=0; lines=""
+  dir="$(holds_root)"
+  if [[ -d "$dir" ]]; then
+    for f in "$dir"/*; do
+      [[ -f "$f" ]] || continue
+      local scope; scope=$(hdr "$f" scope)
+      lines+="$(brief_line "  [hail $(hdr "$f" kind) from:$(hdr "$f" issuer) to:$(hdr "$f" to) id:$(hdr "$f" id)${scope:+ scope:$scope}] $(hdr "$f" headline) (since $(hdr "$f" time))")"$'\n'
+      n=$(( n + 1 ))
+    done
+  fi
+  (( n > 0 )) && out+="holds / blocks in effect ($n)"$'\n'"$lines"
+
+  # open obligations on me
+  n=0; lines=""
+  dir="$(obligations_root)/$me"
+  if [[ -d "$dir" ]]; then
+    for f in "$dir"/*; do
+      [[ -f "$f" ]] || continue
+      local scope; scope=$(hdr "$f" scope)
+      lines+="$(brief_line "  [hail $(hdr "$f" kind) from:$(hdr "$f" issuer) id:$(hdr "$f" id)${scope:+ scope:$scope}] $(hdr "$f" headline) — hail done --re $(hdr "$f" id)")"$'\n'
+      n=$(( n + 1 ))
+    done
+  fi
+  (( n > 0 )) && out+="open obligations on me ($n)"$'\n'"$lines"
+
+  [[ -n "$out" ]] && printf '%s' "$out"
+  return 0
+}
+
+# Receipt for a message id: prints the contents of <id>.read and returns 0
+# when it exists; returns 1 otherwise. Searches every inbox because the sender
+# does not need to remember which label it sent to.
 receipt_time() {
   local id="$1" root f
   root=$(inbox_root)
   for f in "$root"/*/"$id".read; do
     [[ -f "$f" ]] || continue
-    cat -- "$f"
+    receipt_status_of_file "$f"
     return 0
   done
   return 1
@@ -541,7 +891,7 @@ cmd_sent() {
   require_args 1 $# "sent"
   local id="$1" root f when
   if when=$(receipt_time "$id"); then
-    echo "read $when"
+    echo "$when"
     return 0
   fi
   root=$(inbox_root)
@@ -580,12 +930,13 @@ cmd_await() {
   command -v fswatch >/dev/null 2>&1 && watcher=fswatch
   deadline=$(( $(date +%s) + timeout ))
 
-  # One line per id: "<id> read <time>" | "<id> timeout" | "<id> pending".
-  # pending only appears with --any, for the ids not yet read when another was.
+  # One line per id: "<id> read <time>" | "<id> injected <time>" |
+  # "<id> timeout" | "<id> pending". pending only appears with --any, for the
+  # ids not yet read when another was.
   report() {
     local outcome="$1" i when
     for i in "${ids[@]}"; do
-      if when=$(receipt_time "$i"); then echo "$i read $when"; else echo "$i $outcome"; fi
+      if when=$(receipt_time "$i"); then echo "$i $when"; else echo "$i $outcome"; fi
     done
   }
   satisfied() {
@@ -643,11 +994,76 @@ cmd_keys() {
 cmd_name() {
   require_args 2 $# "name"
   require_tmux
-  local target
+  local target label="$2"
   target=$(resolve_target "$1")
   validate_target "$target"
+  [[ "$label" == *$'\n'* ]] && die "label must be one line"
 
-  tmx set-option -p -t "$target" @name "$2"
+  tmx set-option -p -t "$target" @name "$label"
+  mkdir -p "$(identity_root)"
+  {
+    echo "label: $label"
+    echo "pane: $target"
+    echo "incarnation: $(incarnation_for "$target")"
+    echo "time: $(utc_now)"
+  } > "$(identity_root)/$(key_of_label "$label")"
+}
+
+cmd_hello() {
+  local pane="${TMUX_PANE:-}" inc
+  [[ -n "$pane" ]] || die "not running inside a tmux pane (\$TMUX_PANE is unset)"
+  inc="$(date -u +%m%dT%H%M%S)-$(printf '%04x' $(( RANDOM % 65536 )))"
+  mkdir -p "$(incarnation_root)"
+  echo "$inc" > "$(incarnation_root)/${pane//%/_}"
+  echo "$inc"
+}
+
+# Newest event time in an inbox directory: a message's time or a receipt.
+last_inbox_event() {
+  local dir="$1" f
+  [[ -d "$dir" ]] || return 0
+  # shellcheck disable=SC2012  # newest first by mtime; ids have no spaces
+  f=$(ls -t "$dir" 2>/dev/null | head -1)
+  [[ -n "$f" ]] || return 0
+  f="$dir/$f"
+  case "$f" in
+    *.read) sed 's/^injected //' "$f" ;;
+    *.md) hdr "$f" time ;;
+  esac
+}
+
+cmd_who() {
+  require_tmux
+  local label="${1:-}" pane="" idf reg_pane="" reg_inc="" wearer=""
+  if [[ -z "$label" ]]; then
+    pane="${TMUX_PANE:-}"
+    [[ -n "$pane" ]] || die "not running inside a tmux pane (\$TMUX_PANE is unset)"
+    label=$(identity_label_for_pane "$pane")
+    [[ -n "$label" ]] || label=$(tmx display-message -t "$pane" -p '#{@name}' 2>/dev/null || true)
+  fi
+  if [[ -n "$label" ]]; then
+    idf="$(identity_root)/$(key_of_label "$label")"
+    if [[ -f "$idf" ]]; then reg_pane=$(hdr "$idf" pane); reg_inc=$(hdr "$idf" incarnation); fi
+    wearer=$(label_wearer "$label")
+    [[ -n "$pane" ]] || pane="${wearer:-$reg_pane}"
+  fi
+  [[ -n "$pane" ]] || die "no pane found with label '$label'"
+
+  echo "pane: $pane"
+  echo "label: ${label:--}"
+  [[ -n "$reg_pane" ]] && echo "registered: $reg_pane"
+  [[ -n "$wearer" ]] && echo "wearing: $wearer"
+  echo "incarnation: $(incarnation_for "$pane")"
+  [[ -n "$reg_inc" ]] && echo "registered incarnation: $reg_inc"
+  local key; key=$(key_of_label "${label:-$pane}")
+  echo "last inbox event: $(last_inbox_event "$(inbox_root)/$key")"
+  echo "pane tail:"
+  if tmx display-message -t "$pane" -p '#{pane_id}' >/dev/null 2>&1; then
+    tmx capture-pane -t "$pane" -p -J | grep -v '^[[:space:]]*$' | tail -2 | sed 's/^/  /'
+  else
+    echo "  (pane $pane not found)"
+  fi
+  return 0
 }
 
 cmd_resolve() {
@@ -742,13 +1158,17 @@ cmd_doctor() {
 
 [[ $# -eq 0 ]] && usage
 
-# id, version, sent and await need no tmux server: they are files-only.
+# These need no tmux server: they are files-only (a hook must not depend on one).
 case "$1" in
   id)      shift; cmd_id "$@"; exit ;;
   -h|--help|help) usage ;;
   version) echo "hail $VERSION"; exit ;;
   sent)    shift; cmd_sent "$@"; exit ;;
   await)   shift; cmd_await "$@"; exit ;;
+  deliver) shift; cmd_deliver "$@"; exit ;;
+  brief)   shift; cmd_brief "$@"; exit ;;
+  hello)   shift; cmd_hello "$@"; exit ;;
+  inbox)   shift; cmd_inbox "$@"; exit ;;
 esac
 
 # All other commands need the socket
@@ -759,11 +1179,16 @@ case "$1" in
   list)    shift; cmd_list "$@" ;;
   type)    shift; cmd_type "$@" ;;
   send|message|msg) shift; cmd_send "$@" ;;
-  inbox)   shift; cmd_inbox "$@" ;;
   read)    shift; cmd_read "$@" ;;
   keys)    shift; cmd_keys "$@" ;;
   name)    shift; cmd_name "$@" ;;
+  who)     shift; cmd_who "$@" ;;
   resolve) shift; cmd_resolve "$@" ;;
   doctor)  shift; cmd_doctor "$@" ;;
-  *)       die "unknown command: $1. Run 'hail' for usage." ;;
+  -*)      die "unknown option: $1. Run 'hail' for usage." ;;
+  *)
+    # Bare form: hail <target> <headline> [options]
+    if (( $# >= 2 )); then cmd_send "$@"
+    else die "unknown command: $1. Run 'hail' for usage."
+    fi ;;
 esac
