@@ -635,7 +635,7 @@ cmd_send() {
     case "$cur" in
       bash|zsh|sh|fish|dash|ksh|tcsh|csh)
         submit=false
-        echo "hail: $target runs $cur, a shell; envelope typed but not submitted (--force submits; non-agent panes: hail type/keys)" >&2 ;;
+        echo "hail: $target runs $cur, a shell, so the envelope was typed but not submitted. A shell cannot receive messages; do not press Enter there. (--force submits anyway)" >&2 ;;
     esac
   fi
 

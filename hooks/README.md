@@ -112,7 +112,8 @@ injected body is not retained through compaction; the file under
 
 The hook does not run `hail hello`: Codex fires SessionStart at the first
 prompt, after `hail name` has registered the label, and `hail name` mints the
-pane's incarnation itself. After a real restart of the pane's process the
+pane's incarnation itself. After a real restart of the pane's process (a new shell in the pane; relaunching
+the harness inside the same shell is not one) the
 brief prints `label <l>: pane restarted — run: hail name "$(hail id)" <l>`.
 
 Both harnesses read hooks at session start; installing or changing them needs

@@ -20,14 +20,15 @@ An envelope is one line in your prompt:
 [hail kind:ruling from:murail-1a/%5 reply:%5 id:0905T1712-a3f1 bead:murail-ke7is re:0905T1650-1c2e scope:commit] convert at the receipt — hail inbox
 ```
 
-`kind` says what to do (see Kinds). `from` is the sender's label/pane. `id`
+`kind` says what to do (see Kinds). `from` is the sender's label and pane; reply to
+the `reply:` pane id or the label alone, never to `label/%N`. `id`
 is for receipts and `--re`. `bead` is the issue the body is also posted to.
 `re` names the message this answers, closes or lifts. `scope` is what it
 applies to. The headline is written by the sender and is never truncated.
 
 - **With the hooks installed** (see below) the body arrives with the envelope
   as hook context on the same turn, and the receipt is written for you. Read
-  it there. It is not retained through compaction; the file and the bead are.
+  it there; do not run `hail inbox` as well. It is not retained through compaction; the file and the bead are.
 - **Without the hooks**, or if the body did not arrive, run `hail inbox`. It
   prints every unread body and writes the receipt. `hail inbox --all`
   re-reads everything, with each message's receipt (`read` or `injected`).
