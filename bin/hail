@@ -166,7 +166,7 @@ Target resolution:
 Message kinds (--kind, default: ask):
   ruling go nogo announce ask fyi stop hold
   stop, hold, nogo and announce are typed in full into the pane (no fetch needed).
-  Every other kind types an envelope (<= 160 chars) and puts the full text in the
+  Every other kind types an envelope (<= $HAIL_ENVELOPE_MAX chars, default 400) and puts the full text in the
   inbox; the recipient runs 'hail inbox' to fetch it.
   Envelope: [hail kind:<k> from:<label>/<pane> reply:<pane> id:<id> [bead:<id>]] <ask> — hail inbox
 
@@ -466,8 +466,9 @@ cmd_send() {
     envelope="${head} ${text}"
   else
     local tail=" — hail inbox" ask="$text"
-    local budget=$(( 160 - ${#head} - 1 - ${#tail} ))
-    (( budget > 120 )) && budget=120
+    local max=${HAIL_ENVELOPE_MAX:-400}
+    local budget=$(( max - ${#head} - 1 - ${#tail} ))
+    (( budget > max - 40 )) && budget=$(( max - 40 ))
     if (( ${#ask} > budget )); then
       (( budget < 8 )) && budget=8
       ask="${ask:0:budget-1}…"

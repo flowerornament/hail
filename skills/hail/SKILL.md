@@ -1,6 +1,6 @@
 ---
 name: hail
-description: Agent-to-agent messaging over tmux with hail. Use this skill whenever the user mentions sending a message to another agent or pane, a `[hail ...]` (or `[tb ...]`/`[tmux-bridge ...]`) envelope appears in your prompt, you need to know whether another agent has read something, or you must drive a non-agent tmux pane (a shell, a running process). Includes the hail CLI: send, inbox, sent, await, labels, and a minimal raw-tmux fallback.
+description: "Agent-to-agent messaging over tmux with hail. Use this skill whenever the user mentions sending a message to another agent or pane, a `[hail ...]` (or `[tb ...]`/`[tmux-bridge ...]`) envelope appears in your prompt, you need to know whether another agent has read something, or you must drive a non-agent tmux pane (a shell, a running process). Includes the hail CLI: send, inbox, sent, await, labels, and a minimal raw-tmux fallback."
 metadata:
   { "openclaw": { "emoji": "📯", "os": ["darwin", "linux"], "requires": { "bins": ["tmux", "hail"] } } }
 ---

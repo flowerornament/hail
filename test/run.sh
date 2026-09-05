@@ -101,7 +101,7 @@ s1() { # from inside the sender pane via send-keys, --kind ruling --body -
   # The pane runs the script so TMUX_PANE comes from tmux itself, not from
   # the harness. A short typed line: readline stalls on lines past ~1 KB.
   cat > "$SCRATCH/s1.sh" <<EOS
-export HAIL_SOCKET='$HAIL_SOCKET' XDG_STATE_HOME='$XDG_STATE_HOME' PATH='$PATH'
+export HAIL_ENVELOPE_MAX='$HAIL_ENVELOPE_MAX' HAIL_SOCKET='$HAIL_SOCKET' XDG_STATE_HOME='$XDG_STATE_HOME' PATH='$PATH'
 '$HAIL' read '$RECV' 5 >/dev/null
 '$HAIL' send worker '$LONG_ASK' --kind ruling --body - <'$SCRATCH/body1' >'$SCRATCH/s1.out' 2>'$SCRATCH/s1.err'
 echo \$? >'$SCRATCH/s1.rc'
