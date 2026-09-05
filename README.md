@@ -46,9 +46,11 @@ Or `nix build .#` and put `result/bin/hail` on your PATH. Requires `tmux`.
 `fswatch` is optional; `await` polls without it. `bd` (beads) is optional; when
 a message names an issue id the body is also posted there.
 
-Install the hooks in each project: `hooks/README.md` has the snippets for
-`.claude/settings.json` and `.codex/hooks.json`. Codex needs `/hooks` trust
-once per project.
+Install the hooks once at user level: `hooks/README.md` has the blocks for
+`~/.claude/settings.json` and `~/.codex/config.toml` (Codex needs `/hooks`
+trust once), plus per-project overrides. Without hooks everything still
+works: the envelope lands in the prompt, `hail inbox` fetches bodies and
+writes `read` receipts, and `hail brief` on demand shows the standing state.
 
 ## Use
 
@@ -118,7 +120,7 @@ waiting for `y`.
 ## Development
 
 ```bash
-test/run.sh         # 31 scenarios on a scratch tmux server; never touches yours
+test/run.sh         # 33 scenarios on a scratch tmux server; never touches yours
 bash -n bin/hail && shellcheck bin/hail
 ```
 

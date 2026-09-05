@@ -127,13 +127,19 @@ or the registered pane's process was restarted. The brief then prints
 
 ## Hooks
 
-The hooks deliver bodies and the brief without a tool call. Snippets are in
-`hooks/README.md` of the hail repo; they are copied config.
+The hooks deliver bodies and the brief without a tool call. They are
+installed once at user level (`hooks/README.md` in the hail repo has the
+blocks; per-project overrides are optional):
 
-- Codex `.codex/hooks.json`: `UserPromptSubmit` → `hail deliver --format codex`;
-  `SessionStart` → `hail brief`. Trust once per project with `/hooks`.
-- Claude Code `.claude/settings.json`: `UserPromptSubmit` →
+- Claude Code `~/.claude/settings.json`: `UserPromptSubmit` →
   `hail deliver --format claude`; `SessionStart` → `hail brief`.
+- Codex `~/.codex/config.toml`: `[[hooks.UserPromptSubmit]]` →
+  `hail deliver --format codex`; `[[hooks.SessionStart]]` → `hail brief`.
+  Trust them once with `/hooks`.
+
+Without hooks: the envelope still lands in your prompt, `hail inbox` fetches
+bodies and writes `read` receipts, and `hail brief` on demand shows the
+standing state.
 
 Hooks are read at session start; a new session picks up an install.
 

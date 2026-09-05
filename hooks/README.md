@@ -2,16 +2,26 @@
 
 With the hooks installed, a message body reaches the recipient on the turn its
 envelope lands, as hook context, with no tool call; the receipt says
-`injected <time>`. At session start the agent gets its brief: unread envelopes,
-sends without receipt, holds and blocks in effect, open obligations.
+`injected <time>`. At session start the agent gets its brief: unread
+envelopes, sends without receipt, holds and blocks in effect, open
+obligations, and a one-line notice if its label needs re-registration.
 
-The snippets below are copied config: paste them into the project's file and
-merge with any hooks already there (peat's, `bd prime`, formatters). Both
-commands print nothing when there is nothing to say, and neither needs a tmux
-server: `$TMUX_PANE` is inherited from the pane the agent runs in. The
-`[ -n "$TMUX_PANE" ]` guard keeps the hook silent when the agent is not in tmux.
+hail keeps no per-project state, so install the hooks once at user level and
+every directory works without setup. Both commands print nothing when there
+is nothing to say and need no tmux server; `$TMUX_PANE` is inherited from the
+pane the agent runs in, and the `[ -n "$TMUX_PANE" ]` guard keeps the hook
+silent outside tmux.
 
-## Claude Code — `.claude/settings.json`
+## Without hooks
+
+Everything still works, one step slower: the envelope lands in the prompt,
+the agent runs `hail inbox` to fetch bodies and write `read <time>` receipts,
+and `hail brief` on demand shows the standing state. Control kinds are
+complete in the envelope either way.
+
+## User-level install
+
+### Claude Code — `~/.claude/settings.json`
 
 ```json
 {
@@ -34,10 +44,33 @@ server: `$TMUX_PANE` is inherited from the pane the agent runs in. The
 }
 ```
 
-`.claude/settings.local.json` takes the same shape for a per-user, git-ignored
-install.
+Merge into the existing file; other keys and other tools' hooks stay.
 
-## Codex — `.codex/hooks.json`
+### Codex — `~/.codex/config.toml`
+
+```toml
+[features]
+hooks = true
+
+[[hooks.UserPromptSubmit]]
+hooks = [{ type = "command", command = "[ -n \"$TMUX_PANE\" ] || exit 0; hail deliver --format codex" }]
+
+[[hooks.SessionStart]]
+hooks = [{ type = "command", command = "[ -n \"$TMUX_PANE\" ] || exit 0; hail brief" }]
+```
+
+The `[[hooks.<Event>]]` tables carry the same `hooks = [...]` array as the
+JSON form; event names are the same as in `hooks.json` (`UserPromptSubmit`,
+`SessionStart`). Codex still gates every command hook behind trust: run
+`/hooks` in the Codex CLI once to review and trust them, even at user level.
+Trust is recorded against the hash of the hook text, so it holds until the
+command changes. Non-interactive automation can pass
+`codex exec --dangerously-bypass-hook-trust`.
+
+## Per-project override
+
+The same blocks in a project's `.claude/settings.json` (or
+`.claude/settings.local.json`, git-ignored) and `.codex/hooks.json`:
 
 ```json
 {
@@ -60,11 +93,16 @@ install.
 }
 ```
 
+(`--format claude` in the Claude file.) Codex loads project hooks only in a
+trusted project, and `/hooks` trust is per hook definition, so a project copy
+needs its own review. A layer carrying both `.codex/hooks.json` and
+`[[hooks.*]]` in `.codex/config.toml` loads both and warns; use one.
+
 ## What each hook does
 
 | event | command | output |
 |---|---|---|
-| `UserPromptSubmit` | `hail deliver --format <harness>` | `{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"<unread bodies>"}}`, or nothing. Marks each body `injected <UTC time>`. |
+| `UserPromptSubmit` | `hail deliver --format <harness>` | `{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"<unread bodies>"}}`, or nothing. Marks each body `injected <UTC time>`. Control kinds are complete in the envelope and are not injected. |
 | `SessionStart` | `hail brief` | The brief as plain text (injected as context), or nothing. |
 
 `deliver` is idempotent and takes about 15 ms with nothing unread; it runs on
@@ -72,30 +110,17 @@ every prompt-like event (on Claude Code, task notifications too). The
 injected body is not retained through compaction; the file under
 `~/.local/state/hail/inbox/` and the bead comment are.
 
-`hail name` mints the pane's incarnation; the hook does not run `hail hello`
-(Codex fires SessionStart at the first prompt, after `name`), and `hello` never
-replaces an incarnation the pane already has. After a real restart the brief
-prints `label <l>: pane restarted — run: hail name "$(hail id)" <l>`.
-
-## Codex: hooks must be trusted before they run
-
-Codex records trust against the hash of the exact hook definition and skips
-an untrusted hook silently. Two gates, both required:
-
-1. Project trust: project-local hooks load only when the project's `.codex/`
-   layer is trusted.
-2. Hook trust: run `/hooks` in the Codex CLI to review and trust new or
-   changed hooks. Codex prints a warning at startup while review is pending.
-
-This is one review per project for as long as the command text stays the same.
-Non-interactive automation can use `codex exec --dangerously-bypass-hook-trust`.
+The hook does not run `hail hello`: Codex fires SessionStart at the first
+prompt, after `hail name` has registered the label, and `hail name` mints the
+pane's incarnation itself. After a real restart of the pane's process the
+brief prints `label <l>: pane restarted — run: hail name "$(hail id)" <l>`.
 
 Both harnesses read hooks at session start; installing or changing them needs
 a new session.
 
 ## Verify by firing
 
-Start a fresh session in the project inside tmux, then from another pane:
+Start a fresh session inside tmux, then from another pane:
 
 ```console
 $ hail read <label> 5
