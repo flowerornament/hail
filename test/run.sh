@@ -618,6 +618,24 @@ s32() { # read N returns N lines, the last ones
   reset_recv; return "$ok"
 }
 
+s33() { # shell target: no Enter by default, note printed, read mark kept; --force submits
+  local ok=0 id
+  send "$RECV" boss "into a shell" --kind fyi; id=$(last_id)
+  sleep 0.2
+  expect "rc=0" eq "$RC" 0 || ok=1
+  expect "note names the shell" contains "$ERR" "$SENDER runs bash, a shell; envelope typed but not submitted" || ok=1
+  expect "typed once, not executed" eq "$(pane_text "$SENDER" | grep -cF "id:$id")" 1 || ok=1
+  expect "bash did not run it" not_contains "$(pane_text "$SENDER")" "command not found" || ok=1
+  as "$RECV" keys boss C-u; RC=$?
+  expect "read mark kept" eq "$RC" 0 || ok=1
+  send "$RECV" boss "forced into a shell" --kind fyi --force; id=$(last_id)
+  sleep 0.3
+  expect "--force rc=0" eq "$RC" 0 || ok=1
+  expect "no note with --force" not_contains "$ERR" "not submitted" || ok=1
+  expect "submitted: bash tried to run it" contains "$(pane_text "$SENDER")" "command not found" || ok=1
+  reset_sender; return "$ok"
+}
+
 scenario 1  "send from inside the pane: ruling, --body -, bead detected, submitted" s1
 scenario 2  "bd present but failing: one warning, file-only, delivered" s2
 scenario 3  "sent before read -> delivered" s3
@@ -650,6 +668,7 @@ scenario 29 "bare-target send form" s29
 scenario 30 "send submits; --no-submit keeps the read mark" s30
 scenario 31 "guards: permission dialog, unsent draft, --force" s31
 scenario 32 "read <target> N returns exactly N lines" s32
+scenario 33 "send into a shell pane types but does not submit; --force submits" s33
 
 echo "---"
 echo "passed $PASS, failed $FAIL"

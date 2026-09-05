@@ -65,7 +65,9 @@ hail <target> '<headline>' --kind <kind> [--bead id] [--re id] [--scope s] [--bo
 ```
 
 `send` presses Enter for you. Read, send, done. `--no-submit` types without
-Enter. Before typing, `send` refuses a pane that shows a permission dialog
+Enter. When the target runs a shell (bash, zsh, sh, fish) `send` types the
+envelope but does not press Enter, because the shell would execute it;
+`--force` submits anyway. Non-agent panes are driven with `type`/`keys`. Before typing, `send` refuses a pane that shows a permission dialog
 (exit 4: on Claude Code the text is discarded and Enter approves the command)
 or an unsent draft that is not an envelope (exit 5); `--force` overrides.
 `hail send`, `message` and `msg` are accepted before the target.

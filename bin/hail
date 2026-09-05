@@ -170,8 +170,9 @@ Send:
                             hold block release announce
     --re id                 The message this answers, closes or lifts
     --scope s               What the message applies to (bead, ref, path, action)
-    --no-submit             Type the envelope but do not press Enter
-    --force                 Skip the dialog and draft guards
+    --no-submit             Type the envelope but do not press Enter (the default
+                            when the target runs a shell, which would execute it)
+    --force                 Skip the dialog and draft guards; submit into a shell
   sent <id>                 delivered | read <time> | injected <time> | unknown
   await <id>... [--timeout SECONDS] [--any]
                             Block until every id (or any, with --any) has a receipt.
@@ -626,6 +627,17 @@ cmd_send() {
   esac
 
   $force || pane_guard "$target"
+
+  # A shell would execute the envelope: type it there, but do not press Enter.
+  local cur
+  cur=$(tmx display-message -t "$target" -p '#{pane_current_command}' 2>/dev/null || true)
+  if $submit && ! $force; then
+    case "$cur" in
+      bash|zsh|sh|fish|dash|ksh|tcsh|csh)
+        submit=false
+        echo "hail: $target runs $cur, a shell; envelope typed but not submitted (--force submits; non-agent panes: hail type/keys)" >&2 ;;
+    esac
+  fi
 
   # Body: --body file, stdin when '-', else the text itself.
   local body
