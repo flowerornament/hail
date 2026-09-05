@@ -630,7 +630,7 @@ s33() { # shell target: no Enter by default, note printed, read mark kept; --for
   send "$RECV" boss "into a shell" --kind fyi; id=$(last_id)
   sleep 0.2
   expect "rc=0" eq "$RC" 0 || ok=1
-  expect "note names the shell" contains "$ERR" "$SENDER runs bash, a shell; envelope typed but not submitted" || ok=1
+  expect "note names the shell" contains "$ERR" "$SENDER runs bash, a shell, so the envelope was typed but not submitted" || ok=1
   expect "typed once, not executed" eq "$(pane_text "$SENDER" | grep -cF "id:$id")" 1 || ok=1
   expect "bash did not run it" not_contains "$(pane_text "$SENDER")" "command not found" || ok=1
   as "$RECV" keys boss C-u; RC=$?
