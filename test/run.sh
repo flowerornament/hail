@@ -599,6 +599,17 @@ s31() { # guards: permission dialog (exit 4), unsent draft (exit 5), --force
   reset_recv; return "$ok"
 }
 
+s32() { # read N returns N lines, the last ones
+  local ok=0 out
+  recv_showing l1 l2 l3 l4 l5 l6 l7 l8 l9 l10
+  out=$(as "$SENDER" read worker 5)
+  expect "5 lines (got $(printf '%s\n' "$out" | wc -l | tr -d ' '))" eq "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" 5 || ok=1
+  expect "the last ones" eq "$(printf '%s\n' "$out" | head -1)" l6 || ok=1
+  out=$(as "$SENDER" read worker 200)
+  expect "more than the screen holds is fine" le "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" 200 || ok=1
+  reset_recv; return "$ok"
+}
+
 scenario 1  "send from inside the pane: ruling, --body -, bead detected, submitted" s1
 scenario 2  "bd present but failing: one warning, file-only, delivered" s2
 scenario 3  "sent before read -> delivered" s3
@@ -630,6 +641,7 @@ scenario 28 "identity: moved label refused (exit 3), who, name mints, hello idem
 scenario 29 "bare-target send form" s29
 scenario 30 "send submits; --no-submit keeps the read mark" s30
 scenario 31 "guards: permission dialog, unsent draft, --force" s31
+scenario 32 "read <target> N returns exactly N lines" s32
 
 echo "---"
 echo "passed $PASS, failed $FAIL"

@@ -1012,7 +1012,11 @@ cmd_read() {
   validate_target "$target"
   local lines="${2:-50}"
 
-  tmx capture-pane -t "$target" -p -J -S "-${lines}"
+  # -S moves the start into scrollback but the capture still ends at the bottom
+  # of the screen: drop the blank rows under the cursor, then keep the last N.
+  tmx capture-pane -t "$target" -p -J -S "-${lines}" \
+    | awk '{ l[NR] = $0; if ($0 !~ /^[[:space:]]*$/) last = NR } END { for (i = 1; i <= last; i++) print l[i] }' \
+    | tail -n "$lines"
   mark_read "$target"
 }
 
