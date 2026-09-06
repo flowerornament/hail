@@ -18,8 +18,8 @@ in
     envelopeMax = lib.mkOption {
       type = lib.types.nullOr lib.types.int;
       default = null;
-      example = 240;
-      description = "Maximum envelope length typed into a pane (HAIL_ENVELOPE_MAX). Default in the tool is 240.";
+      example = 400;
+      description = "Maximum envelope length typed into a pane (HAIL_ENVELOPE_MAX). Default in the tool is 400.";
     };
 
     skill = {

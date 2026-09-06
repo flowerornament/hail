@@ -59,7 +59,7 @@ run it yourself after a compaction or when unsure what you owe.
 `stop hold block release announce` are control kinds: typed in full, no fetch
 hint, act on them at once. The others carry the body through the hook or
 `hail inbox`. `--kind` is required. Every headline is capped at
-`HAIL_ENVELOPE_MAX` characters (default 240); a longer one is refused (exit 2).
+`HAIL_ENVELOPE_MAX` characters (default 400); a longer one is refused (exit 2).
 The headline is the ask and the why. Detail goes in `--body 'text'` (or a file,
 or `-` for stdin); the body has no limit and arrives with the envelope.
 Put detail in `--body` or on a bead.
