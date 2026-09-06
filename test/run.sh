@@ -262,7 +262,7 @@ s13() { # no bd on PATH, --kind hold
 
 s14() { # version resolve id list doctor help
   local ok=0
-  expect "version" eq "$(as "$SENDER" version)" "hail 0.2.2" || ok=1
+  expect "version" eq "$(as "$SENDER" version)" "hail 0.2.3" || ok=1
   expect "resolve worker" eq "$(as "$SENDER" resolve worker)" "$RECV" || ok=1
   expect "id" eq "$(as "$SENDER" id)" "$SENDER" || ok=1
   expect "list shows label" contains "$(as "$SENDER" list)" "worker" || ok=1
@@ -342,7 +342,7 @@ s19() { # alias message / msg
 
 s20() { # tmux-bridge symlink + TMUX_BRIDGE_SOCKET fallback
   local ok=0 out
-  expect "symlink version" eq "$("$SCRATCH/bin/tmux-bridge" version)" "hail 0.2.2" || ok=1
+  expect "symlink version" eq "$("$SCRATCH/bin/tmux-bridge" version)" "hail 0.2.3" || ok=1
   out=$(env -u HAIL_SOCKET TMUX_BRIDGE_SOCKET="$HAIL_SOCKET" TMUX_PANE="$SENDER" "$SCRATCH/bin/tmux-bridge" resolve worker)
   expect "TMUX_BRIDGE_SOCKET fallback" eq "$out" "$RECV" || ok=1
   as "$SENDER" keys worker Escape >/dev/null 2>&1 || true   # consume any standing read mark
@@ -350,7 +350,7 @@ s20() { # tmux-bridge symlink + TMUX_BRIDGE_SOCKET fallback
   return "$ok"
 }
 
-# --- 0.2.2 scenarios ----------------------------------------------------------
+# --- 0.2.3 scenarios ----------------------------------------------------------
 now_ms() { perl -MTime::HiRes=time -e 'printf "%d\n", time*1000'; }
 # Drop holds, obligations and send records left by earlier scenarios.
 clear_state() { rm -rf "$XDG_STATE_HOME/hail/holds" "$XDG_STATE_HOME/hail/obligations" "$XDG_STATE_HOME/hail/sent"; }
@@ -706,7 +706,21 @@ scenario 30 "send submits; --no-submit keeps the read mark" s30
 scenario 31 "guards: permission dialog, unsent draft, --force" s31
 scenario 32 "read <target> N returns exactly N lines" s32
 scenario 33 "send into a shell pane types but does not submit; --force submits" s33
+s35() { # --body literal text; over-cap refusal names --body
+  local ok=0
+  send "$SENDER" worker "literal body" --kind ask --body "detail line one, not a file"
+  local id; id=$(last_id)
+  expect "literal body stored" contains "$(cat "$XDG_STATE_HOME/hail/inbox/worker/$id.md")" "detail line one, not a file" || ok=1
+  expect "hint present" contains "$(envelope_line "$id")" "— hail inbox" || ok=1
+  local long; long=$(printf 'x%.0s' $(seq 1 200))
+  send "$SENDER" worker "$long" --kind fyi
+  expect "over cap rc=2" eq "$RC" 2 || ok=1
+  expect "refusal names --body" contains "$ERR" "put the detail in --body" || ok=1
+  return "$ok"
+}
+
 scenario 34 "no --body: complete envelope, silent deliver with receipt; --body delivered once" s34
+scenario 35 "--body literal text; over-cap refusal names --body" s35
 
 echo "---"
 echo "passed $PASS, failed $FAIL"

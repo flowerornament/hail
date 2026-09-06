@@ -38,7 +38,7 @@ programs.hail = {
   enable = true;
   skill.enable = true;                       # links skills/hail into the paths below
   skill.targets = [ ".agents/skills/hail" ".claude/skills/hail" ];
-  # envelopeMax = 400;                       # HAIL_ENVELOPE_MAX
+  # envelopeMax = 240;                       # HAIL_ENVELOPE_MAX
 };
 ```
 
@@ -101,7 +101,7 @@ hail murail-1b 'gate green' --kind release --re 0905T1650-1c2e
 
 Kinds: `ruling go nogo ask fyi done stop hold block release announce`. `--kind`
 is required. The headline is capped at `HAIL_ENVELOPE_MAX` characters (default
-400); the body has no limit. Exit codes: 2 headline over cap, 3 label moved,
+240); the body has no limit. `--body` takes text, a file, or `-` for stdin. Exit codes: 2 headline over cap, 3 label moved,
 4 permission dialog in the target, 5 unsent draft in the target.
 `hail --help` documents every verb and flag.
 
@@ -122,7 +122,7 @@ waiting for `y`.
 ## Development
 
 ```bash
-test/run.sh         # 34 scenarios on a scratch tmux server; never touches yours
+test/run.sh         # 35 scenarios on a scratch tmux server; never touches yours
 bash -n bin/hail && shellcheck bin/hail
 ```
 

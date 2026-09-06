@@ -5,7 +5,7 @@
 # `inbox`, and `await` on top of receipts. See DESIGN.md.
 set -euo pipefail
 
-VERSION="0.2.2"
+VERSION="0.2.3"
 
 KINDS="ruling go nogo ask fyi done stop hold block release announce"
 
@@ -219,8 +219,9 @@ Kinds:
   stop hold block release announce are typed in full. The others type the
   envelope with a fetch hint; the body reaches the recipient through the
   UserPromptSubmit hook ('hail deliver') or 'hail inbox'.
-  The headline is at most HAIL_ENVELOPE_MAX characters (default 400) for every
-  kind; a longer one is refused (exit 2).
+  The headline is the ask and the why: at most HAIL_ENVELOPE_MAX characters
+  (default 240) for every kind; a longer one is refused (exit 2). Detail goes in
+  --body 'text' (or --body file, --body -); the body has no limit.
   Envelope: [hail kind:<k> from:<label>/<pane> reply:<pane> id:<id> [bead:<id>]
             [re:<id>] [scope:<s>]] <headline> [— hail inbox]
 
@@ -239,7 +240,7 @@ State ($XDG_STATE_HOME/hail, default ~/.local/state/hail; keep outside repos):
 
 Environment:
   HAIL_SOCKET          tmux server socket (TMUX_BRIDGE_SOCKET accepted)
-  HAIL_ENVELOPE_MAX    headline cap in characters (default 400)
+  HAIL_ENVELOPE_MAX    headline cap in characters (default 240)
   XDG_STATE_HOME       state root (default ~/.local/state)
 EOF
   exit 0
@@ -565,7 +566,7 @@ cmd_send() {
       --kind=*) kind="${1#*=}"; shift ;;
       --bead) [[ $# -ge 2 ]] || die "--bead needs a value"; bead="$2"; shift 2 ;;
       --bead=*) bead="${1#*=}"; shift ;;
-      --body) [[ $# -ge 2 ]] || die "--body needs a file or -"; body_src="$2"; shift 2 ;;
+      --body) [[ $# -ge 2 ]] || die "--body needs text, a file, or -"; body_src="$2"; shift 2 ;;
       --body=*) body_src="${1#*=}"; shift ;;
       --re) [[ $# -ge 2 ]] || die "--re needs a message id"; re="$2"; shift 2 ;;
       --re=*) re="${1#*=}"; shift ;;
@@ -585,9 +586,9 @@ cmd_send() {
   [[ "$re" == */* ]] && die "--re must be a message id"
   [[ -n "$scope" && "$scope" == *$'\n'* ]] && die "--scope must be one line"
 
-  local max=${HAIL_ENVELOPE_MAX:-400}
+  local max=${HAIL_ENVELOPE_MAX:-240}
   if (( ${#text} > max )); then
-    die_rc 2 "headline is ${#text} characters; the cap is $max (HAIL_ENVELOPE_MAX). Shorten it and put the rest in --body or on a bead."
+    die_rc 2 "headline is ${#text} characters; the cap is $max. Keep the headline to the ask and the why; put the detail in --body 'text' (or --body file, --body -)."
   fi
   case "$kind" in
     done|release) [[ -n "$re" ]] || die "--kind $kind requires --re <id>" ;;
@@ -641,15 +642,17 @@ cmd_send() {
     esac
   fi
 
-  # Body: --body file, stdin when '-', else the text itself.
+  # Body: --body '-' reads stdin; an existing readable file is read; anything
+  # else is the body text itself. Without --body the body is the headline.
   local body
   if [[ -z "$body_src" ]]; then
     body="$text"
   elif [[ "$body_src" == "-" ]]; then
     body=$(cat)
-  else
-    [[ -r "$body_src" ]] || die "cannot read body file: $body_src"
+  elif [[ -f "$body_src" && -r "$body_src" ]]; then
     body=$(cat -- "$body_src")
+  else
+    body="$body_src"
   fi
 
   # Bead-first: explicit --bead, else the first issue id named in the text.
@@ -855,10 +858,10 @@ cmd_deliver() {
   fi
 }
 
-# One line of at most 200 characters.
+# One line of at most HAIL_ENVELOPE_MAX+80 characters (the envelope plus its head).
 brief_line() {
-  local s="$1"
-  if (( ${#s} > 200 )); then s="${s:0:199}…"; fi
+  local s="$1" lim=$(( ${HAIL_ENVELOPE_MAX:-240} + 80 ))
+  if (( ${#s} > lim )); then s="${s:0:lim-1}…"; fi
   printf '%s\n' "$s"
 }
 

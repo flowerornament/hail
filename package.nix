@@ -6,7 +6,7 @@
 
 stdenvNoCC.mkDerivation {
   pname = "hail";
-  version = "0.2.2";
+  version = "0.2.3";
 
   src = ./.;
 
@@ -28,8 +28,8 @@ stdenvNoCC.mkDerivation {
   installCheckPhase = ''
     runHook preInstallCheck
     bash -n $out/bin/hail
-    [ "$($out/bin/hail version)" = "hail 0.2.2" ]
-    [ "$($out/bin/tmux-bridge version)" = "hail 0.2.2" ]
+    [ "$($out/bin/hail version)" = "hail 0.2.3" ]
+    [ "$($out/bin/tmux-bridge version)" = "hail 0.2.3" ]
     runHook postInstallCheck
   '';
 
