@@ -262,7 +262,7 @@ s13() { # no bd on PATH, --kind hold
 
 s14() { # version resolve id list doctor help
   local ok=0
-  expect "version" eq "$(as "$SENDER" version)" "hail 0.2.3" || ok=1
+  expect "version" eq "$(as "$SENDER" version)" "hail 0.2.4" || ok=1
   expect "resolve worker" eq "$(as "$SENDER" resolve worker)" "$RECV" || ok=1
   expect "id" eq "$(as "$SENDER" id)" "$SENDER" || ok=1
   expect "list shows label" contains "$(as "$SENDER" list)" "worker" || ok=1
@@ -342,7 +342,7 @@ s19() { # alias message / msg
 
 s20() { # tmux-bridge symlink + TMUX_BRIDGE_SOCKET fallback
   local ok=0 out
-  expect "symlink version" eq "$("$SCRATCH/bin/tmux-bridge" version)" "hail 0.2.3" || ok=1
+  expect "symlink version" eq "$("$SCRATCH/bin/tmux-bridge" version)" "hail 0.2.4" || ok=1
   out=$(env -u HAIL_SOCKET TMUX_BRIDGE_SOCKET="$HAIL_SOCKET" TMUX_PANE="$SENDER" "$SCRATCH/bin/tmux-bridge" resolve worker)
   expect "TMUX_BRIDGE_SOCKET fallback" eq "$out" "$RECV" || ok=1
   as "$SENDER" keys worker Escape >/dev/null 2>&1 || true   # consume any standing read mark
@@ -498,7 +498,7 @@ s26() { # go -> done closes exactly it; wrong re fails; obligation survives a re
   reset_sender; reset_recv; return "$ok"
 }
 
-s27() { # headline over the cap refused for a control kind; missing kind refused
+s27() { # headline over the cap refused for a control kind, folded for others; missing kind refused
   local ok=0 text
   text="STOP: red gate on master, do not land anything until the fan-in gate is green again; this sentence is padded to be long enough to exceed the envelope budget by a comfortable margin ok"
   send "$SENDER" worker "$text" --kind stop
@@ -506,12 +506,17 @@ s27() { # headline over the cap refused for a control kind; missing kind refused
   expect "message names the cap" contains "$ERR" "headline is $(chars "$text") characters; the cap is 160" || ok=1
   expect "nothing typed" not_contains "$(pane_text "$RECV")" "STOP: red gate" || ok=1
   expect "no file" eq "$(ls "$INBOX/worker" | grep -c "$(date -u +%m%d)" )" "$(ls "$INBOX/worker" | grep -c "$(date -u +%m%d)")" || ok=1
-  send "$SENDER" worker "$LONG_ASK" --kind ruling
-  expect "ruling over cap rc=2" eq "$RC" 2 || ok=1
+  send "$SENDER" worker "$LONG_ASK" --kind fyi
+  expect "fyi over cap folds, rc=0" eq "$RC" 0 || ok=1
+  expect "fold is announced" contains "$ERR" "headline folded to" || ok=1
+  expect "folded headline typed" contains "$(pane_text "$RECV")" "Ruling on herald-ke7is: convert at the receipt, not the producer" || ok=1
+  expect "folded headline ends with an ellipsis" contains "$(pane_text "$RECV")" " …" || ok=1
+  expect "full text in the body" contains "$(cat "$INBOX"/worker/* 2>/dev/null)" "coordinator should not read panes for replies" || ok=1
+  as "$RECV" inbox >/dev/null   # drain the folded message so later scenarios start clean
   send "$SENDER" worker "no kind given"
   expect "missing kind rc=1" eq "$RC" 1 || ok=1
   expect "missing kind names the kinds" contains "$ERR" "--kind is required (ruling go nogo ask fyi done stop hold block release announce)" || ok=1
-  return "$ok"
+  reset_sender; reset_recv; return "$ok"
 }
 
 s28() { # identity: label moved -> send refused (exit 3); who shows it; hello = new incarnation
@@ -706,17 +711,20 @@ scenario 30 "send submits; --no-submit keeps the read mark" s30
 scenario 31 "guards: permission dialog, unsent draft, --force" s31
 scenario 32 "read <target> N returns exactly N lines" s32
 scenario 33 "send into a shell pane types but does not submit; --force submits" s33
-s35() { # --body literal text; over-cap refusal names --body
+s35() { # --body literal text; over-cap headline folds into the body
   local ok=0
   send "$SENDER" worker "literal body" --kind ask --body "detail line one, not a file"
   local id; id=$(last_id)
   expect "literal body stored" contains "$(cat "$XDG_STATE_HOME/hail/inbox/worker/$id.md")" "detail line one, not a file" || ok=1
   expect "hint present" contains "$(envelope_line "$id")" "— hail inbox" || ok=1
   local long; long=$(printf 'x%.0s' $(seq 1 200))
-  send "$SENDER" worker "$long" --kind fyi
-  expect "over cap rc=2" eq "$RC" 2 || ok=1
-  expect "refusal names --body" contains "$ERR" "put the detail in --body" || ok=1
-  return "$ok"
+  send "$SENDER" worker "$long" --kind fyi; id=$(last_id)
+  expect "over cap folds, rc=0" eq "$RC" 0 || ok=1
+  expect "fold announced" contains "$ERR" "headline folded to" || ok=1
+  expect "folded body holds the full text" contains "$(cat "$XDG_STATE_HOME/hail/inbox/worker/$id.md")" "$long" || ok=1
+  expect "folded envelope carries a fetch hint" contains "$(envelope_line "$id")" "— hail inbox" || ok=1
+  as "$RECV" inbox >/dev/null
+  reset_sender; reset_recv; return "$ok"
 }
 
 scenario 34 "no --body: complete envelope, silent deliver with receipt; --body delivered once" s34

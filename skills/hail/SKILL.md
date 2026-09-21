@@ -24,7 +24,9 @@ An envelope is one line in your prompt:
 the `reply:` pane id or the label alone, never to `label/%N`. `id`
 is for receipts and `--re`. `bead` is the issue the body is also posted to.
 `re` names the message this answers, closes or lifts. `scope` is what it
-applies to. The headline is written by the sender and is never truncated.
+applies to. The headline is written by the sender; over the cap it is folded
+at a sentence boundary and the full text travels in the body (control kinds
+are refused instead, they have no body).
 
 - **With the hooks installed** (see below) the body arrives with the envelope
   as hook context on the same turn, and the receipt is written for you. Read

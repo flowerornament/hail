@@ -5,7 +5,7 @@
 # `inbox`, and `await` on top of receipts. See DESIGN.md.
 set -euo pipefail
 
-VERSION="0.2.3"
+VERSION="0.2.4"
 
 KINDS="ruling go nogo ask fyi done stop hold block release announce"
 
@@ -511,6 +511,22 @@ is_inline_kind() {
   case "$1" in stop|hold|block|release|announce) return 0 ;; *) return 1 ;; esac
 }
 
+# Cut a long headline at the last sentence or clause boundary that fits the
+# cap, leaving room for the ellipsis; fall back to a word boundary, then a
+# hard cut. The full text is carried in the body by the caller.
+fold_headline() {
+  local text="$1" max="$2" limit head
+  limit=$(( max - 2 ))
+  head="${text:0:$limit}"
+  local cut=-1 i
+  for sep in '. ' '; ' ', ' ' '; do
+    i="${head%"$sep"*}"
+    if [[ "$i" != "$head" && ${#i} -gt $(( limit / 2 )) ]]; then cut=${#i}; break; fi
+  done
+  if (( cut > 0 )); then head="${text:0:$cut}"; fi
+  printf '%s …' "${head%"${head##*[![:space:]]}"}"
+}
+
 # First token that looks like a beads issue id (prefix-hash[.n]). The hash
 # must contain a digit so ordinary hyphenated words (tmux-bridge, read-only)
 # are not mistaken for an issue.
@@ -587,8 +603,17 @@ cmd_send() {
   [[ -n "$scope" && "$scope" == *$'\n'* ]] && die "--scope must be one line"
 
   local max=${HAIL_ENVELOPE_MAX:-400}
+  local overflow=""
   if (( ${#text} > max )); then
-    die_rc 2 "headline is ${#text} characters; the cap is $max. Keep the headline to the ask and the why; put the detail in --body 'text' (or --body file, --body -)."
+    if is_inline_kind "$kind"; then
+      die_rc 2 "headline is ${#text} characters; the cap is $max. A $kind is complete in its envelope and has no body; shorten it."
+    fi
+    # The sender wrote one message; the tool decides the envelope. Keep the
+    # opening sentences in the headline and carry the whole text in the body,
+    # instead of refusing and costing the sender a retry.
+    overflow="$text"
+    text=$(fold_headline "$text" "$max")
+    echo "hail: headline folded to ${#text} characters (cap $max); the full text rides in the body" >&2
   fi
   case "$kind" in
     done|release) [[ -n "$re" ]] || die "--kind $kind requires --re <id>" ;;
@@ -646,7 +671,7 @@ cmd_send() {
   # else is the body text itself. Without --body the body is the headline.
   local body
   if [[ -z "$body_src" ]]; then
-    body="$text"
+    body="${overflow:-$text}"
   elif [[ "$body_src" == "-" ]]; then
     body=$(cat)
   elif [[ -f "$body_src" && -r "$body_src" ]]; then
@@ -654,6 +679,11 @@ cmd_send() {
   else
     body="$body_src"
   fi
+  if [[ -n "$overflow" && -n "$body_src" ]]; then
+    body="$overflow"$'\n\n'"$body"
+  fi
+  # A folded headline always carries a body, even without --body.
+  if [[ -n "$overflow" && -z "$body_src" ]]; then body_src="folded"; fi
 
   # Bead-first: explicit --bead, else the first issue id named in the text.
   if [[ -z "$bead" ]]; then bead=$(detect_bead "$text" || true); fi

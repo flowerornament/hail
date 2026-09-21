@@ -11,7 +11,9 @@ receipt the sender can query.
 ```
 
 - **Envelope** in the pane: kind, sender, id, optional bead, `re:`, `scope:`,
-  and a headline the sender wrote. Never truncated; over the cap is refused.
+  and a headline the sender wrote. Over the cap, the headline is folded at a
+  sentence boundary and the full text rides in the body; control kinds
+  (stop, hold, block, release, announce) have no body and are refused instead.
 - **Body** on disk, injected into the recipient's context by the
   `UserPromptSubmit` hook (`hail deliver`), or fetched with `hail inbox`.
 - **Receipt** written by that delivery: `injected <time>` or `read <time>`.
