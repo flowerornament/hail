@@ -4,6 +4,14 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.3.2 - 2026-09-30
+
+- The unsent-draft guard reads the composer in colour. Claude Code draws its
+  prompt glyph and ghost-text suggestions in grey (or dim) and typed text in
+  the default colour, so only default-colour text in the composer is a draft.
+  A ghost-text suggestion (any text, not only the known placeholders) held a
+  GO for 40 minutes. Panes that draw no rules keep the last-row rule.
+
 ## v0.3.1 - 2026-09-29
 
 - The unsent-draft guard no longer mistakes Claude Code's background-agent

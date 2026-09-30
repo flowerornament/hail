@@ -656,6 +656,14 @@ s31() { # guards: permission dialog (exit 4), unsent draft (exit 5), --force
   recv_showing "$rule" "❯ half a thought between the rules" "$rule" "  footer" "  ⏺ main"
   send "$SENDER" worker "would append to a ruled draft" --kind fyi
   expect "ruled draft rc=5" eq "$RC" 5 || ok=1
+  # Ghost text: Claude Code draws a suggestion in grey after the (grey) prompt
+  # glyph in an empty composer. It is not a draft; typed text is default-colour.
+  recv_showing "$rule" $'\e[38;5;246m❯ \e[38;5;244mland the covers slice and hail 2b\e[39m' "$rule" "  footer"
+  send "$SENDER" worker "empty composer with ghost text" --kind fyi
+  expect "ghost text is not a draft rc=0" eq "$RC" 0 || ok=1
+  recv_showing "$rule" $'\e[38;5;246m❯ \e[39mtyped by a person' "$rule" "  footer"
+  send "$SENDER" worker "would append to typed text" --kind fyi
+  expect "default-colour text is a draft rc=5" eq "$RC" 5 || ok=1
   reset_recv; return "$ok"
 }
 
