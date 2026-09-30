@@ -348,7 +348,9 @@ hail state — files, environment and exit codes
 State ($XDG_STATE_HOME/hail, default ~/.local/state/hail; keep it outside repos):
   inbox/<label>/<id>.md, <id>.read     obligations/<label>/<id>
   holds/<id>   identity/<label>   incarnation/<pane>   sent/<label>/<id>
-No daemon, no database.
+No daemon, no database. The files are the state: deleting holds/<id> lifts a
+stale hold without typing anything into the recipient's pane, e.g.
+  grep -l '^issuer: %1$' "$XDG_STATE_HOME/hail/holds"/* | xargs rm
 
 Environment:
   HAIL_SOCKET          tmux server socket (TMUX_BRIDGE_SOCKET accepted)

@@ -4,6 +4,9 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+- `hail help state` says how to lift stale holds silently: delete the hold
+  file. No flag needed; the files are the state.
+
 ## v0.3.5 - 2026-09-30
 
 - Removed the unsent-draft guard. In two days it refused sends for a subagent
