@@ -4,6 +4,8 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.3.6 - 2026-09-30
+
 - A send no longer withholds Enter when the target's foreground command is a
   shell. tmux reports the process an agent's tool is running, so every agent
   mid-command looked like a shell and envelopes sat unsubmitted in composers.
