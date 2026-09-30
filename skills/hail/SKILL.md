@@ -55,7 +55,7 @@ run it yourself after a compaction or when unsure what you owe.
 | `done` | Closes one obligation. `--re <id>` required; `--scope` names the part done. Only the obligated party can close it. |
 | `nogo` `fyi` | No state. `fyi` for status; `ask` only when you expect a reply. |
 | `hold` `block` | Records a hold in effect (`--scope` says on what). Listed in every brief until released. |
-| `release` | Lifts one hold or block: `--re <id>`. Refused for anyone but its issuer. |
+| `release` | Lifts one hold or block: `--re <id>`. Anyone may; `brief` shows who issued it. |
 | `stop` `announce` | No state. |
 
 `stop hold block release announce` are control kinds: typed in full, no fetch
@@ -78,8 +78,8 @@ hail <target> '<headline>' --kind <kind> [--bead id] [--re id] [--scope s] [--bo
 Enter. When the target runs a shell (bash, zsh, sh, fish) `send` types the
 envelope but does not press Enter, because the shell would execute it;
 `--force` submits anyway. Non-agent panes are driven with `type`/`keys`. Before typing, `send` refuses a pane that shows a permission dialog
-(exit 4: on Claude Code the text is discarded and Enter approves the command)
-or an unsent draft that is not an envelope (exit 5); `--force` overrides.
+(exit 4: on Claude Code the text is discarded and Enter approves the command);
+`--force` overrides.
 `hail send`, `message` and `msg` are accepted before the target.
 
 ```bash
@@ -177,7 +177,7 @@ in `--body`.
 - `HAIL_SOCKET` overrides tmux server detection (`TMUX_BRIDGE_SOCKET` also
   works). `hail doctor` reports why a server is unreachable.
 - Exit codes: 1 usage/state, 2 headline over cap, 3 label moved, 4 permission
-  dialog in target, 5 unsent draft in target.
+  dialog in target.
 - `hail --help` lists everything.
 
 ## Raw tmux (only when hail cannot do it)

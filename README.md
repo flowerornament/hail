@@ -78,7 +78,7 @@ hail murail-1b 'convert at the receipt, not the producer' --kind ruling --bead m
 
 `send`, `message` and `msg` are accepted before the target. `--re <id>` names
 the message this answers, closes or lifts; `--scope` says what it applies to;
-`--no-submit` skips Enter; `--force` skips the dialog and draft guards. A
+`--no-submit` skips Enter; `--force` skips the dialog guard. A
 message with no `--body` is complete in the envelope: no `— hail inbox` hint
 and nothing injected by the hook; the receipt is still written.
 
@@ -107,7 +107,7 @@ hail murail-1b 'gate green' --kind release --re 0905T1650-1c2e
 Kinds: `ruling go nogo ask fyi done stop hold block release announce`. `--kind`
 is required. The headline is capped at `HAIL_ENVELOPE_MAX` characters (default
 400); the body has no limit. `--body` takes text, a file, or `-` for stdin. Exit codes: 2 headline over cap, 3 label moved,
-4 permission dialog in the target, 5 unsent draft in the target.
+4 permission dialog in the target.
 `hail --help` documents every verb and flag.
 
 `read`, `type` and `keys` drive non-agent panes: a shell, a gate run, a prompt

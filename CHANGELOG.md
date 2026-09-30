@@ -4,6 +4,18 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.3.5 - 2026-09-30
+
+- Removed the unsent-draft guard. In two days it refused sends for a subagent
+  row, a queued-message placeholder, ghost-text suggestions and a grey glyph,
+  grew a colour parser and three regexes, and never once caught a real draft.
+  A send now types the envelope after whatever the composer holds, as it did
+  before 0.2.5. Exit code 5 is gone; the permission-dialog guard (exit 4) and
+  `--force` stay.
+- Removed the "only the issuer can release" rule: a hold issued before its
+  pane was labeled could not be released after `hail name`. Anyone may now
+  release a hold; `hail brief` still shows who issued it.
+
 ## v0.3.2 - 2026-09-30
 
 - The unsent-draft guard reads the composer in colour. Claude Code draws its

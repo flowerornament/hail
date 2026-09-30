@@ -5,7 +5,7 @@
 # `inbox`, and `await` on top of receipts. See DESIGN.md.
 set -euo pipefail
 
-VERSION="0.3.4"
+VERSION="0.3.5"
 
 KINDS="ruling go nogo ask fyi done stop hold block release announce"
 
@@ -230,7 +230,7 @@ Options:
   --scope <s>       What the message applies to: bead, ref, path, action
   --no-submit       Type the envelope but do not press Enter. Default when the
                     target runs a shell, which would execute the text.
-  --force           Skip the dialog and draft guards; submit into a shell
+  --force           Skip the dialog guard; submit into a shell
 
 Headline:
   The ask and the why, at most HAIL_ENVELOPE_MAX characters (default 400).
@@ -244,8 +244,8 @@ Envelope typed into the pane:
   The trailing hint appears only when there is a body to fetch.
 
 Guards:
-  A send needs a prior 'hail read <target>' (exit 1), refuses a pane showing
-  a permission dialog (exit 4) and a pane with an unsent draft (exit 5).
+  A send needs a prior 'hail read <target>' (exit 1) and refuses a pane
+  showing a permission dialog (exit 4).
 
 Receipts:
   sent <id>                     delivered | read <t> | injected <t> | inline <t> | unknown
@@ -264,8 +264,8 @@ hail kinds — what each message kind means and does
                       closes it with 'done --re <id>'. 'hail brief' lists open
                       obligations on the reader.
   done                Close one obligation. --re required, --scope optional.
-  hold  block         Record a hold that stays in effect until the issuer
-                      sends 'release --re <id>'. Refused for another issuer.
+  hold  block         Record a hold that stays in effect until someone sends
+                      'release --re <id>'. 'hail brief' shows who issued it.
   release             Lift a hold. --re required.
   nogo  fyi  announce  stop
                       No state.
@@ -363,7 +363,6 @@ Beads:
 Exit codes:
   0 ok                     1 usage or state error    2 headline over cap
   3 label moved            4 target shows a permission dialog
-  5 target has an unsent draft
 EOF
 }
 
@@ -595,81 +594,15 @@ send_text_verified() {
   fi
 }
 
-# Refuse to type into a pane that shows a permission dialog (Claude Code
-# discards text typed over one and its Enter approves the command) or an
-# unsent composer draft that is not a hail envelope.
+# Refuse to type into a pane that shows a permission dialog: Claude Code
+# discards text typed over one and its Enter approves the command.
 DIALOG_RE="Yes, and don't ask again|Do you want to proceed|\\(y/n\\)|Allow once|Approve|Esc to cancel"
 
-# Rows that are never composer text: Claude Code's background-agent panel
-# ('◯ general-purpose  Searching ...  10m 0s · ↓ 64.2k tokens', the selected row
-# prefixed with ❯), its spinner line, and composer placeholders.
-STATUS_ROW_RE='↓ [0-9.]+[kM]? tokens|^[[:space:]]*(❯[[:space:]]+)?◯[[:space:]]+[[:alnum:]_-]+[[:space:]]{2,}|^[[:space:]]*⏺ main[[:space:]]*$'
-PLACEHOLDER_RE='^Press up to edit queued messages$|^Try "'
-
-# The text of a captured row drawn in the default colour: SGR sequences are
-# consumed, and characters drawn grey (256-colour 232-255 or 8, or 90) or dim
-# (2) are dropped, since Claude Code draws its prompt glyph and ghost-text
-# suggestions that way.
-default_colour_text() {
-  perl -ne 'chomp; my ($grey, $dim, $out) = (0, 0, "");
-    for my $tok (split /(\e\[[0-9;]*m)/) {
-      if ($tok =~ /^\e\[([0-9;]*)m$/) {
-        my @c = length $1 ? split(/;/, $1) : (0);
-        for (my $i = 0; $i < @c; $i++) {
-          my $x = $c[$i];
-          if ($x == 0) { ($grey, $dim) = (0, 0) }
-          elsif ($x == 39) { $grey = 0 }
-          elsif ($x == 22) { $dim = 0 }
-          elsif ($x == 2) { $dim = 1 }
-          elsif ($x == 90) { $grey = 1 }
-          elsif (($x >= 30 && $x <= 37) || ($x >= 91 && $x <= 97)) { $grey = 0 }
-          elsif ($x == 38 && ($c[$i + 1] // 0) == 5) { my $n = $c[$i + 2] // 0; $grey = ($n == 8 || $n >= 232) ? 1 : 0; $i += 2 }
-          elsif ($x == 38 && ($c[$i + 1] // 0) == 2) { $grey = 0; $i += 4 }
-        }
-      } elsif (!$grey && !$dim) { $out .= $tok }
-    }
-    print "$out\n"'
-}
-
 pane_guard() {
-  local target="$1" tail8 last draft
-  # Captured in colour and reduced to default-colour text, so a dim or grey
-  # suggestion after the glyph reads as an empty prompt here too.
-  tail8=$(tmx capture-pane -t "$target" -p -J -e | grep -v '^[[:space:]]*$' | tail -8 | default_colour_text || true)
+  local target="$1" tail8
+  tail8=$(tmx capture-pane -t "$target" -p -J | grep -v '^[[:space:]]*$' | tail -8 || true)
   if printf '%s\n' "$tail8" | grep -qE "$DIALOG_RE"; then
     die_rc 4 "$target shows a permission/approval dialog; text typed there is discarded and Enter approves it. Resolve the dialog first (or --force)."
-  fi
-  # Fallback for panes that draw no rules (Codex '›', shells): the last row that
-  # is not an agent-status row, when it starts with a prompt glyph.
-  last=$(printf '%s\n' "$tail8" | { grep -vE "$STATUS_ROW_RE" || true; } | tail -1 | sed -E 's/^[[:space:]│┃|]+//; s/[[:space:]│┃|]+$//')
-  draft=""
-  case "$last" in
-    '>'*)  draft="${last#>}" ;;
-    '›'*)  draft="${last#›}" ;;
-    '❯'*)  draft="${last#❯}" ;;
-  esac
-  draft="${draft#"${draft%%[![:space:]]*}"}"
-  # Claude Code draws its composer between two horizontal rules, and rows below
-  # the lower rule (footer and background-agent panel, one row per agent) may
-  # start with the same ❯, as a selection cursor. When the rules are there, only
-  # the text between the last two is the composer. The window must be tall
-  # enough to hold the panel, or the rules fall out of it and the fallback
-  # reads a subagent row as a draft.
-  # Read with colour: Claude Code draws its prompt glyph and any ghost-text
-  # suggestion in grey (or dim), and typed text in the default colour. Only
-  # default-colour text in the composer is a draft.
-  local rows composer
-  rows=$(tmx capture-pane -t "$target" -p -e | grep -v '^[[:space:]]*$' | tail -60 || true)
-  composer=$(printf '%s\n' "$rows" | awk '
-    /^([[:space:]]|\033\[[0-9;]*m)*───/ { if (open) { print buf; found = 1 } open = 1; buf = ""; next }
-    open { buf = buf $0 }
-    END { if (!found) exit 1 }' | tail -1) && {
-    composer=$(printf '%s' "$composer" | default_colour_text | sed -E 's/^[[:space:]│┃|]+//; s/^(>|›|❯)//; s/[[:space:]]+$//')
-    draft="${composer#"${composer%%[![:space:]]*}"}"
-  }
-  if printf '%s' "$draft" | grep -qE "$PLACEHOLDER_RE"; then draft=""; fi
-  if [[ -n "$draft" && "$draft" != \[hail* && "$draft" != \[tb* && "$draft" != \[tmux-bridge* ]]; then
-    die_rc 5 "$target has an unsent draft in its composer: '${draft:0:60}'. Not appending to it (or --force)."
   fi
 }
 
@@ -846,8 +779,6 @@ cmd_send() {
     release)
       holdf="$(holds_root)/$re"
       [[ -f "$holdf" ]] || die "no hold or block in effect with id $re"
-      local issuer; issuer=$(hdr "$holdf" issuer)
-      [[ "$issuer" == "$from_key" ]] || die "hold $re was issued by $issuer, not by $from_key; only its issuer can release it"
       ;;
     done)
       oblf="$(obligations_root)/$from_key/$re"

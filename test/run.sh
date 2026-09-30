@@ -466,11 +466,6 @@ s25() { # hold -> release by issuer / refused by another; block; envelope carrie
   expect "brief lists holds (2)" contains "$out" "holds / blocks in effect (2)" || ok=1
   expect "brief hold line" contains "$out" "[hail hold from:boss to:worker id:$h scope:murail-ke7is] HOLD landing" || ok=1
   expect "brief block line" contains "$out" "[hail block from:boss to:worker id:$b]" || ok=1
-  # another issuer (worker) cannot release boss's hold
-  send "$RECV" boss "lifting your hold" --kind release --re "$h"
-  expect "release by other refused rc=1" eq "$RC" 1 || ok=1
-  expect "refusal names the issuer" contains "$ERR" "issued by boss, not by worker" || ok=1
-  expect "hold still there" exists "$XDG_STATE_HOME/hail/holds/$h" || ok=1
   reset_sender
   send "$SENDER" worker "lifted" --kind release
   expect "release without --re refused" eq "$RC" 1 || ok=1
@@ -613,7 +608,7 @@ s30() { # send submits; --no-submit does not and keeps the read mark
   reset_recv; return "$ok"
 }
 
-s31() { # guards: permission dialog (exit 4), unsent draft (exit 5), --force
+s31() { # guard: permission dialog (exit 4), --force
   local ok=0
   recv_showing "Bash(rm -rf build)" "Do you want to proceed?" "  1. Yes" "  2. Yes, and don't ask again" "  3. No" "Esc to cancel"
   send "$SENDER" worker "would approve rm" --kind fyi
@@ -622,62 +617,11 @@ s31() { # guards: permission dialog (exit 4), unsent draft (exit 5), --force
   expect "nothing typed" not_contains "$(pane_text "$RECV")" "would approve rm" || ok=1
   send "$SENDER" worker "forced past dialog" --kind fyi --force
   expect "--force rc=0" eq "$RC" 0 || ok=1
+  # Whatever else the composer shows (a draft, ghost text, an agent panel) is
+  # not the sender's problem: the envelope is typed after it.
   recv_showing "some earlier output" "> half a thought the user has not sent"
-  send "$SENDER" worker "would append to a draft" --kind fyi
-  expect "draft rc=5" eq "$RC" 5 || ok=1
-  expect "draft message" contains "$ERR" "unsent draft in its composer: 'half a thought" || ok=1
-  send "$SENDER" worker "forced past draft" --kind fyi --force
-  expect "--force past draft rc=0" eq "$RC" 0 || ok=1
-  recv_showing "› [hail kind:fyi from:x id:y] an envelope waiting to be submitted"
-  send "$SENDER" worker "envelope drafts are fine" --kind fyi
-  expect "hail draft allowed rc=0" eq "$RC" 0 || ok=1
-  # Claude Code: an empty composer between its rules, and the agent panel below
-  # them with ❯ as a selection cursor. Only the composer can hold a draft.
-  local rule; rule=$(printf '─%.0s' {1..40})
-  recv_showing "$rule" "❯ " "$rule" "  footer" "  ⏺ main" "❯ ◯ general-purpose  Searching cargo registry"
-  send "$SENDER" worker "empty composer above the agent panel" --kind fyi
-  expect "agent panel cursor is not a draft rc=0" eq "$RC" 0 || ok=1
-  # A tall agent panel (many ◯ rows) below the rules, the selected row carrying
-  # the ❯ cursor: the rules must still be found and the composer read as empty.
-  local -a panel=(); local n
-  for n in $(seq 1 14); do panel+=("  ◯ general-purpose  Searching participant-architecture.md for $n       10m 0s · ↓ 64.2k tokens"); done
-  recv_showing "$rule" "❯ " "$rule" "  herald (master) using opus" "  -- INSERT -- · ← 2 agents" "  ⏺ main" "${panel[@]}" "❯ ◯ general-purpose  Searching participant-architecture.md for 15   10m 0s · ↓ 64.2k tokens"
-  send "$SENDER" worker "tall agent panel" --kind fyi
-  expect "tall agent panel is not a draft rc=0 ($ERR)" eq "$RC" 0 || ok=1
-  # A queued-message placeholder in the composer is not a draft either.
-  recv_showing "✳ Churning… (2m · ↓ 2.4k tokens)" "$rule Rebuild context" "❯ Press up to edit queued messages" "$rule" "  footer" "  ⏺ main" "❯ ◯ general-purpose  Searching cargo  11m · ↓ 190k tokens"
-  send "$SENDER" worker "queued placeholder" --kind fyi
-  expect "queued placeholder is not a draft rc=0 ($ERR)" eq "$RC" 0 || ok=1
-  # A real draft above a tall panel is still refused.
-  recv_showing "$rule" "❯ a genuine unsent prompt" "$rule" "  footer" "  ⏺ main" "${panel[@]}"
-  send "$SENDER" worker "real draft above the panel" --kind fyi
-  expect "real draft above the panel rc=5" eq "$RC" 5 || ok=1
-  expect "real draft named" contains "$ERR" "'a genuine unsent prompt" || ok=1
-  # A dim (SGR 2) prompt suggestion after the glyph is not a draft; the same
-  # words typed in the default style are. Also the glyph-grey placeholder colour.
-  recv_showing "$rule" $'\e[38;5;246m❯\e[39m \e[2mrun bd init in hail and file the follow-ups\e[0m' "$rule" "  footer" "  ⏺ main"
-  send "$SENDER" worker "dim suggestion" --kind fyi
-  expect "dim suggestion is not a draft rc=0 ($ERR)" eq "$RC" 0 || ok=1
-  recv_showing "$rule" $'❯ \e[38;5;246mgrey placeholder text\e[39m' "$rule" "  footer"
-  send "$SENDER" worker "grey placeholder" --kind fyi
-  expect "grey placeholder is not a draft rc=0 ($ERR)" eq "$RC" 0 || ok=1
-  recv_showing "› $(printf '\e[2m')a dim codex suggestion$(printf '\e[0m')"
-  send "$SENDER" worker "dim codex suggestion" --kind fyi
-  expect "dim suggestion without rules rc=0 ($ERR)" eq "$RC" 0 || ok=1
-  recv_showing "$rule" "❯ run bd init in hail and file the follow-ups" "$rule" "  footer" "  ⏺ main"
-  send "$SENDER" worker "typed words" --kind fyi
-  expect "the same words typed are a draft rc=5" eq "$RC" 5 || ok=1
-  recv_showing "$rule" "❯ half a thought between the rules" "$rule" "  footer" "  ⏺ main"
-  send "$SENDER" worker "would append to a ruled draft" --kind fyi
-  expect "ruled draft rc=5" eq "$RC" 5 || ok=1
-  # Ghost text: Claude Code draws a suggestion in grey after the (grey) prompt
-  # glyph in an empty composer. It is not a draft; typed text is default-colour.
-  recv_showing "$rule" $'\e[38;5;246m❯ \e[38;5;244mland the covers slice and hail 2b\e[39m' "$rule" "  footer"
-  send "$SENDER" worker "empty composer with ghost text" --kind fyi
-  expect "ghost text is not a draft rc=0" eq "$RC" 0 || ok=1
-  recv_showing "$rule" $'\e[38;5;246m❯ \e[39mtyped by a person' "$rule" "  footer"
-  send "$SENDER" worker "would append to typed text" --kind fyi
-  expect "default-colour text is a draft rc=5" eq "$RC" 5 || ok=1
+  send "$SENDER" worker "appended after a draft" --kind fyi
+  expect "draft does not block rc=0 ($ERR)" eq "$RC" 0 || ok=1
   reset_recv; return "$ok"
 }
 
@@ -763,13 +707,13 @@ scenario 21 "deliver: plain text, injected receipt, silent when empty, inbox --a
 scenario 22 "deliver --format codex / claude: hook JSON, escaping" s22
 scenario 23 "deliver without a tmux server, under 50 ms, stdin accepted" s23
 scenario 24 "brief: silent when empty, inbox, sends without receipt" s24
-scenario 25 "hold/block -> release by issuer, refused for another; re:/scope:" s25
+scenario 25 "hold/block -> release; re:/scope:" s25
 scenario 26 "go/ruling -> done closes exactly one; wrong re fails; survives a read" s26
 scenario 27 "headline over cap refused (control kind too); missing kind refused" s27
 scenario 28 "identity: moved label refused (exit 3), who, name mints, hello idempotent, restart" s28
 scenario 29 "bare-target send form" s29
 scenario 30 "send submits; --no-submit keeps the read mark" s30
-scenario 31 "guards: permission dialog, unsent draft, --force" s31
+scenario 31 "guard: permission dialog, --force" s31
 scenario 32 "read <target> N returns exactly N lines" s32
 scenario 33 "send into a shell pane types but does not submit; --force submits" s33
 s36() { # show <id>
