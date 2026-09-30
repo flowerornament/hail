@@ -803,6 +803,27 @@ scenario 34 "no --body: complete envelope, silent deliver with receipt; --body d
 scenario 35 "--body literal text; over-cap refusal names --body" s35
 scenario 36 "show <id>: one body by id, no receipt; missing id and missing --kind name it" s36
 
+s37() { # a daemon's child: no pane is its ancestor and TMUX_PANE is stale
+  local ok=0 dir="$SCRATCH/seat-recv" other="$SCRATCH/no-pane-here" out
+  mkdir -p "$dir" "$other"
+  "${T[@]}" respawn-pane -k -c "$dir" -t "$RECV" cat; sleep 0.3
+  # Double fork and setsid: the process is reparented to pid 1, as a command
+  # run by Codex's shared app-server is, and carries the sender's pane id.
+  orphan_id() {
+    rm -f "$SCRATCH/orphan.out"
+    (cd "$1" && TMUX_PANE="$SENDER" perl -e 'use POSIX; if (fork) { exit 0 } POSIX::setsid(); if (fork) { exit 0 } sleep 0.3; exec(@ARGV)' "$HAIL" id >"$SCRATCH/orphan.out" 2>&1)
+    for _ in 1 2 3 4 5 6 7 8 9 10; do [[ -s "$SCRATCH/orphan.out" ]] && break; sleep 0.2; done
+    cat "$SCRATCH/orphan.out"
+  }
+  out=$(orphan_id "$dir")
+  expect "the pane sitting in its directory, not the stale TMUX_PANE" eq "$out" "$RECV" || ok=1
+  out=$(orphan_id "$other")
+  expect "no pane in its directory: TMUX_PANE stands" eq "$out" "$SENDER" || ok=1
+  reset_recv; return "$ok"
+}
+
+scenario 37 "a daemon's child with a stale TMUX_PANE resolves the pane in its directory" s37
+
 echo "---"
 echo "passed $PASS, failed $FAIL"
 if (( FAIL > 0 )); then echo "failed scenarios: ${FAILED[*]}"; exit 1; fi

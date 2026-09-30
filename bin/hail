@@ -5,7 +5,7 @@
 # `inbox`, and `await` on top of receipts. See DESIGN.md.
 set -euo pipefail
 
-VERSION="0.3.3"
+VERSION="0.3.4"
 
 KINDS="ruling go nogo ask fyi done stop hold block release announce"
 
@@ -1514,14 +1514,40 @@ cmd_doctor() {
 # signs, reads and delivers as the wrong pane (murail-4vc8v, murail-m65jq).
 # Falls back to $TMUX_PANE when no tmux server answers.
 own_pane() {
-  local map pid=$$ hit
-  map=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null) \
-    || { printf '%s' "${TMUX_PANE:-}"; return; }
-  while [[ "$pid" =~ ^[0-9]+$ ]] && (( pid > 1 )); do
-    hit=$(awk -v p="$pid" '$1 == p { print $2; exit }' <<<"$map")
-    [[ -n "$hit" ]] && { printf '%s' "$hit"; return; }
-    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
-  done
+  local map pid=$$ hit socket
+  # Ask the server hail talks to: an explicit socket (the test harness) wins.
+  socket=$(socket_override)
+  if [[ -n "$socket" ]]; then
+    map=$(tmux -S "$socket" list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null)
+  else
+    map=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null)
+  fi || { printf '%s' "${TMUX_PANE:-}"; return; }
+  # One ps and one awk: walk this process's ancestors against the pane roots.
+  hit=$( { printf '%s\n' "$map" | sed 's/^/pane /'; ps -A -o pid= -o ppid= 2>/dev/null; } \
+    | awk -v start="$pid" '
+        $1 == "pane" { pane[$2] = $3; next }
+        { parent[$1] = $2 }
+        END {
+          for (p = start; p > 1 && (p in parent); p = parent[p])
+            if (p in pane) { print pane[p]; exit }
+        }')
+  [[ -n "$hit" ]] && { printf '%s' "$hit"; return; }
+  # No pane is an ancestor: the process runs under a daemon (Codex's shared
+  # app-server), whose inherited TMUX_PANE names whichever pane started the
+  # daemon. The working directory survives the daemon, so take the one pane
+  # sitting in this directory; with none or several, keep TMUX_PANE.
+  local paths here
+  if [[ -n "$socket" ]]; then
+    paths=$(tmux -S "$socket" list-panes -a -F '#{pane_id} #{pane_current_path}' 2>/dev/null)
+  else
+    paths=$(tmux list-panes -a -F '#{pane_id} #{pane_current_path}' 2>/dev/null)
+  fi
+  here=$(pwd -P)
+  hit=$(awk -v d="$here" '{ id = $1; $1 = ""; sub(/^ /, ""); if ($0 == d) print id }' <<<"$paths")
+  if [[ -n "$hit" && "$hit" != *$'\n'* ]]; then
+    printf '%s' "$hit"
+    return
+  fi
   printf '%s' "${TMUX_PANE:-}"
 }
 if [[ -n "${TMUX_PANE:-}${TMUX:-}" ]]; then
