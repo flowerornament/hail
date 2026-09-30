@@ -228,9 +228,8 @@ Options:
                     'bd comment'. An issue id in the headline is detected.
   --re <id>         The message this answers, closes (done) or lifts (release)
   --scope <s>       What the message applies to: bead, ref, path, action
-  --no-submit       Type the envelope but do not press Enter. Default when the
-                    target runs a shell, which would execute the text.
-  --force           Skip the dialog guard; submit into a shell
+  --no-submit       Type the envelope but do not press Enter
+  --force           Skip the dialog guard
 
 Headline:
   The ask and the why, at most HAIL_ENVELOPE_MAX characters (default 400).
@@ -555,45 +554,26 @@ cmd_list() {
     done
 }
 
-# Type text into a pane and PROVE it arrived, repairing once if it did not.
-#
-# A vim-mode input box rests in Normal mode and swallows typed text as
-# commands until a literal "i" enters Insert mode, so the head of a message
-# disappears and the tail still reads as a complete sentence. The mode is not
-# reliably observable: codex prints "Vim: Normal" in its status bar, Claude
-# Code prints "-- INSERT --" only while inserting and nothing at all in Normal
-# mode, and a working agent shows progress there instead of its composer. So
-# do not model the mode. Type, look for the text's own opening words in the
-# pane, and only if they are absent enter Insert mode, clear what partially
-# landed, and type once more.
+# Type text into a pane and wait until it shows there. The pane may take a
+# while to redraw under load, so poll for the text's own opening bytes for up
+# to two seconds; never clear or retype, which doubled messages and ate
+# drafts. When the text does not show, say so and leave it as typed.
 send_text_verified() {
   local target="$1" text="$2" probe flat i
   # LC_ALL=C keeps both sides byte-oriented: head -c can split a multibyte
-  # character, and tr refuses an invalid sequence in a UTF-8 locale. Comparing
-  # bytes is sound because a split character's leading bytes still prefix the
-  # whole character in the capture. Whitespace goes because the composer wraps.
+  # character, and tr refuses an invalid sequence in a UTF-8 locale. Whitespace
+  # goes because the composer wraps.
   probe=$(printf '%s' "$text" | head -c 40 | LC_ALL=C tr -d '[:space:]')
   tmx send-keys -t "$target" -l -- "$text"
-  sleep 0.15
-  flat=$(tmx capture-pane -t "$target" -p | LC_ALL=C tr -d '[:space:]')
-  if [[ -n "$probe" && "$flat" != *"$probe"* ]]; then
-    tmx send-keys -t "$target" -l -- "i"
+  [[ -n "$probe" ]] || return 0
+  for i in $(seq 1 20); do
     sleep 0.1
-    # A draft may hold several lines and C-u clears one, so clear repeatedly.
-    # Retyping over a partial draft is what doubles a message.
-    for i in 1 2 3 4 5 6 7 8; do tmx send-keys -t "$target" C-u; done
-    sleep 0.15
-    tmx send-keys -t "$target" -l -- "$text"
-    sleep 0.15
     flat=$(tmx capture-pane -t "$target" -p | LC_ALL=C tr -d '[:space:]')
-    if [[ "$flat" != *"$probe"* ]]; then
-      printf 'hail: could not confirm the text landed in %s; submitting nothing.\n' "$target" >&2
-      printf 'hail: a composer renders only its most recent lines, so a message past\n' >&2
-      printf 'hail: roughly 400 characters cannot be verified this way. Put the content\n' >&2
-      printf 'hail: on a bead and send a short pointer, which durable coordination wants anyway.\n' >&2
-      return 1
-    fi
-  fi
+    [[ "$flat" == *"$probe"* ]] && return 0
+  done
+  printf 'hail: could not see the text in %s after 2 s; it was typed once and not submitted.\n' "$target" >&2
+  printf 'hail: hail read %s to check, then hail keys %s Enter to submit it.\n' "$target" "$target" >&2
+  return 1
 }
 
 # Refuse to type into a pane that shows a permission dialog: Claude Code
@@ -789,17 +769,6 @@ cmd_send() {
   esac
 
   $force || pane_guard "$target"
-
-  # A shell would execute the envelope: type it there, but do not press Enter.
-  local cur
-  cur=$(tmx display-message -t "$target" -p '#{pane_current_command}' 2>/dev/null || true)
-  if $submit && ! $force; then
-    case "$cur" in
-      bash|zsh|sh|fish|dash|ksh|tcsh|csh)
-        submit=false
-        echo "hail: $target runs $cur, a shell, so the envelope was typed but not submitted. A shell cannot receive messages; do not press Enter there. (--force submits anyway)" >&2 ;;
-    esac
-  fi
 
   # Body: --body '-' reads stdin; an existing readable file is read; anything
   # else is the body text itself. Without --body the body is the headline.

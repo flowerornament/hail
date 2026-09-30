@@ -4,6 +4,17 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+- A send no longer withholds Enter when the target's foreground command is a
+  shell. tmux reports the process an agent's tool is running, so every agent
+  mid-command looked like a shell and envelopes sat unsubmitted in composers.
+  The rule, its stderr note and the `--force` bypass for it are gone.
+- Typed-text verification polls for up to two seconds instead of looking once
+  after 150 ms, and never clears or retypes. Under load the old path missed
+  the redraw, sent eight Ctrl-U into the composer, retyped, and then left the
+  envelope unsubmitted; that doubled messages and ate drafts. When the text
+  still does not show, hail says so and names the `hail keys <target> Enter`
+  that submits it.
+
 - `hail help state` says how to lift stale holds silently: delete the hold
   file. No flag needed; the files are the state.
 

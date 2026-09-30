@@ -636,20 +636,13 @@ s32() { # read N returns N lines, the last ones
   reset_recv; return "$ok"
 }
 
-s33() { # shell target: no Enter by default, note printed, read mark kept; --force submits
+s33() { # a target running a shell is sent to like any other pane: typed and submitted
   local ok=0 id
   send "$RECV" boss "into a shell" --kind fyi; id=$(last_id)
-  sleep 0.2
-  expect "rc=0" eq "$RC" 0 || ok=1
-  expect "note names the shell" contains "$ERR" "$SENDER runs bash, a shell, so the envelope was typed but not submitted" || ok=1
-  expect "typed once, not executed" eq "$(pane_text "$SENDER" | grep -cF "id:$id")" 1 || ok=1
-  expect "bash did not run it" not_contains "$(pane_text "$SENDER")" "command not found" || ok=1
-  as "$RECV" keys boss C-u; RC=$?
-  expect "read mark kept" eq "$RC" 0 || ok=1
-  send "$RECV" boss "forced into a shell" --kind fyi --force; id=$(last_id)
   sleep 0.3
-  expect "--force rc=0" eq "$RC" 0 || ok=1
-  expect "no note with --force" not_contains "$ERR" "not submitted" || ok=1
+  expect "rc=0" eq "$RC" 0 || ok=1
+  expect "no shell note" not_contains "$ERR" "a shell" || ok=1
+  expect "typed once" eq "$(pane_text "$SENDER" | grep -cF "id:$id")" 1 || ok=1
   expect "submitted: bash tried to run it" contains "$(pane_text "$SENDER")" "command not found" || ok=1
   reset_sender; return "$ok"
 }
@@ -715,7 +708,7 @@ scenario 29 "bare-target send form" s29
 scenario 30 "send submits; --no-submit keeps the read mark" s30
 scenario 31 "guard: permission dialog, --force" s31
 scenario 32 "read <target> N returns exactly N lines" s32
-scenario 33 "send into a shell pane types but does not submit; --force submits" s33
+scenario 33 "a shell target is typed to and submitted like any pane" s33
 s36() { # show <id>
   local ok=0 id
   send "$SENDER" worker "shown by id" --kind ask --body "the body to show"
