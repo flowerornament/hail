@@ -4,6 +4,19 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.3.1 - 2026-09-29
+
+- The unsent-draft guard no longer mistakes Claude Code's background-agent
+  panel for a draft. With many subagents running, the panel pushed the
+  composer's rules out of the guard's window and the selected `❯ ◯ agent` row
+  read as a draft, which trained senders to reach for `--force`. The guard now
+  looks 60 rows up for the rules, ignores agent-status rows and the "Press up
+  to edit queued messages" placeholder, and no longer exits silently when the
+  last rows are all status rows.
+- `hail show <id>` prints one message body by id from any inbox on this
+  machine, with its receipt, and writes nothing. A send without `--kind`
+  names it in the error.
+
 ## v0.3.0 - 2026-09-29
 
 - `hail --version` and `hail -V` join `hail version`; `hail version --json`

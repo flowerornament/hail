@@ -5,7 +5,7 @@
 # `inbox`, and `await` on top of receipts. See DESIGN.md.
 set -euo pipefail
 
-VERSION="0.3.0"
+VERSION="0.3.1"
 
 KINDS="ruling go nogo ask fyi done stop hold block release announce"
 
@@ -175,6 +175,7 @@ Receive:
                                 This pane's unread bodies, marked injected (for hooks)
   brief                         Unread envelopes, unanswered sends, holds, obligations
   inbox [--peek] [--all]        Unread bodies; writes read receipts
+  show <id>                     One message body by id, from any inbox, no receipt
 
 Identity:
   name <target> <label>         Label a pane and register its incarnation
@@ -295,6 +296,9 @@ hail receive — read what was sent to this pane
   inbox [--peek] [--all]
         Print unread bodies and write 'read' receipts. --peek prints without
         marking; --all includes read messages with their receipt.
+  show <id>
+        Print one message by id from any inbox on this machine, with its
+        receipt when there is one. Writes nothing.
 
 Hooks: hooks/README.md in the source tree has the settings blocks for Claude
 Code and Codex. Without hooks everything still works: the envelope lands in
@@ -370,7 +374,7 @@ cmd_help() {
     "")                                  usage ;;
     send|message|msg|sent|await)         help_send ;;
     kinds|kind)                          help_kinds ;;
-    receive|deliver|brief|inbox)         help_receive ;;
+    receive|deliver|brief|inbox|show)    help_receive ;;
     identity|name|hello|who|list|resolve|id) help_identity ;;
     panes|pane|read|type|keys|doctor)    help_panes ;;
     state|env|environment|exit|beads)    help_state ;;
@@ -596,13 +600,21 @@ send_text_verified() {
 # unsent composer draft that is not a hail envelope.
 DIALOG_RE="Yes, and don't ask again|Do you want to proceed|\\(y/n\\)|Allow once|Approve|Esc to cancel"
 
+# Rows that are never composer text: Claude Code's background-agent panel
+# ('◯ general-purpose  Searching ...  10m 0s · ↓ 64.2k tokens', the selected row
+# prefixed with ❯), its spinner line, and composer placeholders.
+STATUS_ROW_RE='↓ [0-9.]+[kM]? tokens|^[[:space:]]*(❯[[:space:]]+)?◯[[:space:]]+[[:alnum:]_-]+[[:space:]]{2,}|^[[:space:]]*⏺ main[[:space:]]*$'
+PLACEHOLDER_RE='^Press up to edit queued messages$|^Try "'
+
 pane_guard() {
   local target="$1" tail8 last draft
   tail8=$(tmx capture-pane -t "$target" -p -J | grep -v '^[[:space:]]*$' | tail -8 || true)
   if printf '%s\n' "$tail8" | grep -qE "$DIALOG_RE"; then
     die_rc 4 "$target shows a permission/approval dialog; text typed there is discarded and Enter approves it. Resolve the dialog first (or --force)."
   fi
-  last=$(printf '%s\n' "$tail8" | tail -1 | sed -E 's/^[[:space:]│┃|]+//; s/[[:space:]│┃|]+$//')
+  # Fallback for panes that draw no rules (Codex '›', shells): the last row that
+  # is not an agent-status row, when it starts with a prompt glyph.
+  last=$(printf '%s\n' "$tail8" | { grep -vE "$STATUS_ROW_RE" || true; } | tail -1 | sed -E 's/^[[:space:]│┃|]+//; s/[[:space:]│┃|]+$//')
   draft=""
   case "$last" in
     '>'*)  draft="${last#>}" ;;
@@ -611,18 +623,21 @@ pane_guard() {
   esac
   draft="${draft#"${draft%%[![:space:]]*}"}"
   # Claude Code draws its composer between two horizontal rules, and rows below
-  # the lower rule (the background-agent panel) may start with the same ❯, as a
-  # selection cursor. When the rules are there, only the text between the last
-  # two is the composer.
+  # the lower rule (footer and background-agent panel, one row per agent) may
+  # start with the same ❯, as a selection cursor. When the rules are there, only
+  # the text between the last two is the composer. The window must be tall
+  # enough to hold the panel, or the rules fall out of it and the fallback
+  # reads a subagent row as a draft.
   local rows composer
-  rows=$(tmx capture-pane -t "$target" -p | grep -v '^[[:space:]]*$' | tail -12 || true)
+  rows=$(tmx capture-pane -t "$target" -p | grep -v '^[[:space:]]*$' | tail -60 || true)
   composer=$(printf '%s\n' "$rows" | awk '
     /^[[:space:]]*─{3}/ { if (open) { print buf; found = 1 } open = 1; buf = ""; next }
     open { buf = buf $0 }
     END { if (!found) exit 1 }' | tail -1) && {
-    composer=$(printf '%s' "$composer" | sed -E 's/^[[:space:]│┃|]+//; s/^(>|›|❯)//')
+    composer=$(printf '%s' "$composer" | sed -E 's/^[[:space:]│┃|]+//; s/^(>|›|❯)//; s/[[:space:]]+$//')
     draft="${composer#"${composer%%[![:space:]]*}"}"
   }
+  if printf '%s' "$draft" | grep -qE "$PLACEHOLDER_RE"; then draft=""; fi
   if [[ -n "$draft" && "$draft" != \[hail* && "$draft" != \[tb* && "$draft" != \[tmux-bridge* ]]; then
     die_rc 5 "$target has an unsent draft in its composer: '${draft:0:60}'. Not appending to it (or --force)."
   fi
@@ -753,7 +768,7 @@ cmd_send() {
   done
   require_args 2 ${#positional[@]} "send"
   target_arg="${positional[0]}"; text="${positional[1]}"
-  [[ -n "$kind" ]] || die "--kind is required ($KINDS)"
+  [[ -n "$kind" ]] || die "--kind is required ($KINDS). Sending to '$target_arg'? If you meant a command: 'hail show <id>' prints one message; 'hail --help' lists the rest."
   is_kind "$kind" || die "unknown kind '$kind' ($KINDS)"
   [[ "$re" == */* ]] && die "--re must be a message id"
   [[ -n "$scope" && "$scope" == *$'\n'* ]] && die "--scope must be one line"
@@ -946,6 +961,22 @@ cmd_send() {
 receipt_status_of_file() {
   local c; c=$(cat -- "$1")
   case "$c" in injected\ *|inline\ *) echo "$c" ;; *) echo "read $c" ;; esac
+}
+
+# show <id>: print one message body by id from any inbox on this machine.
+# Writes no receipt; the recipient's own inbox/deliver does that.
+cmd_show() {
+  local id="${1:-}" f found=0
+  [[ -n "$id" ]] || die "usage: hail show <id>"
+  [[ $# -eq 1 ]] || die "usage: hail show <id>"
+  for f in "$(inbox_root)"/*/"$id.md"; do
+    [[ -f "$f" ]] || continue
+    (( found > 0 )) && echo "---"
+    [[ -f "${f%.md}.read" ]] && echo "receipt: $(receipt_status_of_file "${f%.md}.read")"
+    cat -- "$f"
+    found=$(( found + 1 ))
+  done
+  (( found > 0 )) || die "no message with id $id in $(inbox_root)"
 }
 
 cmd_inbox() {
@@ -1463,6 +1494,7 @@ case "$1" in
   brief)   shift; cmd_brief "$@"; exit ;;
   hello)   shift; cmd_hello "$@"; exit ;;
   inbox)   shift; cmd_inbox "$@"; exit ;;
+  show)    shift; cmd_show "$@"; exit ;;
 esac
 
 # All other commands need the socket

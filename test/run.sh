@@ -637,6 +637,22 @@ s31() { # guards: permission dialog (exit 4), unsent draft (exit 5), --force
   recv_showing "$rule" "❯ " "$rule" "  footer" "  ⏺ main" "❯ ◯ general-purpose  Searching cargo registry"
   send "$SENDER" worker "empty composer above the agent panel" --kind fyi
   expect "agent panel cursor is not a draft rc=0" eq "$RC" 0 || ok=1
+  # A tall agent panel (many ◯ rows) below the rules, the selected row carrying
+  # the ❯ cursor: the rules must still be found and the composer read as empty.
+  local -a panel=(); local n
+  for n in $(seq 1 14); do panel+=("  ◯ general-purpose  Searching participant-architecture.md for $n       10m 0s · ↓ 64.2k tokens"); done
+  recv_showing "$rule" "❯ " "$rule" "  herald (master) using opus" "  -- INSERT -- · ← 2 agents" "  ⏺ main" "${panel[@]}" "❯ ◯ general-purpose  Searching participant-architecture.md for 15   10m 0s · ↓ 64.2k tokens"
+  send "$SENDER" worker "tall agent panel" --kind fyi
+  expect "tall agent panel is not a draft rc=0 ($ERR)" eq "$RC" 0 || ok=1
+  # A queued-message placeholder in the composer is not a draft either.
+  recv_showing "✳ Churning… (2m · ↓ 2.4k tokens)" "$rule Rebuild context" "❯ Press up to edit queued messages" "$rule" "  footer" "  ⏺ main" "❯ ◯ general-purpose  Searching cargo  11m · ↓ 190k tokens"
+  send "$SENDER" worker "queued placeholder" --kind fyi
+  expect "queued placeholder is not a draft rc=0 ($ERR)" eq "$RC" 0 || ok=1
+  # A real draft above a tall panel is still refused.
+  recv_showing "$rule" "❯ a genuine unsent prompt" "$rule" "  footer" "  ⏺ main" "${panel[@]}"
+  send "$SENDER" worker "real draft above the panel" --kind fyi
+  expect "real draft above the panel rc=5" eq "$RC" 5 || ok=1
+  expect "real draft named" contains "$ERR" "'a genuine unsent prompt" || ok=1
   recv_showing "$rule" "❯ half a thought between the rules" "$rule" "  footer" "  ⏺ main"
   send "$SENDER" worker "would append to a ruled draft" --kind fyi
   expect "ruled draft rc=5" eq "$RC" 5 || ok=1
@@ -734,6 +750,17 @@ scenario 30 "send submits; --no-submit keeps the read mark" s30
 scenario 31 "guards: permission dialog, unsent draft, --force" s31
 scenario 32 "read <target> N returns exactly N lines" s32
 scenario 33 "send into a shell pane types but does not submit; --force submits" s33
+s36() { # show <id>
+  local ok=0 id
+  send "$SENDER" worker "shown by id" --kind ask --body "the body to show"
+  id=$(last_id)
+  expect "show prints the body" contains "$("$HAIL" show "$id")" "the body to show" || ok=1
+  expect "show writes no receipt" test ! -e "$INBOX/worker/$id.read" || ok=1
+  expect "show unknown id fails" contains "$("$HAIL" show nope-0000 2>&1)" "no message with id nope-0000" || ok=1
+  expect "send without --kind names show" contains "$(as "$SENDER" show 2>&1; as "$SENDER" shw "$id" 2>&1)" "hail show <id>" || ok=1
+  reset_recv; return "$ok"
+}
+
 s35() { # --body literal text; over-cap headline folds into the body
   local ok=0
   send "$SENDER" worker "literal body" --kind ask --body "detail line one, not a file"
@@ -752,6 +779,7 @@ s35() { # --body literal text; over-cap headline folds into the body
 
 scenario 34 "no --body: complete envelope, silent deliver with receipt; --body delivered once" s34
 scenario 35 "--body literal text; over-cap refusal names --body" s35
+scenario 36 "show <id>: one body by id, no receipt; missing id and missing --kind name it" s36
 
 echo "---"
 echo "passed $PASS, failed $FAIL"
