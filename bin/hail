@@ -5,7 +5,7 @@
 # `inbox`, and `await` on top of receipts. See DESIGN.md.
 set -euo pipefail
 
-VERSION="0.2.4"
+VERSION="0.2.5"
 
 KINDS="ruling go nogo ask fyi done stop hold block release announce"
 
@@ -467,6 +467,16 @@ pane_guard() {
     '❯'*)  draft="${last#❯}" ;;
   esac
   draft="${draft#"${draft%%[![:space:]]*}"}"
+  # An empty prompt row padded to the pane's width wraps into the row below it
+  # (Claude Code's background-agent panel), and capture -J joins the two. The
+  # unjoined prompt row decides: blank there means an empty composer.
+  if [[ -n "$draft" ]]; then
+    local row
+    row=$(tmx capture-pane -t "$target" -p | grep -v '^[[:space:]]*$' | tail -8 \
+      | sed -E 's/^[[:space:]│┃|]+//' | grep -E '^(>|›|❯)' | tail -1 || true)
+    row="${row#>}"; row="${row#›}"; row="${row#❯}"
+    [[ -z "${row//[[:space:]]/}" ]] && draft=""
+  fi
   if [[ -n "$draft" && "$draft" != \[hail* && "$draft" != \[tb* && "$draft" != \[tmux-bridge* ]]; then
     die_rc 5 "$target has an unsent draft in its composer: '${draft:0:60}'. Not appending to it (or --force)."
   fi

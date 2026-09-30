@@ -617,6 +617,13 @@ s31() { # guards: permission dialog (exit 4), unsent draft (exit 5), --force
   recv_showing "› [hail kind:fyi from:x id:y] an envelope waiting to be submitted"
   send "$SENDER" worker "envelope drafts are fine" --kind fyi
   expect "hail draft allowed rc=0" eq "$RC" 0 || ok=1
+  # An empty prompt row padded to the pane's width wraps into the row below it
+  # (Claude Code's background-agent panel); capture -J joins the two, and the
+  # panel text must not read as a draft.
+  local w; w=$("${T[@]}" display -p -t "$RECV" '#{pane_width}')
+  recv_showing "$(printf '❯%*s' $((w - 1)) '')◯ general-purpose  Searching cargo registry"
+  send "$SENDER" worker "empty composer above a wrapped panel" --kind fyi
+  expect "wrapped panel is not a draft rc=0" eq "$RC" 0 || ok=1
   reset_recv; return "$ok"
 }
 
