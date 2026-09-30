@@ -5,7 +5,7 @@
 # `inbox`, and `await` on top of receipts. See DESIGN.md.
 set -euo pipefail
 
-VERSION="0.3.2"
+VERSION="0.3.3"
 
 KINDS="ruling go nogo ask fyi done stop hold block release announce"
 
@@ -1507,6 +1507,27 @@ cmd_doctor() {
 }
 
 # --- Main ---
+
+# The pane this process runs in: the pane whose root process is its nearest
+# ancestor. $TMUX_PANE is inherited by every child, so a program started from
+# another pane's shell (a Codex seat) carries that pane's id, and trusting it
+# signs, reads and delivers as the wrong pane (murail-4vc8v, murail-m65jq).
+# Falls back to $TMUX_PANE when no tmux server answers.
+own_pane() {
+  local map pid=$$ hit
+  map=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null) \
+    || { printf '%s' "${TMUX_PANE:-}"; return; }
+  while [[ "$pid" =~ ^[0-9]+$ ]] && (( pid > 1 )); do
+    hit=$(awk -v p="$pid" '$1 == p { print $2; exit }' <<<"$map")
+    [[ -n "$hit" ]] && { printf '%s' "$hit"; return; }
+    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+  done
+  printf '%s' "${TMUX_PANE:-}"
+}
+if [[ -n "${TMUX_PANE:-}${TMUX:-}" ]]; then
+  TMUX_PANE=$(own_pane)
+  export TMUX_PANE
+fi
 
 [[ $# -eq 0 ]] && { usage; exit 0; }
 
