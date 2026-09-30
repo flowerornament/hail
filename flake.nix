@@ -3,14 +3,21 @@
   inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   outputs = { self, nixpkgs }:
     let
-      hailVersion = "0.2.4";
       systems = [ "aarch64-darwin" "x86_64-darwin" "aarch64-linux" "x86_64-linux" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f {
         pkgs = nixpkgs.legacyPackages.${system};
       });
     in {
+      # Version comes from the VERSION= line in bin/hail (see package.nix).
       packages = forAllSystems ({ pkgs }: {
         default = pkgs.callPackage ./package.nix { };
+      });
+
+      apps = forAllSystems ({ pkgs }: {
+        default = {
+          type = "app";
+          program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/hail";
+        };
       });
 
       homeManagerModules.default = import ./nix/home-manager.nix {

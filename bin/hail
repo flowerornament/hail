@@ -5,7 +5,7 @@
 # `inbox`, and `await` on top of receipts. See DESIGN.md.
 set -euo pipefail
 
-VERSION="0.2.5"
+VERSION="0.3.0"
 
 KINDS="ruling go nogo ask fyi done stop hold block release announce"
 
@@ -151,99 +151,242 @@ tmx() {
   fi
 }
 
+# --- Help ---
+# `hail --help` is the map: every command in one screen, grouped by intent.
+# `hail help <topic>` and `hail <command> --help` are the detail pages.
+
 usage() {
   cat <<'EOF'
 hail — agent-to-agent messaging over tmux
 
-Usage: hail <target> <headline> --kind <kind> [options]
-       hail <command> [args...]
+Usage:
+  hail <target> <headline> --kind <kind> [options]
+  hail <command> [args...]
 
 Send:
-  <target> <headline> --kind k [--bead id] [--re id] [--scope s]
-                      [--body <file>|-] [--no-submit] [--force]
-                            Write the body to the target's inbox, type a one-line
-                            envelope into the pane, press Enter. Prints id=<id>
-                            (and bead=<id> comment=<n>). Requires a prior
-                            'hail read <target>'. 'send', 'message' and 'msg'
-                            are accepted before <target>.
-    --kind k                Required. One of: ruling go nogo ask fyi done stop
-                            hold block release announce
-    --re id                 The message this answers, closes or lifts
-    --scope s               What the message applies to (bead, ref, path, action)
-    --no-submit             Type the envelope but do not press Enter (the default
-                            when the target runs a shell, which would execute it)
-    --force                 Skip the dialog and draft guards; submit into a shell
-  sent <id>                 delivered | read <time> | injected <time> | inline <time> | unknown
-  await <id>... [--timeout SECONDS] [--any]
-                            Block until every id (or any, with --any) has a receipt.
-                            Default timeout 600. One line per id; exit 0 when
-                            satisfied, 1 on timeout. Needs no tmux server.
+  <target> <headline> --kind k  Write the body to the target's inbox, type a
+                                one-line envelope into its pane, press Enter.
+                                Prints id=<id>. Requires a prior 'hail read'.
+  sent <id>                     Receipt: delivered | read | injected | inline | unknown
+  await <id>... [--timeout S]   Block until every id (--any: any id) has a receipt
 
 Receive:
   deliver [--format claude|codex]
-                            Print this pane's unread bodies and mark them
-                            'injected'. For UserPromptSubmit hooks: JSON with
-                            --format, plain text without, nothing when empty.
-  brief                     Unread envelopes, my sends without receipt (>2 min),
-                            holds/blocks in effect, open obligations on me.
-                            Nothing when every section is empty. For SessionStart
-                            hooks and humans.
-  inbox [--peek] [--all]    Print unread bodies and write receipts (--peek: do not
-                            mark; --all: include read ones with their receipt)
+                                This pane's unread bodies, marked injected (for hooks)
+  brief                         Unread envelopes, unanswered sends, holds, obligations
+  inbox [--peek] [--all]        Unread bodies; writes read receipts
 
 Identity:
-  name <target> <label>     Label a pane and register label = pane + incarnation
-  hello                     Print this pane's incarnation; create one only if it has none
-  who [label]               Pane, label, incarnation, last inbox event, last 2 lines
-  list                      All panes (target, session, size, process, label, cwd)
-  resolve <label>           Pane id for a label
-  id                        This pane's id ($TMUX_PANE)
+  name <target> <label>         Label a pane and register its incarnation
+  hello                         This pane's incarnation
+  who [label]                   Pane, label, incarnation, last inbox event
+  list                          All panes: target, session, process, label, cwd
+  resolve <label>               Pane id for a label
+  id                            This pane's id ($TMUX_PANE)
 
 Panes:
-  read <target> [lines]     Last N lines of a pane (default 50); sets the read mark
-  type <target> <text>      Type text without Enter (verified)
-  keys <target> <key>...    Send keys (Enter, Escape, C-c, ...)
+  read <target> [lines]         Last N lines of a pane (default 50); sets the read mark
+  type <target> <text>          Type text without Enter (verified)
+  keys <target> <key>...        Send keys (Enter, Escape, C-c, ...)
 
-  doctor                    Diagnose tmux connectivity
-  version                   Print version
+Tool:
+  doctor                        Diagnose tmux connectivity
+  version, --version, -V        Print the version ('version --json' for machines)
+  help [topic]                  This page, or a topic: send kinds receive identity panes state
 
-Kinds:
-  ruling go ask             Create an obligation on the recipient; 'done --re <id>'
-                            from the recipient closes it.
-  A message with no --body is complete in the envelope: no fetch hint, and
-  the hook injects nothing for it (the receipt is still written).
-  done                      Close one obligation; --re required, --scope optional.
-  hold block                Record a hold; 'release --re <id>' by the issuer lifts it.
-  release                   Lift a hold; --re required; refused for another issuer.
-  nogo fyi announce stop    No state.
-  stop hold block release announce are typed in full. The others type the
-  envelope with a fetch hint; the body reaches the recipient through the
-  UserPromptSubmit hook ('hail deliver') or 'hail inbox'.
-  The headline is the ask and the why: at most HAIL_ENVELOPE_MAX characters
-  (default 400) for every kind; a longer one is refused (exit 2). Detail goes in
-  --body 'text' (or --body file, --body -); the body has no limit.
-  Envelope: [hail kind:<k> from:<label>/<pane> reply:<pane> id:<id> [bead:<id>]
-            [re:<id>] [scope:<s>]] <headline> [— hail inbox]
+Examples:
+  hail read %5
+  hail %5 "convert at the receipt, not the producer" --kind ruling --body notes.md
+  hail await 0905T1712-a3f1 --timeout 120
+  hail help kinds
 
-Exit codes:
-  1 usage or state error   2 headline over cap   3 label moved (re-register)
-  4 target shows a permission dialog   5 target has an unsent draft
+'hail help <topic>' or 'hail <command> --help' for options, exit codes, the
+envelope format, state files and environment variables.
+EOF
+}
 
-Beads:
-  With --bead <id>, or a beads issue id in the headline, the body is also posted
-  with 'bd comment <id>' and the envelope cites bead:<id>. When bd is missing or
-  fails the message is file-only, with one warning.
+help_send() {
+  cat <<'EOF'
+hail send — deliver a message to a pane
 
-State ($XDG_STATE_HOME/hail, default ~/.local/state/hail; keep outside repos):
+Usage:
+  hail <target> <headline> --kind <kind> [options]
+  hail send|message|msg <target> <headline> --kind <kind> [options]
+
+<target> is a pane id (%5), a tmux target (session:win.pane) or a label
+registered with 'hail name'. A send to a label whose pane restarted is
+refused (exit 3): re-register with 'hail name'.
+
+Options:
+  --kind k          Required. One of: ruling go nogo ask fyi done stop hold
+                    block release announce. 'hail help kinds' explains each.
+  --body <text>     Detail for the recipient: literal text, a file path, or -
+  --body <file>     for stdin. Fetched by the recipient's hook or 'hail inbox';
+  --body -          never typed into the pane. No length limit.
+  --bead <id>       Cite a beads issue; the body is also posted with
+                    'bd comment'. An issue id in the headline is detected.
+  --re <id>         The message this answers, closes (done) or lifts (release)
+  --scope <s>       What the message applies to: bead, ref, path, action
+  --no-submit       Type the envelope but do not press Enter. Default when the
+                    target runs a shell, which would execute the text.
+  --force           Skip the dialog and draft guards; submit into a shell
+
+Headline:
+  The ask and the why, at most HAIL_ENVELOPE_MAX characters (default 400).
+  Over the cap it is folded at a sentence boundary and the full text rides in
+  the body; control kinds (stop hold block release announce) have no body and
+  are refused instead (exit 2).
+
+Envelope typed into the pane:
+  [hail kind:<k> from:<label>/<pane> reply:<pane> id:<id> [bead:<id>] [re:<id>]
+   [scope:<s>]] <headline> [— hail inbox]
+  The trailing hint appears only when there is a body to fetch.
+
+Guards:
+  A send needs a prior 'hail read <target>' (exit 1), refuses a pane showing
+  a permission dialog (exit 4) and a pane with an unsent draft (exit 5).
+
+Receipts:
+  sent <id>                     delivered | read <t> | injected <t> | inline <t> | unknown
+  await <id>... [--timeout S] [--any]
+                                Block until every id (or any) has a receipt.
+                                Default timeout 600 s. One line per id; exit 0
+                                when satisfied, 1 on timeout. Needs no tmux.
+EOF
+}
+
+help_kinds() {
+  cat <<'EOF'
+hail kinds — what each message kind means and does
+
+  ruling  go  ask     Create an obligation on the recipient. The recipient
+                      closes it with 'done --re <id>'. 'hail brief' lists open
+                      obligations on the reader.
+  done                Close one obligation. --re required, --scope optional.
+  hold  block         Record a hold that stays in effect until the issuer
+                      sends 'release --re <id>'. Refused for another issuer.
+  release             Lift a hold. --re required.
+  nogo  fyi  announce  stop
+                      No state.
+
+Delivery:
+  stop hold block release announce are control kinds: typed into the pane in
+  full, with no body. Every other kind types the envelope with a fetch hint
+  when there is a body; the body reaches the recipient through the
+  UserPromptSubmit hook ('hail deliver') or 'hail inbox'. A message with no
+  --body is complete in the envelope: no hint, nothing injected, receipt still
+  written.
+EOF
+}
+
+help_receive() {
+  cat <<'EOF'
+hail receive — read what was sent to this pane
+
+  deliver [--format claude|codex]
+        Print this pane's unread bodies and mark them 'injected'. Meant for
+        UserPromptSubmit hooks: JSON with --format, plain text without,
+        nothing at all when the inbox is empty. Needs no tmux server.
+  brief
+        The standing state for this pane: unread envelopes, my sends without
+        a receipt after 2 minutes, holds and blocks in effect, open
+        obligations on me. Prints nothing when every section is empty. For
+        SessionStart hooks and humans.
+  inbox [--peek] [--all]
+        Print unread bodies and write 'read' receipts. --peek prints without
+        marking; --all includes read messages with their receipt.
+
+Hooks: hooks/README.md in the source tree has the settings blocks for Claude
+Code and Codex. Without hooks everything still works: the envelope lands in
+the prompt and 'hail inbox' fetches bodies.
+EOF
+}
+
+help_identity() {
+  cat <<'EOF'
+hail identity — labels, panes and incarnations
+
+  name <target> <label>   Label a pane and register label = pane + incarnation.
+                          Minting the incarnation is part of naming.
+  hello                   Print this pane's incarnation; create one only if it
+                          has none (idempotent, safe in hooks).
+  who [label]             Pane, label, incarnation, last inbox event and the
+                          last 2 lines of the pane. Reports a restarted pane.
+  list                    All panes: target, session, size, process, label, cwd
+  resolve <label>         Pane id for a label
+  id                      This pane's id ($TMUX_PANE)
+
+An incarnation is one life of a pane process. When the process restarts the
+label's registration is stale: sends to it are refused (exit 3) until
+'hail name' runs again.
+EOF
+}
+
+help_panes() {
+  cat <<'EOF'
+hail panes — raw pane access for non-agent targets
+
+  read <target> [lines]   Last N lines of a pane (default 50). Sets the read
+                          mark that 'send', 'type' and 'keys' require.
+  type <target> <text>    Type text without Enter; verified against the pane.
+  keys <target> <key>...  Send keys: Enter, Escape, C-c, ...
+  doctor                  Diagnose tmux connectivity: socket, server, pane.
+
+Use these to drive a shell or a running process. To reach an agent, send a
+message: 'hail help send'.
+EOF
+}
+
+help_state() {
+  cat <<'EOF'
+hail state — files, environment and exit codes
+
+State ($XDG_STATE_HOME/hail, default ~/.local/state/hail; keep it outside repos):
   inbox/<label>/<id>.md, <id>.read     obligations/<label>/<id>
   holds/<id>   identity/<label>   incarnation/<pane>   sent/<label>/<id>
+No daemon, no database.
 
 Environment:
   HAIL_SOCKET          tmux server socket (TMUX_BRIDGE_SOCKET accepted)
   HAIL_ENVELOPE_MAX    headline cap in characters (default 400)
   XDG_STATE_HOME       state root (default ~/.local/state)
+
+Beads:
+  With --bead <id>, or a beads issue id in the headline, the body is also
+  posted with 'bd comment <id>' and the envelope cites bead:<id>. When bd is
+  missing or fails the message is file-only, with one warning.
+
+Exit codes:
+  0 ok                     1 usage or state error    2 headline over cap
+  3 label moved            4 target shows a permission dialog
+  5 target has an unsent draft
 EOF
+}
+
+# help [topic|command]: exit 0 with a page, 1 for an unknown topic.
+cmd_help() {
+  local topic="${1:-}"
+  case "$topic" in
+    "")                                  usage ;;
+    send|message|msg|sent|await)         help_send ;;
+    kinds|kind)                          help_kinds ;;
+    receive|deliver|brief|inbox)         help_receive ;;
+    identity|name|hello|who|list|resolve|id) help_identity ;;
+    panes|pane|read|type|keys|doctor)    help_panes ;;
+    state|env|environment|exit|beads)    help_state ;;
+    version|help)                        usage ;;
+    *) die "no help for '$topic'. Topics: send kinds receive identity panes state" ;;
+  esac
   exit 0
+}
+
+# version [--json]
+cmd_version() {
+  case "${1:-}" in
+    "")       echo "hail $VERSION" ;;
+    --json)   printf '{"name": "hail", "version": "%s"}\n' "$VERSION" ;;
+    *)        die "unknown option: $1. Usage: hail version [--json]" ;;
+  esac
 }
 
 require_tmux() {
@@ -1301,13 +1444,16 @@ cmd_doctor() {
 
 # --- Main ---
 
-[[ $# -eq 0 ]] && usage
+[[ $# -eq 0 ]] && { usage; exit 0; }
+
+# <command> --help / -h opens that command's help page.
+if [[ $# -ge 2 && ( "$2" == "--help" || "$2" == "-h" ) ]]; then cmd_help "$1"; fi
 
 # These need no tmux server: they are files-only (a hook must not depend on one).
 case "$1" in
   id)      shift; cmd_id "$@"; exit ;;
-  -h|--help|help) usage ;;
-  version) echo "hail $VERSION"; exit ;;
+  -h|--help|help) shift; cmd_help "$@" ;;
+  -V|--version|version) shift; cmd_version "$@"; exit ;;
   sent)    shift; cmd_sent "$@"; exit ;;
   await)   shift; cmd_await "$@"; exit ;;
   deliver) shift; cmd_deliver "$@"; exit ;;
@@ -1330,10 +1476,10 @@ case "$1" in
   who)     shift; cmd_who "$@" ;;
   resolve) shift; cmd_resolve "$@" ;;
   doctor)  shift; cmd_doctor "$@" ;;
-  -*)      die "unknown option: $1. Run 'hail' for usage." ;;
+  -*)      die "unknown option: $1. Run 'hail --help' for usage." ;;
   *)
     # Bare form: hail <target> <headline> [options]
     if (( $# >= 2 )); then cmd_send "$@"
-    else die "unknown command: $1. Run 'hail' for usage."
+    else die "unknown command: $1. Run 'hail --help' for usage."
     fi ;;
 esac

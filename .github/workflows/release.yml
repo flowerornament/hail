@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
+        with:
+          extra_nix_config: experimental-features = nix-command flakes
+
+      - name: Build and check the tag matches the script
+        run: |
+          out="$(nix build --no-link --print-out-paths .)"
+          reported="$("$out/bin/hail" --version)"
+          expected="hail ${GITHUB_REF_NAME#v}"
+          test "$reported" = "$expected" || { echo "built $reported, tag says $expected" >&2; exit 1; }
+          cp bin/hail hail
+
+      - name: Render release notes
+        run: python3 scripts/release.py notes "$GITHUB_REF_NAME" > release-notes.md
+
+      - name: Create release
+        uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
+        with:
+          files: hail
+          body_path: release-notes.md

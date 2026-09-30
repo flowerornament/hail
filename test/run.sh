@@ -3,10 +3,14 @@
 # alias scenarios against a scratch tmux server (-L hailtest). Never touches
 # the default tmux server: every tmux call here names the scratch socket and
 # hail is pointed at it with HAIL_SOCKET.
+# shellcheck disable=SC1010,SC2034,SC2010  # 'done' is a hail kind; loop counters; ls|grep counts
 set -uo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 HAIL="$HERE/../bin/hail"
+# The version under test is whatever the script declares; releases bump that line.
+HAIL_VERSION=$(sed -n 's/^VERSION="\([0-9.]*\)"$/\1/p' "$HAIL")
+[[ -n "$HAIL_VERSION" ]] || { echo "cannot read VERSION= from $HAIL"; exit 2; }
 SOCKNAME=hailtest
 T=(tmux -L "$SOCKNAME")
 
@@ -262,7 +266,14 @@ s13() { # no bd on PATH, --kind hold
 
 s14() { # version resolve id list doctor help
   local ok=0
-  expect "version" eq "$(as "$SENDER" version)" "hail 0.2.4" || ok=1
+  expect "version" eq "$(as "$SENDER" version)" "hail $HAIL_VERSION" || ok=1
+  expect "--version" eq "$("$HAIL" --version)" "hail $HAIL_VERSION" || ok=1
+  expect "-V" eq "$("$HAIL" -V)" "hail $HAIL_VERSION" || ok=1
+  expect "version --json" eq "$("$HAIL" version --json)" "{\"name\": \"hail\", \"version\": \"$HAIL_VERSION\"}" || ok=1
+  expect "help topic" contains "$("$HAIL" help kinds)" "ruling  go  ask" || ok=1
+  expect "command --help" contains "$("$HAIL" send --help)" "--kind k" || ok=1
+  expect "unknown topic exits 1" eq "$("$HAIL" help bogus >/dev/null 2>&1; echo $?)" "1" || ok=1
+  expect "no args prints usage" contains "$("$HAIL")" "Usage:" || ok=1
   expect "resolve worker" eq "$(as "$SENDER" resolve worker)" "$RECV" || ok=1
   expect "id" eq "$(as "$SENDER" id)" "$SENDER" || ok=1
   expect "list shows label" contains "$(as "$SENDER" list)" "worker" || ok=1
@@ -342,7 +353,7 @@ s19() { # alias message / msg
 
 s20() { # tmux-bridge symlink + TMUX_BRIDGE_SOCKET fallback
   local ok=0 out
-  expect "symlink version" eq "$("$SCRATCH/bin/tmux-bridge" version)" "hail 0.2.4" || ok=1
+  expect "symlink version" eq "$("$SCRATCH/bin/tmux-bridge" version)" "hail $HAIL_VERSION" || ok=1
   out=$(env -u HAIL_SOCKET TMUX_BRIDGE_SOCKET="$HAIL_SOCKET" TMUX_PANE="$SENDER" "$SCRATCH/bin/tmux-bridge" resolve worker)
   expect "TMUX_BRIDGE_SOCKET fallback" eq "$out" "$RECV" || ok=1
   as "$SENDER" keys worker Escape >/dev/null 2>&1 || true   # consume any standing read mark
@@ -578,7 +589,7 @@ s29() { # bare-target send form
   expect "rc=0 ($ERR)" eq "$RC" 0 || ok=1
   expect "delivered" exists "$INBOX/worker/$id.md" || ok=1
   expect "envelope" contains "$(envelope_line "id:$id")" "[hail kind:fyi from:boss/$SENDER" || ok=1
-  expect "help documents the bare form" contains "$("$HAIL" --help)" "Usage: hail <target> <headline> --kind <kind>" || ok=1
+  expect "help documents the bare form" contains "$("$HAIL" --help)" "hail <target> <headline> --kind <kind> [options]" || ok=1
   expect "single unknown word is an error" contains "$(as "$SENDER" bogus 2>&1)" "unknown command: bogus" || ok=1
   reset_recv; return "$ok"
 }

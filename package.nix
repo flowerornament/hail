@@ -4,9 +4,16 @@
 # skill under share/hail/skills/hail.
 { lib, stdenvNoCC }:
 
+let
+  # The one version source is the VERSION= line in bin/hail: `hail --version`,
+  # this package, the flake and the release tooling all read it from there.
+  version = builtins.head (builtins.match
+    ".*\nVERSION=\"([0-9]+\\.[0-9]+\\.[0-9]+)\"\n.*"
+    (builtins.readFile ./bin/hail));
+in
 stdenvNoCC.mkDerivation {
   pname = "hail";
-  version = "0.2.4";
+  inherit version;
 
   src = ./.;
 
@@ -28,8 +35,9 @@ stdenvNoCC.mkDerivation {
   installCheckPhase = ''
     runHook preInstallCheck
     bash -n $out/bin/hail
-    [ "$($out/bin/hail version)" = "hail 0.2.4" ]
-    [ "$($out/bin/tmux-bridge version)" = "hail 0.2.4" ]
+    [ "$($out/bin/hail --version)" = "hail ${version}" ]
+    [ "$($out/bin/tmux-bridge version)" = "hail ${version}" ]
+    $out/bin/hail --help >/dev/null
     runHook postInstallCheck
   '';
 
