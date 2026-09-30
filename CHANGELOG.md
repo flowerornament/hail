@@ -11,6 +11,8 @@ All notable changes to `hail` are documented in this file.
   the default colour, so only default-colour text in the composer is a draft.
   A ghost-text suggestion (any text, not only the known placeholders) held a
   GO for 40 minutes. Panes that draw no rules keep the last-row rule.
+- The rule-less fallback (Codex `›`, shells) reads its row in colour too, so a
+  dim suggestion there is not a draft either.
 
 ## v0.3.1 - 2026-09-29
 

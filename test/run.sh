@@ -653,6 +653,20 @@ s31() { # guards: permission dialog (exit 4), unsent draft (exit 5), --force
   send "$SENDER" worker "real draft above the panel" --kind fyi
   expect "real draft above the panel rc=5" eq "$RC" 5 || ok=1
   expect "real draft named" contains "$ERR" "'a genuine unsent prompt" || ok=1
+  # A dim (SGR 2) prompt suggestion after the glyph is not a draft; the same
+  # words typed in the default style are. Also the glyph-grey placeholder colour.
+  recv_showing "$rule" $'\e[38;5;246m❯\e[39m \e[2mrun bd init in hail and file the follow-ups\e[0m' "$rule" "  footer" "  ⏺ main"
+  send "$SENDER" worker "dim suggestion" --kind fyi
+  expect "dim suggestion is not a draft rc=0 ($ERR)" eq "$RC" 0 || ok=1
+  recv_showing "$rule" $'❯ \e[38;5;246mgrey placeholder text\e[39m' "$rule" "  footer"
+  send "$SENDER" worker "grey placeholder" --kind fyi
+  expect "grey placeholder is not a draft rc=0 ($ERR)" eq "$RC" 0 || ok=1
+  recv_showing "› $(printf '\e[2m')a dim codex suggestion$(printf '\e[0m')"
+  send "$SENDER" worker "dim codex suggestion" --kind fyi
+  expect "dim suggestion without rules rc=0 ($ERR)" eq "$RC" 0 || ok=1
+  recv_showing "$rule" "❯ run bd init in hail and file the follow-ups" "$rule" "  footer" "  ⏺ main"
+  send "$SENDER" worker "typed words" --kind fyi
+  expect "the same words typed are a draft rc=5" eq "$RC" 5 || ok=1
   recv_showing "$rule" "❯ half a thought between the rules" "$rule" "  footer" "  ⏺ main"
   send "$SENDER" worker "would append to a ruled draft" --kind fyi
   expect "ruled draft rc=5" eq "$RC" 5 || ok=1

@@ -633,7 +633,9 @@ default_colour_text() {
 
 pane_guard() {
   local target="$1" tail8 last draft
-  tail8=$(tmx capture-pane -t "$target" -p -J | grep -v '^[[:space:]]*$' | tail -8 || true)
+  # Captured in colour and reduced to default-colour text, so a dim or grey
+  # suggestion after the glyph reads as an empty prompt here too.
+  tail8=$(tmx capture-pane -t "$target" -p -J -e | grep -v '^[[:space:]]*$' | tail -8 | default_colour_text || true)
   if printf '%s\n' "$tail8" | grep -qE "$DIALOG_RE"; then
     die_rc 4 "$target shows a permission/approval dialog; text typed there is discarded and Enter approves it. Resolve the dialog first (or --force)."
   fi
