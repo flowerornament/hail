@@ -422,7 +422,10 @@ s23() { # deliver needs no tmux server and is fast; hook JSON on stdin is accept
     t0=$(now_ms); HAIL_SOCKET=/nonexistent/socket TMUX_PANE="$RECV" "$HAIL" deliver --format codex </dev/null >/dev/null; t1=$(now_ms)
     (( t1 - t0 < best )) && best=$(( t1 - t0 ))
   done
-  expect "empty deliver under 50 ms (best of 3: ${best} ms)" le "$best" 50 || ok=1
+  # Wall-clock budget for an empty deliver. HAIL_TEST_DELIVER_MS raises it on a
+  # loaded machine (the guard is about the script's cost, not the host's load).
+  local budget="${HAIL_TEST_DELIVER_MS:-50}"
+  expect "empty deliver under ${budget} ms (best of 3: ${best} ms)" le "$best" "$budget" || ok=1
   reset_recv; return "$ok"
 }
 
