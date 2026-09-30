@@ -610,16 +610,19 @@ pane_guard() {
     '❯'*)  draft="${last#❯}" ;;
   esac
   draft="${draft#"${draft%%[![:space:]]*}"}"
-  # An empty prompt row padded to the pane's width wraps into the row below it
-  # (Claude Code's background-agent panel), and capture -J joins the two. The
-  # unjoined prompt row decides: blank there means an empty composer.
-  if [[ -n "$draft" ]]; then
-    local row
-    row=$(tmx capture-pane -t "$target" -p | grep -v '^[[:space:]]*$' | tail -8 \
-      | sed -E 's/^[[:space:]│┃|]+//' | grep -E '^(>|›|❯)' | tail -1 || true)
-    row="${row#>}"; row="${row#›}"; row="${row#❯}"
-    [[ -z "${row//[[:space:]]/}" ]] && draft=""
-  fi
+  # Claude Code draws its composer between two horizontal rules, and rows below
+  # the lower rule (the background-agent panel) may start with the same ❯, as a
+  # selection cursor. When the rules are there, only the text between the last
+  # two is the composer.
+  local rows composer
+  rows=$(tmx capture-pane -t "$target" -p | grep -v '^[[:space:]]*$' | tail -12 || true)
+  composer=$(printf '%s\n' "$rows" | awk '
+    /^[[:space:]]*─{3}/ { if (open) { print buf; found = 1 } open = 1; buf = ""; next }
+    open { buf = buf $0 }
+    END { if (!found) exit 1 }' | tail -1) && {
+    composer=$(printf '%s' "$composer" | sed -E 's/^[[:space:]│┃|]+//; s/^(>|›|❯)//')
+    draft="${composer#"${composer%%[![:space:]]*}"}"
+  }
   if [[ -n "$draft" && "$draft" != \[hail* && "$draft" != \[tb* && "$draft" != \[tmux-bridge* ]]; then
     die_rc 5 "$target has an unsent draft in its composer: '${draft:0:60}'. Not appending to it (or --force)."
   fi
