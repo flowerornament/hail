@@ -5,7 +5,7 @@
 # `inbox`, and `await` on top of receipts. See DESIGN.md.
 set -euo pipefail
 
-VERSION="0.3.6"
+VERSION="0.3.7"
 
 KINDS="ruling go nogo ask fyi done stop hold block release announce"
 
@@ -1425,18 +1425,23 @@ own_pane() {
     map=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null)
   fi || { printf '%s' "${TMUX_PANE:-}"; return; }
   # One ps and one awk: walk this process's ancestors against the pane roots.
-  hit=$( { printf '%s\n' "$map" | sed 's/^/pane /'; ps -A -o pid= -o ppid= 2>/dev/null; } \
+  # The walk stops at Codex's shared app-server: the daemon is the child of
+  # whichever Codex pane started it, so every seat's command would otherwise
+  # find that one pane as its ancestor (all Codex seats signed as %2).
+  hit=$( { printf '%s\n' "$map" | sed 's/^/pane /'; ps -A -o pid= -o ppid= -o args= 2>/dev/null; } \
     | awk -v start="$pid" '
         $1 == "pane" { pane[$2] = $3; next }
-        { parent[$1] = $2 }
+        { parent[$1] = $2; if ($3 ~ /(^|\/)codex$/ && $4 == "app-server") daemon[$1] = 1 }
         END {
-          for (p = start; p > 1 && (p in parent); p = parent[p])
+          for (p = start; p > 1 && (p in parent); p = parent[p]) {
             if (p in pane) { print pane[p]; exit }
+            if (p in daemon) exit
+          }
         }')
   [[ -n "$hit" ]] && { printf '%s' "$hit"; return; }
-  # No pane is an ancestor: the process runs under a daemon (Codex's shared
-  # app-server), whose inherited TMUX_PANE names whichever pane started the
-  # daemon. The working directory survives the daemon, so take the one pane
+  # No pane is an ancestor, or the walk met Codex's shared app-server: the
+  # process runs under a daemon whose inherited TMUX_PANE names whichever pane
+  # started it. The working directory survives the daemon, so take the one pane
   # sitting in this directory; with none or several, keep TMUX_PANE.
   local paths here
   if [[ -n "$socket" ]]; then

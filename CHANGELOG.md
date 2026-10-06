@@ -4,6 +4,15 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.3.7 - 2026-10-06
+
+- A command run under Codex's shared app-server no longer takes the pane that
+  started the daemon as its own. The daemon is a child of the first Codex
+  seat's TUI, so the ancestor walk found that pane for every Codex seat: all
+  of them signed, registered and read as `%2`. The walk now stops at
+  `codex app-server`, and the pane is taken from the working directory, as
+  for a daemon reparented to pid 1. New scenario 38.
+
 ## v0.3.6 - 2026-09-30
 
 - A send no longer withholds Enter when the target's foreground command is a

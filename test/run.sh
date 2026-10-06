@@ -761,6 +761,24 @@ s37() { # a daemon's child: no pane is its ancestor and TMUX_PANE is stale
 
 scenario 37 "a daemon's child with a stale TMUX_PANE resolves the pane in its directory" s37
 
+s38() { # Codex's app-server is a child of the pane that started it
+  local ok=0 dir="$SCRATCH/seat-recv" out="$SCRATCH/s38.out"
+  mkdir -p "$dir"; rm -f "$out"
+  "${T[@]}" respawn-pane -k -c "$dir" -t "$RECV" cat; sleep 0.3
+  # The sender's shell starts a process named as the daemon is, and the command
+  # under it sits in the receiver's directory: the sender's pane is an ancestor.
+  cat > "$SCRATCH/s38.sh" <<EOS
+(exec -a 'codex app-server' bash -c 'cd "\$1" && "\$2" id >"\$3.tmp" 2>&1; mv "\$3.tmp" "\$3"' _ '$dir' '$HAIL' '$out') &
+EOS
+  "${T[@]}" send-keys -t "$SENDER" -l -- ". '$SCRATCH/s38.sh'; clear"
+  "${T[@]}" send-keys -t "$SENDER" Enter
+  expect "daemon's command finished" wait_for_file "$out" || ok=1
+  expect "the pane in its directory, not the pane that started the daemon" eq "$(cat "$out" 2>/dev/null)" "$RECV" || ok=1
+  reset_recv; return "$ok"
+}
+
+scenario 38 "a command under Codex's app-server does not take the daemon's pane as its own" s38
+
 echo "---"
 echo "passed $PASS, failed $FAIL"
 if (( FAIL > 0 )); then echo "failed scenarios: ${FAILED[*]}"; exit 1; fi
