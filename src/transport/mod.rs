@@ -2,6 +2,7 @@
 //! (0.5) adds a typed wake token and harness-native channels behind `Wake`.
 //! Nothing outside this module types into a pane for a send.
 
+pub mod agent;
 pub mod dialog;
 pub mod pane_map;
 pub mod tmux;

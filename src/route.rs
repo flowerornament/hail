@@ -62,11 +62,11 @@ pub fn looks_like_pane(arg: &str) -> bool {
     arg.strip_prefix('%').is_some_and(digits) || arg.contains(':') || digits(arg)
 }
 
-/// Whether this pane may hold a sub-seat (see [`crate::transport::tmux::Agent::can_hold_sub_seat`]).
+/// Whether this pane may hold a sub-seat (see [`crate::transport::agent::Agent::can_hold_sub_seat`]).
 pub fn can_hold_sub_seat(p: &Pane) -> bool {
     p.agent
         .as_ref()
-        .is_some_and(crate::transport::tmux::Agent::can_hold_sub_seat)
+        .is_some_and(crate::transport::agent::Agent::can_hold_sub_seat)
 }
 
 fn name<'a>(

@@ -27,7 +27,7 @@ lint:
 test-rust:
     cargo test --quiet
 
-# Scenario harness on a scratch tmux server (-L hailtest); never touches yours.
+# Scenario harness on its own scratch tmux server (-L hailtest-<pid>); never touches yours.
 # Scenario 23 holds an empty deliver to HAIL_TEST_DELIVER_MS (default 25 ms,
 # an idle-machine budget); CI sets 100 for hosted runners, and so should a
 # loaded dev machine.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # hail test harness — every scenario against a scratch tmux server (-L
-# hailtest) and a scratch state root. Never touches the default tmux server,
+# hailtest-<pid>) and a scratch state root. Never touches the default tmux server,
 # the real state or the real hooks: tmux calls name the scratch socket, hail
 # gets HAIL_SOCKET, XDG_STATE_HOME and HOME under $SCRATCH.
 #
@@ -18,7 +18,9 @@ HAIL="${HAIL_BIN:-$HERE/../target/debug/hail}"
 # The version under test is the one Cargo.toml declares; releases bump that line.
 HAIL_VERSION=$(sed -n 's/^version = "\([0-9.]*\)"$/\1/p' "$HERE/../Cargo.toml" | head -1)
 [[ -n "$HAIL_VERSION" ]] || { echo "cannot read the version from Cargo.toml"; exit 2; }
-SOCKNAME=hailtest
+# One server per run: two jj workspaces may run `just check` at once, and a
+# shared server name lets each run kill or reuse the other's windows.
+SOCKNAME="hailtest-$$"
 T=(tmux -L "$SOCKNAME")
 
 unset TMUX TMUX_PANE HAIL_SOCKET TMUX_BRIDGE_SOCKET HAIL_SEAT CLAUDE_CONFIG_DIR CODEX_HOME

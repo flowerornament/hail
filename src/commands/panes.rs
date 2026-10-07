@@ -9,8 +9,9 @@ use crate::error::{Error, Result};
 use crate::out::Table;
 use crate::route;
 use crate::seat::Addr;
+use crate::transport::agent::Agent;
 use crate::transport::pane_map::PaneMap;
-use crate::transport::tmux::{Agent, Pane, Tmux};
+use crate::transport::tmux::{Pane, Tmux};
 use crate::transport::{Woken, type_verified};
 
 fn tmux_and_panes(ctx: &Ctx) -> Result<(Tmux, PaneMap)> {

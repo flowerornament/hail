@@ -127,8 +127,9 @@ hooks/             what the hooks run and print; the config merge (setup.rs)
 store/             the Maildir (mailbox.rs), ids and their index (ids.rs), the
                    file format (message.rs), owed/holds/pending (records.rs),
                    the archive (gc.rs)                                          (1),(5)
-transport/         tmux (tmux.rs), panes to seats (pane_map.rs), the dialog
-                   guard (dialog.rs), typing and verifying the envelope (mod.rs) (2)
+transport/         tmux (tmux.rs), which panes run agents (agent.rs), panes to
+                   seats (pane_map.rs), the dialog guard (dialog.rs), typing
+                   and verifying the envelope (mod.rs)                          (2)
 policy.rs          every limit and timeout, in one place
 input.rs, out.rs   stdin that never hangs; stdout that ends quietly; tables
 migrate.rs         the one-time import of 0.3 state, and its revert
