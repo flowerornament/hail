@@ -51,12 +51,17 @@ test-release:
 test-home-manager-module:
     bash scripts/test-home-manager-module.sh
 
+# Publish the described jj change: run `just check` on exactly it, then move main to it and push
+[group('vcs')]
+land *args:
+    scripts/jj-land.sh {{args}}
+
 # Build the Nix package and print its version
 [group('build')]
 build:
     out="$(nix build --no-link --print-out-paths .)" && "$out/bin/hail" --version
 
-# Set the version in bin/hail and scaffold the CHANGELOG entry
+# Set the version in Cargo.toml and scaffold the CHANGELOG entry
 [group('release')]
 [arg('version', pattern='[0-9]+\.[0-9]+\.[0-9]+', help='Semver release, e.g. 0.3.1')]
 release-bump version:

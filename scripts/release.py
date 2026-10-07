@@ -187,7 +187,7 @@ def bump(version: str) -> None:
     print(f"updated release version to {version}")
     print("  - Cargo.toml, Cargo.lock")
     print("  - CHANGELOG.md")
-    print("Fill in the CHANGELOG.md entry, commit, push, then `just release-tag`.")
+    print("Fill in the CHANGELOG.md entry, describe the change and `just land` it, then release from ~/code/hail.")
 
 
 def run(cmd: list[str]) -> None:
@@ -207,7 +207,15 @@ def command_succeeds(cmd: list[str]) -> bool:
     )
 
 
+def require_colocated_checkout() -> None:
+    # A jj workspace has no .git, so git there walks up to a parent repository
+    # (~/.git exists) and answers about it without complaint.
+    if not (ROOT / ".git").exists():
+        fail(f"{ROOT} is a jj workspace; release from the colocated checkout (~/code/hail)")
+
+
 def require_clean_worktree() -> None:
+    require_colocated_checkout()
     status = capture(["git", "status", "--porcelain"])
     entries = [line for line in status.splitlines() if line.strip()]
     if not entries:

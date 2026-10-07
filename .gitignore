@@ -1,2 +1,10 @@
 result
 target
+.jj/
+.claude/*
+!.claude/settings.json
+.codex/*
+!.codex/config.toml
+.dolt/
+*.db
+*.gate.lock*

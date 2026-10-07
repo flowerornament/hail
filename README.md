@@ -295,6 +295,7 @@ before Enter so the agent's composer does not treat the text as a paste.
 ```bash
 just check     # fmt, clippy, unit and integration tests, release-script tests, tmux scenarios, CPU bench
 just build     # the Nix package
+just land      # gate the described jj change, then move main to it and push
 ```
 
 **The gate:**
@@ -305,7 +306,7 @@ just build     # the Nix package
 - **CI** runs the gate on Linux and macOS with the toolchain pinned in
   `rust-toolchain.toml`.
 
-[AGENTS.md](AGENTS.md) has the rules for working on hail;
+Work happens in jj, with one workspace per agent, and `just land` is the only way to publish. [AGENTS.md](AGENTS.md) has that workflow and the rules for working on hail;
 [DESIGN.md](DESIGN.md) has the principles; the 0.4 spec and studies are in
 [docs/](docs/); the hook blocks for a hand install are in
 [hooks/README.md](hooks/README.md).
@@ -315,10 +316,13 @@ just build     # the Nix package
 The version lives in one place, `Cargo.toml`.
 
 ```bash
+# in a jj workspace
 just release-bump 0.4.1   # set Cargo.toml and Cargo.lock; scaffold the CHANGELOG entry
 $EDITOR CHANGELOG.md      # replace the TODO bullet with what changed
-git commit -am "0.4.1" && git push
+jj describe -m "0.4.1" && just land
                           # wait for the Nix Cache workflow on that commit to succeed
+# in the colocated checkout, ~/code/hail
+jj git fetch && jj new main
 just release-verify       # versions agree, changelog filled, clean tree, the gate, Nix build
 just release-tag 0.4.1    # checks every system's build is in Cachix, tags, moves origin/release
 ```
