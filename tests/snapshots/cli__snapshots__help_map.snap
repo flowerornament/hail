@@ -9,7 +9,8 @@ Send (the body is everything after the first line):
   <headline>                      type a one-line envelope into its agent's
   <body…>                         pane. Prints id=<id>.
   EOF
-  hail <seat> <kind> '<headline>' Headline only; no body.
+  hail <seat> <kind> '<headline>'
+                                  Headline only; no body.
   sent <id>                       Receipt: delivered | injected <t> | read <t> | inline <t> | unknown
   await <id>... [--timeout S]     Block until every id (--any: any id) has a receipt
 

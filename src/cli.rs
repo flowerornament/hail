@@ -274,3 +274,133 @@ impl SendCli {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::help;
+
+    /// Values for the placeholders the docs use. An example with any other
+    /// `<…>` outside quotes fails, so a new placeholder is added here on
+    /// purpose rather than slipping past the check.
+    const PLACEHOLDERS: &[(&str, &str)] = &[
+        ("<seat>", "murail-1b"),
+        ("<issuer>", "murail-1a"),
+        ("<kind>", "ask"),
+        ("<id>...", "1006T171200-a3f1"),
+        ("<id>", "1006T171200-a3f1"),
+        ("[options]", ""),
+    ];
+
+    /// The example commands agents copy: lines of the help pages and of the
+    /// skill's code blocks that start with `hail `, and the skill's inline
+    /// `` `hail …` `` spans of three words or more (two words is a mention of
+    /// a verb, such as `hail inbox`, not an example).
+    fn examples() -> Vec<String> {
+        let mut out = Vec::new();
+        let pages = [
+            help::MAP,
+            help::SEND,
+            help::KINDS,
+            help::RECEIVE,
+            help::SEATS,
+            help::PANES,
+            help::SETUP,
+            help::STATE,
+        ];
+        for page in pages {
+            out.extend(
+                page.lines()
+                    .filter(|l| l.starts_with("  ") && l.trim_start().starts_with("hail "))
+                    .map(|l| command_part(l.trim_start())),
+            );
+        }
+        let skill = include_str!("../skills/hail/SKILL.md");
+        let mut in_code = false;
+        for line in skill.lines() {
+            if line.starts_with("```") {
+                in_code = !in_code;
+            } else if in_code && line.starts_with("hail ") {
+                out.push(command_part(line));
+            } else if !in_code {
+                for span in line.split('`').skip(1).step_by(2) {
+                    if span.starts_with("hail ") && span.split_whitespace().count() >= 3 {
+                        out.push(span.to_string());
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The command without its trailing comment, description column or
+    /// heredoc: everything before `  ` (two spaces) or ` <<`.
+    fn command_part(line: &str) -> String {
+        let end = [line.find("  "), line.find(" <<")]
+            .into_iter()
+            .flatten()
+            .min()
+            .unwrap_or(line.len());
+        line[..end].trim_end().to_string()
+    }
+
+    /// Split like a shell does for these examples: whitespace, with single
+    /// and double quotes grouping words. Each word says whether it was
+    /// quoted: a quoted `'<headline>'` is text, not a placeholder.
+    fn words(line: &str) -> Vec<(String, bool)> {
+        let mut out = Vec::new();
+        let (mut cur, mut quote, mut quoted, mut any) = (String::new(), None, false, false);
+        for c in line.chars() {
+            match (quote, c) {
+                (None, '\'' | '"') => (quote, quoted, any) = (Some(c), true, true),
+                (Some(q), c) if c == q => quote = None,
+                (None, c) if c.is_whitespace() => {
+                    if any {
+                        out.push((std::mem::take(&mut cur), quoted));
+                        (quoted, any) = (false, false);
+                    }
+                }
+                (_, c) => {
+                    cur.push(c);
+                    any = true;
+                }
+            }
+        }
+        if any {
+            out.push((cur, quoted));
+        }
+        out
+    }
+
+    #[test]
+    fn every_documented_example_parses() {
+        let examples = examples();
+        assert!(examples.len() >= 10, "found only {examples:?}");
+        for ex in examples {
+            let mut args: Vec<String> = Vec::new();
+            for (w, quoted) in words(&ex) {
+                let w = PLACEHOLDERS
+                    .iter()
+                    .find(|(p, _)| !quoted && w == *p)
+                    .map_or(w, |(_, v)| (*v).to_string());
+                assert!(
+                    quoted || !(w.starts_with('<') || w.starts_with('[')),
+                    "{ex}: unknown placeholder {w}; add it to PLACEHOLDERS"
+                );
+                if !w.is_empty() {
+                    args.push(w);
+                }
+            }
+            let Early::Parse(args) = early(args) else {
+                continue;
+            };
+            let cli =
+                Cli::try_parse_from(&args).unwrap_or_else(|e| panic!("{ex}: {}", clap_message(&e)));
+            if let Cmd::Send(s) = cli.cmd
+                && let Err(e) = s.into_args()
+            {
+                panic!("{ex}: {e}");
+            }
+        }
+    }
+}
