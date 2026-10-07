@@ -779,6 +779,24 @@ EOS
 
 scenario 38 "a command under Codex's app-server does not take the daemon's pane as its own" s38
 
+s39() { # a pane in copy mode: keys would run mode commands, not reach the composer
+  local ok=0 id
+  "${T[@]}" set-option -g mode-keys vi
+  "${T[@]}" copy-mode -t "$RECV"
+  send "$SENDER" worker "scrolled back: check this" --kind fyi; id=$(last_id)
+  expect "rc=0" eq "$RC" 0 || ok=1
+  expect "the pane left copy mode" eq "$("${T[@]}" display-message -t "$RECV" -p '#{pane_in_mode}')" 0 || ok=1
+  expect "envelope typed into the pane" contains "$(pane_text "$RECV")" "id:$id" || ok=1
+  "${T[@]}" copy-mode -t "$RECV"
+  as "$SENDER" read "$RECV" 5 >/dev/null 2>&1
+  as "$SENDER" keys "$RECV" Enter >/dev/null 2>&1
+  expect "keys leaves copy mode too" eq "$("${T[@]}" display-message -t "$RECV" -p '#{pane_in_mode}')" 0 || ok=1
+  "${T[@]}" set-option -gu mode-keys
+  reset_recv; return "$ok"
+}
+
+scenario 39 "a send to a pane in copy mode leaves the mode before typing" s39
+
 echo "---"
 echo "passed $PASS, failed $FAIL"
 if (( FAIL > 0 )); then echo "failed scenarios: ${FAILED[*]}"; exit 1; fi

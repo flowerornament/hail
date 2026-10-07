@@ -4,6 +4,17 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.3.8 - 2026-10-06
+
+- A send, its Enter and `hail keys` leave copy mode first. A pane scrolled
+  with the mouse wheel is in copy mode and reads typed keys as mode commands:
+  with vi keys the `:` of `kind:` opened a goto-line prompt that waited for
+  Enter, and the envelope never reached the composer. New scenario 39.
+- The skill says to run hail directly, never through `tmux run-shell` with a
+  hand-set `TMUX_PANE`. Codex seats did that to dodge the `%2` identity bug
+  fixed in 0.3.7, and every failure opened tmux's view mode in the pane the
+  user was looking at.
+
 ## v0.3.7 - 2026-10-06
 
 - A command run under Codex's shared app-server no longer takes the pane that

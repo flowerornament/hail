@@ -133,6 +133,11 @@ or the registered pane's process was restarted. The brief then prints
 `label <l>: pane restarted — run: hail name "$(hail id)" <l>`; `hail who
 <label>` shows both sides.
 
+Run hail directly. `hail id` finds this pane from the process tree and the
+working directory; do not wrap hail in `tmux run-shell` or set `TMUX_PANE` by
+hand. `run-shell` output and failures open in whichever pane the user is
+looking at, and wait for Enter there.
+
 ## Hooks
 
 The hooks deliver bodies and the brief without a tool call. They are

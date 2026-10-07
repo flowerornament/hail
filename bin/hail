@@ -5,7 +5,7 @@
 # `inbox`, and `await` on top of receipts. See DESIGN.md.
 set -euo pipefail
 
-VERSION="0.3.7"
+VERSION="0.3.8"
 
 KINDS="ruling go nogo ask fyi done stop hold block release announce"
 
@@ -554,6 +554,15 @@ cmd_list() {
     done
 }
 
+# A pane in copy mode (a mouse-wheel scroll starts it) reads typed keys as
+# mode commands: with vi keys the ':' of an envelope opens a goto-line prompt
+# that waits for Enter, and the text never reaches the composer. Leave the
+# mode before typing.
+leave_mode() {
+  [[ "$(tmx display-message -t "$1" -p '#{pane_in_mode}' 2>/dev/null)" == 1 ]] || return 0
+  tmx send-keys -t "$1" -X cancel 2>/dev/null || true
+}
+
 # Type text into a pane and wait until it shows there. The pane may take a
 # while to redraw under load, so poll for the text's own opening bytes for up
 # to two seconds; never clear or retype, which doubled messages and ate
@@ -564,6 +573,7 @@ send_text_verified() {
   # character, and tr refuses an invalid sequence in a UTF-8 locale. Whitespace
   # goes because the composer wraps.
   probe=$(printf '%s' "$text" | head -c 40 | LC_ALL=C tr -d '[:space:]')
+  leave_mode "$target"
   tmx send-keys -t "$target" -l -- "$text"
   [[ -n "$probe" ]] || return 0
   for i in $(seq 1 20); do
@@ -850,6 +860,7 @@ cmd_send() {
     rc=1
   elif $submit; then
     sleep 0.3
+    leave_mode "$target"
     tmx send-keys -t "$target" Enter
     clear_read "$target"
   fi
@@ -1225,6 +1236,7 @@ cmd_keys() {
   require_read "$target"
   shift
 
+  leave_mode "$target"
   for key in "$@"; do
     tmx send-keys -t "$target" "$key"
   done
