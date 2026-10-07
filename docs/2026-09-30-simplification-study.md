@@ -1,6 +1,6 @@
 # hail simplification study (2026-09-30)
 
-A whole-system study of hail and the jj-ops workflow, requested by Morgan after a long run of hail defect fixes. It was read-only: sources, docs, skills, tracker, memory notes, and a live state and process census. murail-1a banked it. Citations are to `bin/hail` at 0.3.3 (d20de6b).
+A whole-system study of hail and the jj-ops workflow, requested by the maintainer after a long run of hail defect fixes. It was read-only: sources, docs, skills, tracker, memory notes, and a live state and process census. murail-1a banked it. Citations are to `bin/hail` at 0.3.3 (d20de6b).
 
 ## Revision (2026-10-06)
 
@@ -11,7 +11,7 @@ Six days and five releases (0.3.4–0.3.9) later, the evidence strengthens the d
 | class | what happened | fix | learning |
 |---|---|---|---|
 | identity, a second miss | The Codex app-server is now a child of herald-1b's Codex TUI: pid 55572 → 13408 → 13375 → 3484, the root of `%2`. The ancestor walk therefore found `%2` for every Codex seat, and the 0.3.4 directory fallback never ran. In the 7 days to 10-07, 1165 messages were signed `*/%2`. At least 338 of them carry another seat's label: murail-1b 157, murail-2b 135, murail-4b 26, murail-4a 20. More of herald-2b's sends arrived as `herald-1b/%2` (herald-b6mzr). | 0.3.7: the walk stops at `codex app-server`. Scenario 38. | The daemon's place in the process tree depends on who started it: ppid 1 on 09-30, a pane's child on 10-06. Every process-tree rule is a guess about another program's internals. Two fixes in a row missed. |
-| workaround spill (new) | Agents route around hail defects with raw tmux. murail-2b ran `tmux run-shell -t %8 -c ~/code/murail-2b 'env TMUX_PANE=%8 hail …'` 305 times from 10-05. herald-2b detached its invocations from the daemon. herald-2b also typed `send-keys -t %1 Enter` into another desk (herald-b6mzr). Each `run-shell` failure opened tmux view mode in the pane Morgan was looking at, and waited for Enter there. | 0.3.8: the skill says to run hail directly. | Agents find and keep any escape hatch they can reach, and it bypasses every guard. A correct default is the only real fix. Nothing should honour a hand-set `TMUX_PANE`. |
+| workaround spill (new) | Agents route around hail defects with raw tmux. murail-2b ran `tmux run-shell -t %8 -c ~/code/murail-2b 'env TMUX_PANE=%8 hail …'` 305 times from 10-05. herald-2b detached its invocations from the daemon. herald-2b also typed `send-keys -t %1 Enter` into another desk (herald-b6mzr). Each `run-shell` failure opened tmux view mode in the pane the maintainer was looking at, and waited for Enter there. | 0.3.8: the skill says to run hail directly. | Agents find and keep any escape hatch they can reach, and it bypasses every guard. A correct default is the only real fix. Nothing should honour a hand-set `TMUX_PANE`. |
 | delivery: copy mode | A pane scrolled with the mouse wheel is in copy mode. Typed envelope bytes ran as mode commands: with vi keys, the `:` of `kind:` opened a goto-line prompt. | 0.3.8: `leave_mode` before typing. Scenario 39. | Yet another UI state that typed content can hit. |
 | delivery: dialog false positive | The dialog guard matched the bare word `Approve`. Codex prints `Approved` in its history and status, so idle Codex panes were refused with exit 4, and desks learned to `--force` (herald-b6mzr). Codex seats run with approvals bypassed, so they rarely show a real dialog. | 0.3.9: the guard matches each dialog's question and option lines. Scenario 40. | A false positive in a guard trains agents to force past it, and then the guard protects nothing. |
 | sender text | In one six-day Codex session (murail-4a), run-together words grew from 0–1 per headline (10-01) to 5–29 (10-07), including headlines of 274 characters, far under the cap. The skill still said over-cap headlines are refused, which has been stale since 0.2.4. | 0.3.9: skill corrected. | Not a hail defect: the headline is model prose and degrades as a session ages. Restarting the session fixes it, not the tool. |
@@ -120,7 +120,7 @@ These mechanisms exist only to work around typing into panes or pane-as-identity
   1. v0.4 writes the new layout, and deliver reads both layouts for one week.
   2. seat.sh drops its labelling.
   3. The old tree is archived read-only.
-  4. Morgan triages the 40 holds.
+  4. The maintainer triages the 40 holds.
 
   The expected result is 1571 lines down to about 400.
 
