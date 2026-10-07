@@ -106,6 +106,35 @@ and triageable.
 What survives compaction on the recipient side: the envelope (≤400 chars).
 What does not: the body. What survives everything: the file and the bead comment.
 
+## Code map
+
+The numbers are the steps in Shape above. Files under `store/`, `envelope`,
+`transport/dialog` and `hooks/setup` do no process or tmux I/O.
+
+```
+main.rs            argv -> early help/version -> clap -> migration gate -> commands::run
+cli.rs, help.rs    the argument grammar (0.3 forms normalised) and the help pages
+ctx.rs             where this process runs: store, cwd, home, its seat and mailboxes
+seat.rs            identity: seat_of(dir) from .hail-seat, jj or git root; Addr
+route.rs           what a target names, and where mail for it goes and who to wake
+envelope.rs        kinds, the [hail ...] line, folding, bead detection         (2)
+commands/send.rs   the send pipeline: compose, route, check, post, wake, bd    (1)-(3)
+commands/receive.rs deliver (the hook), inbox, show; sent and await           (4)-(6)
+commands/brief.rs  the standing state: unread, late sends, holds, obligations
+commands/panes.rs  whoami, seats, list; read/type/keys for non-agent panes
+commands/setup.rs, doctor.rs   install the hooks; check the install
+hooks/             what the hooks run and print; the config merge (setup.rs)
+store/             the Maildir (mailbox.rs), ids and their index (ids.rs), the
+                   file format (message.rs), owed/holds/pending (records.rs),
+                   the archive (gc.rs)                                          (1),(5)
+transport/         tmux (tmux.rs), panes to seats (pane_map.rs), the dialog
+                   guard (dialog.rs), typing and verifying the envelope (mod.rs) (2)
+policy.rs          every limit and timeout, in one place
+input.rs, out.rs   stdin that never hangs; stdout that ends quietly; tables
+migrate.rs         the one-time import of 0.3 state, and its revert
+bd.rs              the optional bead comment (a subprocess, after the wake)     (3)
+```
+
 ## Verbs
 
 ```

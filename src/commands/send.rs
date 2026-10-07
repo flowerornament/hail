@@ -20,7 +20,7 @@ use crate::store::ids::{self, Id};
 use crate::store::message::Message;
 use crate::store::records::{Entry, Pending};
 use crate::time;
-use crate::transport::panes::PaneMap;
+use crate::transport::pane_map::PaneMap;
 use crate::transport::tmux::{Pane, Tmux};
 use crate::transport::{self, TypedEnvelope, Wake, Woken};
 

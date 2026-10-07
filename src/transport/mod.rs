@@ -3,7 +3,7 @@
 //! Nothing outside this module types into a pane for a send.
 
 pub mod dialog;
-pub mod panes;
+pub mod pane_map;
 pub mod tmux;
 
 use std::thread::sleep;

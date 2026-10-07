@@ -10,7 +10,7 @@ pub mod setup;
 use crate::cli::Cmd;
 use crate::ctx::Ctx;
 use crate::error::{Error, Result};
-use crate::{help, migrate};
+use crate::{help, migrate, store};
 
 pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<u8> {
     match cmd {
@@ -31,7 +31,7 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<u8> {
         Cmd::Doctor => Ok(doctor::run(ctx)),
         Cmd::Migrate { revert: false } => migrate::migrate(ctx),
         Cmd::Migrate { revert: true } => migrate::revert(ctx),
-        Cmd::Gc { days } => migrate::gc(ctx, days),
+        Cmd::Gc { days } => gc(ctx, days),
         Cmd::Help { topic } => help(topic.as_deref().unwrap_or("")),
         Cmd::Version { json } => Ok(version(json)),
         // 0.3 identity verbs, shims through 0.4.
@@ -44,6 +44,15 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<u8> {
         Cmd::Resolve { seat } => panes::resolve_shim(ctx, &seat),
         Cmd::Id => panes::id_shim(ctx),
     }
+}
+
+fn gc(ctx: &Ctx, days: u64) -> Result<u8> {
+    let moved = store::gc::archive(&ctx.store, days)?;
+    outln!(
+        "archived {moved} read messages older than {days} days into {}",
+        ctx.store.archive_dir().display()
+    );
+    Ok(0)
 }
 
 pub fn help(topic: &str) -> Result<u8> {

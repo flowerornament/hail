@@ -9,7 +9,7 @@ use crate::error::{Error, Result};
 use crate::out::Table;
 use crate::route;
 use crate::seat::Addr;
-use crate::transport::panes::PaneMap;
+use crate::transport::pane_map::PaneMap;
 use crate::transport::tmux::{Agent, Pane, Tmux};
 use crate::transport::{Woken, type_verified};
 

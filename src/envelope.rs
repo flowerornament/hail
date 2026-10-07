@@ -1,6 +1,7 @@
-//! Kinds, the one-line envelope, headline folding and bead detection. Pure.
+//! Kinds, the one-line envelope and its `[hail …]` head, headline folding
+//! and bead detection. Pure.
 
-use crate::out::Tag;
+use std::fmt::Display;
 
 /// What a message asks of its recipient. Control kinds are complete in the
 /// envelope and never sit behind a fetch (DESIGN.md principle 5).
@@ -99,6 +100,43 @@ pub struct Head<'a> {
     pub bead: Option<&'a str>,
     pub re: Option<&'a str>,
     pub scope: Option<&'a str>,
+}
+
+/// `[hail <kind> key:value …] text`: the head of an envelope (fields named,
+/// `kind:<k>`) or of a brief line (kind bare). Absent optional fields are
+/// left out.
+pub struct Tag(String);
+
+impl Tag {
+    /// A brief line: `[hail fyi …`.
+    pub fn brief(kind: impl Display) -> Self {
+        Self(format!("[hail {kind}"))
+    }
+
+    /// An envelope: `[hail kind:fyi …`.
+    pub fn envelope(kind: impl Display) -> Self {
+        Self(format!("[hail kind:{kind}"))
+    }
+
+    #[must_use]
+    pub fn field(mut self, key: &str, value: impl Display) -> Self {
+        use std::fmt::Write as _;
+        let _ = write!(self.0, " {key}:{value}");
+        self
+    }
+
+    #[must_use]
+    pub fn opt(self, key: &str, value: Option<&str>) -> Self {
+        match value.filter(|v| !v.is_empty()) {
+            Some(v) => self.field(key, v),
+            None => self,
+        }
+    }
+
+    /// Close the bracket and append the text.
+    pub fn text(self, text: &str) -> String {
+        format!("{}] {text}", self.0)
+    }
 }
 
 /// `[hail kind:<k> from:<f> reply:<r> id:<id> [bead:] [re:] [scope:]] <headline>[ — hail inbox]`.
@@ -205,6 +243,23 @@ pub fn clip(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tags() {
+        let t = Tag::envelope("ask")
+            .field("from", "boss/%0")
+            .opt("bead", None)
+            .opt("re", Some("x"))
+            .text("hi");
+        assert_eq!(t, "[hail kind:ask from:boss/%0 re:x] hi");
+        assert_eq!(
+            Tag::brief("fyi")
+                .field("id", 1)
+                .opt("scope", Some(""))
+                .text("t"),
+            "[hail fyi id:1] t"
+        );
+    }
     use proptest::prelude::*;
 
     #[test]

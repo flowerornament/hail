@@ -1,6 +1,7 @@
 //! State under `$XDG_STATE_HOME/hail` (spec §6). No daemon, no database: the
 //! files are the state, and every write that others read is a rename.
 
+pub mod gc;
 pub mod ids;
 pub mod mailbox;
 pub mod message;

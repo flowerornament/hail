@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use crate::ctx::{Boxes, Ctx};
 use crate::error::{Error, Result};
 use crate::seat::{self, Addr, Seat};
-use crate::transport::panes::PaneMap;
+use crate::transport::pane_map::PaneMap;
 use crate::transport::tmux::{Pane, Tmux};
 
 /// What a target argument names.

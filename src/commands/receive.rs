@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::hooks;
-use crate::policy::{DELIVER_BODIES, DELIVER_BYTES, HOOK_LOG_MAX};
+use crate::policy::{DELIVER_BODIES, DELIVER_BYTES};
 use crate::seat::Addr;
 use crate::store::ids::Id;
 use crate::store::mailbox::{Found, How};
@@ -21,13 +21,13 @@ use crate::store::{Status, Store};
 /// `hook-errors.log` with every claim it made given back.
 pub fn deliver(ctx: &Ctx, format: Option<&str>) -> u8 {
     if let Err(e) = deliver_inner(ctx, format) {
-        log_hook_error(&ctx.store, "deliver", &e);
+        hooks::log_error(&ctx.store, "deliver", &e);
     }
     0
 }
 
 fn deliver_inner(ctx: &Ctx, format: Option<&str>) -> Result<()> {
-    if ctx.store.legacy_present() || !stdout_reaches_anyone() {
+    if ctx.store.legacy_present() || !hooks::stdout_reaches_anyone() {
         return Ok(());
     }
     let Some(seat) = ctx.seat_here()? else {
@@ -108,30 +108,6 @@ impl Drop for Claims<'_> {
         for (addr, id) in &self.made {
             self.store.mailbox(addr).unclaim(id, How::Injected);
         }
-    }
-}
-
-/// Append one line to `hook-errors.log`, rotating it past [`HOOK_LOG_MAX`].
-pub fn log_hook_error(store: &Store, verb: &str, e: &Error) {
-    let path = store.root().join("hook-errors.log");
-    if fs::metadata(&path).is_ok_and(|m| m.len() > HOOK_LOG_MAX) {
-        let _ = fs::rename(&path, path.with_extension("log.1"));
-    }
-    let _ = fs::create_dir_all(store.root());
-    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(f, "{} {verb}: {e}", crate::time::iso(crate::time::now()));
-    }
-}
-
-/// A claim is only worth making when the output can reach the agent. Rust
-/// reopens a closed fd 1 as /dev/null at startup, and writes there always
-/// succeed, so a hook killed or redirected to /dev/null would lose its mail.
-fn stdout_reaches_anyone() -> bool {
-    use std::os::unix::fs::MetadataExt;
-    match (fs::metadata("/dev/fd/1"), fs::metadata("/dev/null")) {
-        (Err(_), _) => false,
-        (Ok(out), Ok(null)) => out.rdev() != null.rdev() || out.ino() != null.ino(),
-        (Ok(_), Err(_)) => true,
     }
 }
 

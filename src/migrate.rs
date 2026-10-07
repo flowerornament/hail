@@ -1,4 +1,4 @@
-//! The one-time import of 0.3 state (spec §11.1), its revert, and `gc`.
+//! The one-time import of 0.3 state (spec §11.1), and its revert.
 //! The transition lives here so the rest of the code reads as if the bash
 //! never existed; 0.5 deletes the import and revert.
 
@@ -18,7 +18,7 @@ use crate::store::message::Message;
 use crate::store::records::Pending;
 use crate::store::{Status, Store, list_names, write_atomic};
 use crate::time;
-use crate::transport::panes::PaneMap;
+use crate::transport::pane_map::PaneMap;
 use crate::transport::tmux::Tmux;
 
 const LEGACY_DIRS: [&str; 6] = [
@@ -374,54 +374,4 @@ fn copy(from: &Path, to: &Path) -> Result<()> {
         return Ok(());
     }
     fs::copy(from, to).map(|_| ()).map_err(Error::at(to))
-}
-
-/// Move read mail older than `days` to `archive/<yyyy-mm>/<mailbox>/` and
-/// note each id in `archive/index`, so `sent` and `show` still find it.
-pub fn gc(ctx: &Ctx, days: u64) -> Result<u8> {
-    use std::io::Write;
-    let store = &ctx.store;
-    let cutoff = time::now().as_second() - i64::try_from(days).unwrap_or(i64::MAX / 86400) * 86400;
-    let index_path = store.archive_dir().join("index");
-    let mut index = None;
-    let mut moved = 0;
-    for addr in store.mailboxes() {
-        for (id, r) in store.mailbox(&addr).claimed() {
-            if r.at.as_second() >= cutoff {
-                continue;
-            }
-            let month = r.at.strftime("%Y-%m").to_string();
-            let dest_dir = store
-                .archive_dir()
-                .join(&month)
-                .join(addr.to_string())
-                .join("cur");
-            fs::create_dir_all(&dest_dir).map_err(Error::at(&dest_dir))?;
-            // The index line first: a crash after it leaves the message
-            // findable in either place, never in neither.
-            if index.is_none() {
-                let f = fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&index_path);
-                index = Some(f.map_err(Error::at(&index_path))?);
-            }
-            if let Some(f) = index.as_mut() {
-                writeln!(f, "{id} {month} {addr}").map_err(Error::at(&index_path))?;
-            }
-            let file = format!("{id}.{}.md", r.how.as_str());
-            fs::rename(
-                store.seat_dir(&addr).join("cur").join(&file),
-                dest_dir.join(&file),
-            )
-            .map_err(Error::at(&dest_dir))?;
-            ids::forget(store, &id);
-            moved += 1;
-        }
-    }
-    outln!(
-        "archived {moved} read messages older than {days} days into {}",
-        store.archive_dir().display()
-    );
-    Ok(0)
 }

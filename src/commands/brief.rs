@@ -10,9 +10,9 @@ use std::fs;
 use jiff::Timestamp;
 
 use crate::ctx::{Boxes, Ctx};
-use crate::envelope::{Kind, clip};
+use crate::envelope::{Kind, Tag, clip};
 use crate::error::Result;
-use crate::out::Tag;
+use crate::hooks;
 use crate::policy::{BRIEF_SHOWN, PENDING_LAPSE, PENDING_LATE, secs};
 use crate::seat::Addr;
 use crate::store::Status;
@@ -26,7 +26,7 @@ pub fn run(ctx: &Ctx, all: bool, hook: bool) -> Result<u8> {
     }
     // A session-start hook never fails a session: errors go to the log.
     if let Err(e) = brief(ctx, all, true) {
-        super::receive::log_hook_error(&ctx.store, "brief", &e);
+        hooks::log_error(&ctx.store, "brief", &e);
     }
     Ok(0)
 }

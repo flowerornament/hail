@@ -4,7 +4,7 @@ use crate::ctx::Ctx;
 use crate::policy::GC_DUE;
 use crate::seat::{Addr, Seat};
 use crate::store::list_names;
-use crate::transport::panes::PaneMap;
+use crate::transport::pane_map::PaneMap;
 use crate::transport::tmux::Tmux;
 
 use super::setup::{harnesses, plan};
