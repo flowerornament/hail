@@ -49,7 +49,7 @@ programs.hail = {
 ```
 
 Or `nix build .#` and put `result/bin/hail` on your PATH, or `cargo install
---path .`. Each GitHub release also attaches a Linux tarball. Requires `tmux`.
+--path .`. Each GitHub release also attaches binaries for macOS and Linux. Requires `tmux`.
 `bd` (beads) is optional: when a message names an issue, the body is also
 posted there.
 
@@ -124,7 +124,11 @@ hail brief                                  # unread, sends without receipt, hol
   root that never touch yours);
 - the speed checks (`scripts/bench.sh`).
 
-`just build` builds the Nix package. CI runs the gate on Linux and macOS.
+`just build` builds the Nix package. CI runs the gate on Linux and macOS with
+the toolchain pinned in `rust-toolchain.toml` (Rust 1.99.0; the crate builds
+with 1.98, nixpkgs' rustc). Every push to `main` publishes the Nix package for
+four systems to the `flowerornament` Cachix cache (the flake advertises it),
+so `nx upgrade hail` substitutes rather than compiles.
 
 Design: [DESIGN.md](DESIGN.md) and the 0.4 spec in [docs/](docs/). Hook
 blocks: [hooks/README.md](hooks/README.md).
@@ -136,9 +140,9 @@ just release-bump 0.4.1      # sets Cargo.toml and Cargo.lock, scaffolds a CHANG
 $EDITOR CHANGELOG.md         # replace the TODO bullet with what changed
 git commit -am "0.4.1" && git push
 just release-verify          # versions agree, changelog filled, checks, Nix build
-just release-tag 0.4.1       # tags v0.4.1, pushes it, moves origin/release
+just release-tag 0.4.1       # checks the cache has every system's build, tags v0.4.1, moves origin/release
 ```
 
 Pushing the tag publishes a GitHub release with that CHANGELOG section as its
-notes. Consumers that track the `release` branch pick it up with
+notes and binaries for aarch64/x86_64 macOS and Linux. Consumers that track the `release` branch pick it up with
 `nix flake update hail` (or `nx upgrade hail`).

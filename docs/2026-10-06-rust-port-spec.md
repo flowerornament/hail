@@ -131,9 +131,9 @@ seat_of(dir):  walk up from dir, stopping before $HOME (never a seat itself);
 
 **Name collisions.** A basename is not unique (`~/code/foo` and `~/work/foo`). The first use of a seat writes `seats/<seat>/root`, holding the absolute root path. A different root claiming the same name exits 3 with `seat foo is bound to <root>; add .hail-seat in <other root>`. The check costs one read.
 
-**Shared seats (D2).** When `send` or `seats` sees more than one agent pane in a seat, it writes `seats/<seat>/shared`, listing the panes.
-- **Sub-seats:** a Claude agent in a shared seat is `<seat>@<pane>`. Its pane is `TMUX_PANE`, accepted only when that pane's `pane_current_path` maps to the same `seat_of` and its `pane_current_command` is `claude`. That check rejects a stale or inherited `TMUX_PANE`, the bug class being removed. `send` and `seats` make the check, since they already list panes.
-- **Hooks:** `deliver` and `brief` read `seats/<seat>@$TMUX_PANE/` only when the `shared` marker exists and that sub-seat directory was created by a validated send. They make no tmux call, so hooks stay subprocess-free.
+**Shared seats (D2).** A seat with more than one agent pane is shared, as `send` and `seats` see it when they list panes.
+- **Sub-seats:** a Claude agent in a shared seat is `<seat>@<pane>`. Its pane is `TMUX_PANE`, accepted for signing only when that pane's `pane_current_path` maps to the same `seat_of`, it runs an agent that can hold a sub-seat, and the process is not Codex. That check rejects a stale or inherited `TMUX_PANE`, the bug class being removed.
+- **Hooks:** `deliver`, `inbox` and `brief` read the sub-seat for `$TMUX_PANE` whenever its directory exists (a validated send created it) and the process is not Codex, and they read the seat too. They make no tmux call, so hooks stay subprocess-free. *(Amended 2026-10-07: an earlier `shared` marker routed this and stranded mail when sharing ended; it is gone.)*
 - **Codex:** Codex panes never get a sub-seat, because their `TMUX_PANE` is the daemon's. A shared directory holding a Codex pane exits 3 for sends to it, with the fix: put that agent in its own jj workspace.
 - **Pane ids are not stable** across a tmux server restart. A restart orphans a sub-seat mailbox, and `doctor` lists the orphans with their unread counts. This is accepted for an edge case; the long-term answer is one workspace per agent.
 
@@ -538,3 +538,20 @@ comment number goes to the sender's stdout (`bead=<id> comment=<n>`), and the
 `(comment n)` / `(not posted)` annotations and the `see:` line are gone. The
 comment is posted after the wake, by which time the message may already be
 claimed.
+
+### Code-quality review (2026-10-07, %28, message 1007T074815-0fda)
+
+The verdict was "yes, I would maintain it". Its items, all done before the release:
+- **Typed domain:**
+  - `seat::Addr` (a seat or a sub-seat) replaces the `@` string convention;
+  - `store::ids::Id` replaces three separate id checks;
+  - `transport::tmux::Agent` makes the sub-seat rule a method;
+  - `store::records::{Entry, Pending}` keep the header names in one place;
+  - holds have their own store API, with no empty-string seat.
+- **One routing module** (`route.rs`): one parse feeds two policies, Mail for sends and Drive for `read`, `type` and `keys`. Its module doc says why they differ.
+- **`Boxes { primary, seat }`** replaces indexing into a mailbox list.
+- **`send::Form`** separates the 0.3 form, so 0.5 deletes one variant.
+- **The time limits** live in `policy.rs`.
+- **stdin** is capped at 30 s and 16 MB once data flows, so `yes | hail …` cannot hang a send.
+- **No hidden writes:** `doctor` checks seat bindings without writing, and `seats` writes nothing. The dead `shared` marker, `lib.rs` and the unused dev-dependencies are gone.
+- **insta snapshots** pin the help map, the send page, a brief and the hook JSON.

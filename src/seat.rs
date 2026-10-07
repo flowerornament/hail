@@ -1,5 +1,5 @@
 //! Identity is the seat: the workspace an agent works in, derived from a
-//! directory and nothing else. Process trees and an inherited TMUX_PANE named
+//! directory and nothing else. Process trees and an inherited `TMUX_PANE` named
 //! the wrong pane three times in 0.3 (murail-4vc8v, murail-m65jq, the Codex
 //! app-server as a pane's child); the working directory survives all of them.
 
@@ -26,10 +26,10 @@ pub enum Source {
 impl Source {
     pub fn describe(self) -> &'static str {
         match self {
-            Source::SeatFile => ".hail-seat",
-            Source::Jj => "jj workspace root",
-            Source::Git => "git root",
-            Source::Env => "HAIL_SEAT (no workspace here)",
+            Self::SeatFile => ".hail-seat",
+            Self::Jj => "jj workspace root",
+            Self::Git => "git root",
+            Self::Env => "HAIL_SEAT (no workspace here)",
         }
     }
 }
@@ -58,7 +58,7 @@ pub fn seat_of(dir: &Path, home: Option<&Path>) -> Result<Option<Seat>> {
         }
         let seat_file = anc.join(".hail-seat");
         if seat_file.is_file() {
-            let name = fs::read_to_string(&seat_file).map_err(|e| Error::io(&seat_file, e))?;
+            let name = fs::read_to_string(&seat_file).map_err(Error::at(&seat_file))?;
             return checked(name.trim(), anc, Source::SeatFile).map(Some);
         }
         let source = if anc.join(".jj").is_dir() {
@@ -97,16 +97,54 @@ fn checked(name: &str, root: &Path, source: Source) -> Result<Seat> {
     })
 }
 
-/// A sub-seat names one Claude pane in a directory several agents share.
-pub fn sub_seat(seat: &str, pane: &str) -> String {
-    format!("{seat}@{pane}")
+/// A mailbox: a seat, or one Claude pane's sub-seat in a directory several
+/// agents share. Written `seat` or `seat@%pane`, in directory names, the
+/// id index and `reply:`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Addr {
+    Seat(String),
+    Sub { seat: String, pane: String },
 }
 
-/// `hail@%28` → (`hail`, Some(`%28`)).
-pub fn split_sub_seat(name: &str) -> (&str, Option<&str>) {
-    match name.split_once('@') {
-        Some((s, p)) => (s, Some(p)),
-        None => (name, None),
+impl Addr {
+    /// `hail` or `hail@%28`.
+    pub fn parse(s: &str) -> Self {
+        match s.split_once('@') {
+            Some((seat, pane)) => Self::Sub {
+                seat: seat.to_string(),
+                pane: pane.to_string(),
+            },
+            None => Self::Seat(s.to_string()),
+        }
+    }
+
+    pub fn sub(seat: &str, pane: &str) -> Self {
+        Self::Sub {
+            seat: seat.to_string(),
+            pane: pane.to_string(),
+        }
+    }
+
+    /// The seat this mailbox belongs to.
+    pub fn seat(&self) -> &str {
+        match self {
+            Self::Seat(s) | Self::Sub { seat: s, .. } => s,
+        }
+    }
+}
+
+impl std::fmt::Display for Addr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Seat(s) => f.write_str(s),
+            Self::Sub { seat, pane } => write!(f, "{seat}@{pane}"),
+        }
+    }
+}
+
+impl From<&Seat> for Addr {
+    fn from(s: &Seat) -> Self {
+        Self::Seat(s.name.clone())
     }
 }
 
@@ -125,6 +163,14 @@ mod tests {
         fs::create_dir_all(t.path().join("home/.git")).unwrap();
         fs::create_dir_all(t.path().join("home/stray")).unwrap();
         t
+    }
+
+    #[test]
+    fn addresses_round_trip() {
+        for s in ["hail", "hail@%28", "legacy-%14"] {
+            assert_eq!(Addr::parse(s).to_string(), s);
+        }
+        assert_eq!(Addr::parse("hail@%28").seat(), "hail");
     }
 
     #[test]

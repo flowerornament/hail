@@ -17,6 +17,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
+      CARGO_TERM_COLOR: always
       # Hosted runners are slower and noisier than a dev machine.
       BENCH_FACTOR: "10"
       HAIL_TEST_DELIVER_MS: "100"
@@ -34,8 +35,15 @@ jobs:
             brew install tmux shellcheck hyperfine
           fi
 
-      - name: Rust components
-        run: rustup component add clippy rustfmt
+      # Reads rust-toolchain.toml (the pinned toolchain and its components)
+      # and caches cargo's registry and target directory between runs.
+      - name: Install pinned Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        with:
+          rustflags: ""
+
+      - name: Verify pinned Rust toolchain
+        run: rustup show active-toolchain
 
       - name: Check gate
         run: just check
@@ -53,7 +61,7 @@ jobs:
 
       - name: Flake package smoke test
         run: |
-          out="$(nix build --no-link --print-out-paths .)"
+          out="$(nix build --accept-flake-config --no-link --print-out-paths .)"
           "$out/bin/hail" --version
           "$out/bin/hail" --help >/dev/null
           nix run . -- --version

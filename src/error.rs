@@ -22,27 +22,28 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl Error {
     pub fn exit_code(&self) -> u8 {
         match self {
-            Error::Usage(_) | Error::State(_) => 1,
-            Error::OverCap(_) => 2,
-            Error::Seat(_) => 3,
-            Error::Dialog(_) => 4,
+            Self::Usage(_) | Self::State(_) => 1,
+            Self::OverCap(_) => 2,
+            Self::Seat(_) => 3,
+            Self::Dialog(_) => 4,
         }
     }
 
-    /// An I/O failure on a path, as a state error that names the path.
-    pub fn io(path: &Path, err: std::io::Error) -> Error {
-        Error::State(format!("{}: {err}", path.display()))
+    /// An I/O failure on a path, as a state error that names the path:
+    /// `.map_err(Error::at(&path))`.
+    pub fn at(path: &Path) -> impl FnOnce(std::io::Error) -> Self + '_ {
+        move |err| Self::State(format!("{}: {err}", path.display()))
     }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Usage(m)
-            | Error::State(m)
-            | Error::OverCap(m)
-            | Error::Seat(m)
-            | Error::Dialog(m) => f.write_str(m),
+            Self::Usage(m)
+            | Self::State(m)
+            | Self::OverCap(m)
+            | Self::Seat(m)
+            | Self::Dialog(m) => f.write_str(m),
         }
     }
 }

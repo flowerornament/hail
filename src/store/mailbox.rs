@@ -10,6 +10,7 @@ use std::time::SystemTime;
 
 use jiff::Timestamp;
 
+use super::ids::Id;
 use crate::error::{Error, Result};
 use crate::time;
 
@@ -24,13 +25,13 @@ pub enum How {
 }
 
 impl How {
-    pub const ALL: [How; 3] = [How::Injected, How::Read, How::Inline];
+    pub const ALL: [Self; 3] = [Self::Injected, Self::Read, Self::Inline];
 
     pub fn as_str(self) -> &'static str {
         match self {
-            How::Injected => "injected",
-            How::Read => "read",
-            How::Inline => "inline",
+            Self::Injected => "injected",
+            Self::Read => "read",
+            Self::Inline => "inline",
         }
     }
 }
@@ -59,25 +60,25 @@ pub struct Mailbox {
 }
 
 impl Mailbox {
-    pub fn new(dir: PathBuf) -> Mailbox {
-        Mailbox { dir }
+    pub fn new(dir: PathBuf) -> Self {
+        Self { dir }
     }
 
     fn sub(&self, name: &str) -> PathBuf {
         self.dir.join(name)
     }
 
-    fn new_path(&self, id: &str) -> PathBuf {
+    fn new_path(&self, id: &Id) -> PathBuf {
         self.sub("new").join(format!("{id}.md"))
     }
 
-    fn cur_path(&self, id: &str, how: How) -> PathBuf {
+    fn cur_path(&self, id: &Id, how: How) -> PathBuf {
         self.sub("cur").join(format!("{id}.{}.md", how.as_str()))
     }
 
     /// Write a message durably, then make it visible: `new/` for mail,
     /// `cur/<id>.inline.md` for a control kind.
-    pub fn post(&self, id: &str, text: &str, control: bool) -> Result<PathBuf> {
+    pub fn post(&self, id: &Id, text: &str, control: bool) -> Result<PathBuf> {
         let tmp = self.sub("tmp").join(format!("{id}.md"));
         let dest = if control {
             self.cur_path(id, How::Inline)
@@ -85,25 +86,24 @@ impl Mailbox {
             self.new_path(id)
         };
         for d in [self.sub("tmp"), self.sub("new"), self.sub("cur")] {
-            fs::create_dir_all(&d).map_err(|e| Error::io(&d, e))?;
+            fs::create_dir_all(&d).map_err(Error::at(&d))?;
         }
-        let mut f = File::create(&tmp).map_err(|e| Error::io(&tmp, e))?;
-        f.write_all(text.as_bytes())
-            .map_err(|e| Error::io(&tmp, e))?;
-        f.sync_all().map_err(|e| Error::io(&tmp, e))?;
-        fs::rename(&tmp, &dest).map_err(|e| Error::io(&dest, e))?;
+        let mut f = File::create(&tmp).map_err(Error::at(&tmp))?;
+        f.write_all(text.as_bytes()).map_err(Error::at(&tmp))?;
+        f.sync_all().map_err(Error::at(&tmp))?;
+        fs::rename(&tmp, &dest).map_err(Error::at(&dest))?;
         Ok(dest)
     }
 
     /// Place an existing file (migration) as unread or claimed at a time.
-    pub fn import(&self, id: &str, from: &Path, receipt: Option<Receipt>) -> Result<()> {
+    pub fn import(&self, id: &Id, from: &Path, receipt: Option<Receipt>) -> Result<()> {
         let dest = match receipt {
             None => self.new_path(id),
             Some(r) => self.cur_path(id, r.how),
         };
         let dir = dest.parent().unwrap_or(&self.dir).to_path_buf();
-        fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
-        fs::rename(from, &dest).map_err(|e| Error::io(&dest, e))?;
+        fs::create_dir_all(&dir).map_err(Error::at(&dir))?;
+        fs::rename(from, &dest).map_err(Error::at(&dest))?;
         if let Some(r) = receipt {
             set_mtime(&dest, r.at);
         }
@@ -111,32 +111,33 @@ impl Mailbox {
     }
 
     /// Unread ids, oldest first (ids sort by time).
-    pub fn unread(&self) -> Vec<String> {
+    pub fn unread(&self) -> Vec<Id> {
         super::list_names(&self.sub("new"))
             .into_iter()
-            .filter_map(|n| n.strip_suffix(".md").map(str::to_string))
+            .filter_map(|n| Id::parse(n.strip_suffix(".md")?))
             .collect()
     }
 
     /// Claimed ids with their receipts, oldest first.
-    pub fn claimed(&self) -> Vec<(String, Receipt)> {
+    pub fn claimed(&self) -> Vec<(Id, Receipt)> {
         super::list_names(&self.sub("cur"))
             .into_iter()
             .filter_map(|n| {
                 let stem = n.strip_suffix(".md")?;
                 let (id, how) = stem.rsplit_once('.')?;
                 let how = How::ALL.into_iter().find(|h| h.as_str() == how)?;
-                let at = mtime(&self.cur_path(id, how))?;
-                Some((id.to_string(), Receipt { how, at }))
+                let id = Id::parse(id)?;
+                let at = mtime(&self.cur_path(&id, how))?;
+                Some((id, Receipt { how, at }))
             })
             .collect()
     }
 
     /// Claim one unread message. `None` when another claimer won the race.
-    pub fn claim(&self, id: &str, how: How) -> Result<Option<PathBuf>> {
+    pub fn claim(&self, id: &Id, how: How) -> Result<Option<PathBuf>> {
         let dest = self.cur_path(id, how);
         let cur = self.sub("cur");
-        fs::create_dir_all(&cur).map_err(|e| Error::io(&cur, e))?;
+        fs::create_dir_all(&cur).map_err(Error::at(&cur))?;
         match fs::rename(self.new_path(id), &dest) {
             Ok(()) => {
                 // A crash before this leaves the send time as the receipt
@@ -145,17 +146,17 @@ impl Mailbox {
                 Ok(Some(dest))
             }
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(Error::io(&dest, e)),
+            Err(e) => Err(Error::at(&dest)(e)),
         }
     }
 
     /// Undo a claim whose output never reached the agent: at least once.
-    pub fn unclaim(&self, id: &str, how: How) {
+    pub fn unclaim(&self, id: &Id, how: How) {
         let _ = fs::rename(self.cur_path(id, how), self.new_path(id));
     }
 
     /// At most four stats: the three claimed names, then unread.
-    pub fn find(&self, id: &str) -> Option<Found> {
+    pub fn find(&self, id: &Id) -> Option<Found> {
         for how in How::ALL {
             let p = self.cur_path(id, how);
             if let Some(at) = mtime(&p) {
@@ -170,10 +171,6 @@ impl Mailbox {
             path: p,
             receipt: None,
         })
-    }
-
-    pub fn exists(&self) -> bool {
-        self.dir.is_dir()
     }
 }
 
@@ -192,12 +189,16 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
+    fn id(s: &str) -> Id {
+        Id::parse(s).unwrap()
+    }
+
     #[test]
     fn exactly_one_claimer_wins() {
         let t = tempfile::tempdir().unwrap();
         let mb = Arc::new(Mailbox::new(t.path().join("w")));
         for i in 0..50 {
-            mb.post(&format!("id{i:02}"), "kind: fyi\n\nx\n", false)
+            mb.post(&id(&format!("id{i:02}")), "kind: fyi\n\nx\n", false)
                 .unwrap();
         }
         let handles: Vec<_> = (0..16)
@@ -213,7 +214,7 @@ mod tests {
             .collect();
         let total: usize = handles.into_iter().map(|h| h.join().unwrap()).sum();
         assert_eq!(total, 50);
-        assert!(mb.unread().is_empty());
+        assert_eq!(mb.unread(), Vec::<Id>::new());
         assert_eq!(mb.claimed().len(), 50);
     }
 
@@ -221,19 +222,19 @@ mod tests {
     fn unclaim_redelivers_under_the_same_id() {
         let t = tempfile::tempdir().unwrap();
         let mb = Mailbox::new(t.path().join("w"));
-        mb.post("a", "x\n", false).unwrap();
-        mb.claim("a", How::Injected).unwrap();
-        assert!(mb.find("a").unwrap().receipt.is_some());
-        mb.unclaim("a", How::Injected);
-        assert_eq!(mb.unread(), vec!["a".to_string()]);
+        mb.post(&id("a"), "x\n", false).unwrap();
+        mb.claim(&id("a"), How::Injected).unwrap();
+        assert!(mb.find(&id("a")).unwrap().receipt.is_some());
+        mb.unclaim(&id("a"), How::Injected);
+        assert_eq!(mb.unread(), vec![id("a")]);
     }
 
     #[test]
     fn control_kinds_are_claimed_at_post() {
         let t = tempfile::tempdir().unwrap();
         let mb = Mailbox::new(t.path().join("w"));
-        mb.post("s", "x\n", true).unwrap();
-        assert!(mb.unread().is_empty());
-        assert_eq!(mb.find("s").unwrap().receipt.unwrap().how, How::Inline);
+        mb.post(&id("s"), "x\n", true).unwrap();
+        assert_eq!(mb.unread(), Vec::<Id>::new());
+        assert_eq!(mb.find(&id("s")).unwrap().receipt.unwrap().how, How::Inline);
     }
 }

@@ -1,5 +1,5 @@
 //! Receiving: `deliver` (hooks), `inbox`, `show`; receipts: `sent`, `await`.
-//! None of these runs a subprocess (spec D8).
+//! None of these runs a subprocess (spec D8); keep bd and tmux out of them.
 
 use std::fs;
 use std::io::Write;
@@ -9,25 +9,21 @@ use std::time::{Duration, Instant};
 use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::hooks;
+use crate::policy::{DELIVER_BODIES, DELIVER_BYTES, HOOK_LOG_MAX};
+use crate::seat::Addr;
+use crate::store::ids::Id;
 use crate::store::mailbox::{Found, How};
 use crate::store::message::Message;
-use crate::store::{Store, ids};
-
-/// At most this many bodies, or about this many bytes, reach the agent per
-/// prompt; the rest stay unread for the next prompt or `hail inbox`. A
-/// backlog (66 unread on one seat at migration) would otherwise be cut by
-/// the harness's hook output limit after it was claimed: silent loss.
-const DELIVER_BODIES: usize = 5;
-const DELIVER_BYTES: usize = 8 * 1024;
+use crate::store::{Status, Store};
 
 /// Print this seat's unread bodies and claim them (`injected`). A hook must
 /// never fail a session: this always exits 0, and an error is logged to
 /// `hook-errors.log` with every claim it made given back.
-pub fn deliver(ctx: &Ctx, format: Option<&str>) -> Result<u8> {
+pub fn deliver(ctx: &Ctx, format: Option<&str>) -> u8 {
     if let Err(e) = deliver_inner(ctx, format) {
         log_hook_error(&ctx.store, "deliver", &e);
     }
-    Ok(0)
+    0
 }
 
 fn deliver_inner(ctx: &Ctx, format: Option<&str>) -> Result<()> {
@@ -38,36 +34,20 @@ fn deliver_inner(ctx: &Ctx, format: Option<&str>) -> Result<()> {
         return Ok(());
     };
     ctx.bind(&seat)?;
-    let mut claimed: Vec<(String, String)> = Vec::new();
-    let give_back = |claimed: &[(String, String)]| {
-        for (b, id) in claimed {
-            ctx.store.mailbox(b).unclaim(id, How::Injected);
-        }
+    let mut claims = Claims {
+        store: &ctx.store,
+        made: Vec::new(),
     };
     let mut parts = Vec::new();
     let (mut bytes, mut more) = (0, 0);
-    for b in ctx.my_mailboxes(&seat) {
-        let mb = ctx.store.mailbox(&b);
-        for id in mb.unread() {
+    for addr in ctx.mailboxes(&seat).iter() {
+        for id in ctx.store.mailbox(addr).unread() {
             if parts.len() >= DELIVER_BODIES || bytes >= DELIVER_BYTES {
                 more += 1;
                 continue;
             }
-            let path = match mb.claim(&id, How::Injected) {
-                Ok(Some(p)) => p,
-                Ok(None) => continue,
-                Err(e) => {
-                    give_back(&claimed);
-                    return Err(e);
-                }
-            };
-            claimed.push((b.clone(), id));
-            let text = match fs::read_to_string(&path) {
-                Ok(t) => t,
-                Err(e) => {
-                    give_back(&claimed);
-                    return Err(Error::io(&path, e));
-                }
+            let Some(text) = claims.claim(addr, &id)? else {
+                continue;
             };
             // A headline-only message is already in the prompt: receipt, no text.
             if !Message::parse(&text).body_is_headline() {
@@ -77,6 +57,7 @@ fn deliver_inner(ctx: &Ctx, format: Option<&str>) -> Result<()> {
         }
     }
     if parts.is_empty() {
+        claims.keep();
         return Ok(());
     }
     if more > 0 {
@@ -89,19 +70,51 @@ fn deliver_inner(ctx: &Ctx, format: Option<&str>) -> Result<()> {
     };
     let mut stdout = std::io::stdout().lock();
     if writeln!(stdout, "{out}")
-        .and_then(|_| stdout.flush())
-        .is_err()
+        .and_then(|()| stdout.flush())
+        .is_ok()
     {
-        // The output never reached the agent: give the messages back.
-        give_back(&claimed);
+        claims.keep();
     }
     Ok(())
 }
 
-/// Append one line to `hook-errors.log`, rotating it at 1 MB.
+/// The claims one delivery made. Dropped without [`Claims::keep`] (an error,
+/// or output that never reached the agent), they are given back: delivery
+/// is at least once, never lost.
+struct Claims<'a> {
+    store: &'a Store,
+    made: Vec<(Addr, Id)>,
+}
+
+impl Claims<'_> {
+    /// Claim one message and read it; `None` when another claimer won.
+    fn claim(&mut self, addr: &Addr, id: &Id) -> Result<Option<String>> {
+        let Some(path) = self.store.mailbox(addr).claim(id, How::Injected)? else {
+            return Ok(None);
+        };
+        self.made.push((addr.clone(), id.clone()));
+        fs::read_to_string(&path)
+            .map(Some)
+            .map_err(Error::at(&path))
+    }
+
+    fn keep(mut self) {
+        self.made.clear();
+    }
+}
+
+impl Drop for Claims<'_> {
+    fn drop(&mut self) {
+        for (addr, id) in &self.made {
+            self.store.mailbox(addr).unclaim(id, How::Injected);
+        }
+    }
+}
+
+/// Append one line to `hook-errors.log`, rotating it past [`HOOK_LOG_MAX`].
 pub fn log_hook_error(store: &Store, verb: &str, e: &Error) {
     let path = store.root().join("hook-errors.log");
-    if fs::metadata(&path).is_ok_and(|m| m.len() > 1 << 20) {
+    if fs::metadata(&path).is_ok_and(|m| m.len() > HOOK_LOG_MAX) {
         let _ = fs::rename(&path, path.with_extension("log.1"));
     }
     let _ = fs::create_dir_all(store.root());
@@ -125,9 +138,9 @@ fn stdout_reaches_anyone() -> bool {
 pub fn inbox(ctx: &Ctx, peek: bool, all: bool) -> Result<u8> {
     let seat = ctx.require_seat()?;
     let mut shown = 0;
-    for b in ctx.my_mailboxes(&seat) {
-        let mb = ctx.store.mailbox(&b);
-        let mut ids: Vec<String> = mb.unread();
+    for addr in ctx.mailboxes(&seat).iter() {
+        let mb = ctx.store.mailbox(addr);
+        let mut ids = mb.unread();
         if all {
             ids.extend(mb.claimed().into_iter().map(|(id, _)| id));
             ids.sort();
@@ -154,87 +167,60 @@ fn print_found(found: &Found) -> Result<()> {
     if let Some(r) = found.receipt {
         outln!("receipt: {r}");
     }
-    let text = fs::read_to_string(&found.path).map_err(|e| Error::io(&found.path, e))?;
+    let text = fs::read_to_string(&found.path).map_err(Error::at(&found.path))?;
     out!("{text}");
     Ok(())
 }
 
+fn parse_id(id: &str) -> Result<Id> {
+    Id::parse(id).ok_or_else(|| Error::Usage(format!("'{id}' is not a message id")))
+}
+
 /// A message by id from any seat, without claiming it.
 pub fn show(ctx: &Ctx, id: &str) -> Result<u8> {
-    match locate(&ctx.store, id) {
-        Some(found) => {
-            print_found(&found)?;
-            Ok(0)
-        }
-        None => Err(Error::State(format!(
+    let found = ctx.store.find(&parse_id(id)?).ok_or_else(|| {
+        Error::State(format!(
             "no message with id {id}; check the id (hail brief lists recent ones)"
-        ))),
-    }
-}
-
-fn locate(store: &Store, id: &str) -> Option<Found> {
-    if let Some(seat) = ids::lookup(store, id) {
-        if let Some(f) = store.mailbox(&seat).find(id) {
-            return Some(f);
-        }
-    }
-    archived(store, id)
-}
-
-/// gc moves old mail to `archive/<yyyy-mm>/<seat>/` and notes it in `archive/index`.
-fn archived(store: &Store, id: &str) -> Option<Found> {
-    let index = fs::read_to_string(store.archive_dir().join("index")).ok()?;
-    let line = index.lines().find(|l| l.split(' ').next() == Some(id))?;
-    let mut f = line.split(' ');
-    let (_, month, seat) = (f.next()?, f.next()?, f.next()?);
-    crate::store::mailbox::Mailbox::new(store.archive_dir().join(month).join(seat)).find(id)
-}
-
-/// `delivered` | `injected <t>` | `read <t>` | `inline <t>` | `unknown`.
-pub fn receipt_line(store: &Store, id: &str) -> String {
-    match locate(store, id) {
-        Some(Found {
-            receipt: Some(r), ..
-        }) => r.to_string(),
-        Some(Found { receipt: None, .. }) => "delivered".into(),
-        None => "unknown".into(),
-    }
-}
-
-pub fn sent(ctx: &Ctx, id: &str) -> Result<u8> {
-    outln!("{}", receipt_line(&ctx.store, id));
+        ))
+    })?;
+    print_found(&found)?;
     Ok(0)
+}
+
+pub fn sent(ctx: &Ctx, id: &str) -> u8 {
+    let status = Id::parse(id).map_or(Status::Unknown, |id| ctx.store.status(&id));
+    outln!("{status}");
+    0
 }
 
 /// Block until every id (or any, with `--any`) has a receipt. The only verb
 /// that waits. Polls the index every 100 ms: a few stats per id.
-pub fn await_ids(ctx: &Ctx, ids: &[String], timeout: u64, any: bool) -> Result<u8> {
+pub fn await_ids(ctx: &Ctx, ids: &[String], timeout: u64, any: bool) -> u8 {
     let deadline = Instant::now() + Duration::from_secs(timeout);
-    let has = |id: &String| {
-        matches!(
-            locate(&ctx.store, id),
-            Some(Found {
-                receipt: Some(_),
-                ..
-            })
-        )
-    };
+    let status = |id: &String| Id::parse(id).map_or(Status::Unknown, |id| ctx.store.status(&id));
     loop {
-        let n = ids.iter().filter(|id| has(id)).count();
-        let done = if any { n > 0 } else { n == ids.len() };
-        let timed_out = Instant::now() >= deadline;
-        if done || timed_out {
-            let fallback = if done { "pending" } else { "timeout" };
-            for id in ids {
-                let line = receipt_line(&ctx.store, id);
-                let shown = if line.starts_with("delivered") || line == "unknown" {
-                    fallback.to_string()
+        let statuses: Vec<Status> = ids.iter().map(status).collect();
+        let received = statuses
+            .iter()
+            .filter(|s| matches!(s, Status::Received(_)))
+            .count();
+        let done = if any {
+            received > 0
+        } else {
+            received == ids.len()
+        };
+        if done || Instant::now() >= deadline {
+            // An id without a receipt is "pending" when another satisfied
+            // --any, else "timeout".
+            let unmet = if done { "pending" } else { "timeout" };
+            for (id, status) in ids.iter().zip(statuses) {
+                if let Status::Received(r) = status {
+                    outln!("{id} {r}");
                 } else {
-                    line
-                };
-                outln!("{id} {shown}");
+                    outln!("{id} {unmet}");
+                }
             }
-            return Ok(if done { 0 } else { 1 });
+            return u8::from(!done);
         }
         sleep(Duration::from_millis(100));
     }

@@ -1,0 +1,5 @@
+---
+source: tests/cli.rs
+expression: "stdout(&w.run(\"worker\", &[\"deliver\", \"--format\", \"claude\"]))"
+---
+{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"from: boss\nreply: boss\nkind: fyi\nid: [id]\ntime: [time]\nask: status with a body\n\nline one\nline two"}}

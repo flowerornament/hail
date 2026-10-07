@@ -54,10 +54,9 @@ mod tests {
 
     #[test]
     fn only_the_last_eight_lines_count() {
-        let mut s = String::from("Do you want to proceed?\n");
-        for i in 0..8 {
-            s.push_str(&format!("output {i}\n"));
-        }
+        let s: String = std::iter::once("Do you want to proceed?\n".to_string())
+            .chain((0..8).map(|i| format!("output {i}\n")))
+            .collect();
         assert!(!shows_dialog(&s));
     }
 }

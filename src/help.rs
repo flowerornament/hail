@@ -178,7 +178,6 @@ Exit codes: 0 ok · 1 usage or state · 2 control headline over cap ·
 /// The page for a topic or verb, or None.
 pub fn page(topic: &str) -> Option<&'static str> {
     Some(match topic {
-        "" => MAP,
         "send" | "message" | "msg" | "sent" | "await" => SEND,
         "kinds" | "kind" => KINDS,
         "receive" | "deliver" | "brief" | "inbox" | "show" => RECEIVE,
@@ -187,7 +186,7 @@ pub fn page(topic: &str) -> Option<&'static str> {
         "panes" | "pane" | "read" | "type" | "keys" => PANES,
         "setup" | "doctor" | "hooks" => SETUP,
         "state" | "env" | "environment" | "exit" | "migrate" | "gc" | "beads" => STATE,
-        "help" | "version" => MAP,
+        "" | "help" | "version" => MAP,
         _ => return None,
     })
 }

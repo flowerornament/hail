@@ -2,14 +2,16 @@
 //! `read`, `type`, `keys`; and the 0.3 identity verbs kept as shims for 0.4.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use crate::ctx::{Ctx, PaneMap, looks_like_pane};
+use crate::ctx::Ctx;
 use crate::error::{Error, Result};
-use crate::seat;
-use crate::transport::Woken;
-use crate::transport::tmux::{Pane, Tmux};
-use crate::transport::type_verified;
+use crate::out::Table;
+use crate::route;
+use crate::seat::Addr;
+use crate::transport::panes::PaneMap;
+use crate::transport::tmux::{Agent, Pane, Tmux};
+use crate::transport::{Woken, type_verified};
 
 fn tmux_and_panes(ctx: &Ctx) -> Result<(Tmux, PaneMap)> {
     let t = Tmux::detect()?;
@@ -21,9 +23,12 @@ fn tmux_and_panes(ctx: &Ctx) -> Result<(Tmux, PaneMap)> {
 pub fn whoami(ctx: &Ctx) -> Result<u8> {
     let seat = ctx.require_seat()?;
     outln!("seat: {}", seat.name);
-    let mailbox = ctx.my_mailbox(&seat);
-    if mailbox != seat.name {
-        outln!("mailbox: {mailbox} (shared directory; this pane's sub-seat)");
+    let boxes = ctx.mailboxes(&seat);
+    if boxes.seat.is_some() {
+        outln!(
+            "mailbox: {} (shared directory; this pane's sub-seat)",
+            boxes.primary
+        );
     }
     outln!("from: {} ({})", seat.root.display(), seat.source.describe());
     outln!("state: {}", ctx.store.root().display());
@@ -32,152 +37,124 @@ pub fn whoami(ctx: &Ctx) -> Result<u8> {
 
 pub fn list(ctx: &Ctx) -> Result<u8> {
     let (_, pm) = tmux_and_panes(ctx)?;
-    outln!(
-        "{:<8} {:<16} {:<10} {:<10} {:<20} CWD",
-        "TARGET",
-        "SESSION:WIN",
-        "SIZE",
-        "PROCESS",
-        "SEAT"
-    );
+    let mut t = Table::new(&["TARGET", "SESSION:WIN", "SIZE", "PROCESS", "SEAT", "CWD"]);
     for p in &pm.panes {
-        let process = p.agent.clone().unwrap_or_else(|| p.command.clone());
-        outln!(
-            "{:<8} {:<16} {:<10} {:<10} {:<20} {}",
-            p.id,
+        t.row(vec![
+            p.id.clone(),
             format!("{}:{}", p.session, p.window),
-            p.size,
-            process,
-            pm.seat_of(p).unwrap_or("-"),
-            tilde(ctx, &p.path)
-        );
+            p.size.clone(),
+            p.agent
+                .as_ref()
+                .map_or(p.command.as_str(), Agent::name)
+                .to_string(),
+            pm.seat_of(p).unwrap_or("-").to_string(),
+            tilde(ctx, &p.path),
+        ]);
     }
+    t.print();
     Ok(0)
 }
 
-fn tilde(ctx: &Ctx, p: &std::path::Path) -> String {
+fn tilde(ctx: &Ctx, p: &Path) -> String {
     match ctx.home.as_deref().and_then(|h| p.strip_prefix(h).ok()) {
         Some(rest) => format!("~/{}", rest.display()),
         None => p.display().to_string(),
     }
 }
 
-/// Every seat: agent panes, unread mail, open obligations.
+/// Every seat (or one, with its sub-seats): agent panes, unread mail, open
+/// obligations, root. Writes nothing.
 pub fn seats(ctx: &Ctx, only: Option<&str>) -> Result<u8> {
     let pm = Tmux::detect()
         .ok()
         .and_then(|t| PaneMap::load(&t, ctx.home.as_deref()).ok());
-    let mut names = ctx.store.seat_names();
-    if let Some(pm) = &pm {
-        names.extend(pm.seat_names());
-    }
-    names.sort();
-    names.dedup();
+    let mut addrs = ctx.store.mailboxes();
+    addrs.extend(
+        pm.as_ref()
+            .map(PaneMap::seat_names)
+            .unwrap_or_default()
+            .iter()
+            .map(|s| Addr::parse(s)),
+    );
+    addrs.sort();
+    addrs.dedup();
     if let Some(o) = only {
-        names.retain(|n| n == o || n.starts_with(&format!("{o}@")));
-        if names.is_empty() {
+        addrs.retain(|a| a.seat() == o);
+        if addrs.is_empty() {
             return Err(Error::Usage(format!("no seat {o}; hail seats lists them")));
         }
     }
-    outln!(
-        "{:<24} {:<22} {:>6} {:>5}  ROOT",
-        "SEAT",
-        "AGENTS",
-        "UNREAD",
-        "OWED"
-    );
-    for n in names {
-        let (base, sub) = seat::split_sub_seat(&n);
-        let agents = match (&pm, sub) {
-            (Some(pm), None) => {
-                let a = pm.agents_in(base);
-                crate::ctx::note_sharing(&ctx.store, base, &a);
-                a.iter()
-                    .map(|p| format!("{}:{}", p.id, p.agent.as_deref().unwrap_or("?")))
-                    .collect::<Vec<_>>()
-                    .join(" ")
+    let label = |p: &Pane| format!("{}:{}", p.id, p.agent.as_ref().map_or("-", Agent::name));
+    let mut t = Table::new(&["SEAT", "AGENTS", "UNREAD", "OWED", "ROOT"]);
+    for addr in addrs {
+        let agents = match (&pm, &addr) {
+            (Some(pm), Addr::Seat(seat)) => pm
+                .agents_in(seat)
+                .iter()
+                .map(|p| label(p))
+                .collect::<Vec<_>>()
+                .join(" "),
+            (Some(pm), Addr::Sub { pane, .. }) => {
+                pm.find(pane).map_or_else(|| "(pane gone)".into(), label)
             }
-            (Some(pm), Some(id)) => match pm.find(id) {
-                Some(p) => format!("{}:{}", p.id, p.agent.as_deref().unwrap_or("-")),
-                None => "(pane gone)".into(),
-            },
             (None, _) => "?".into(),
         };
-        let unread = ctx.store.mailbox(&n).unread().len();
-        let owed = ctx
-            .store
-            .records(crate::store::records::Kind::Owed, &n)
-            .len();
-        let root = ctx
-            .store
-            .seat_root(base)
-            .map(|r| tilde(ctx, &r))
-            .unwrap_or_default();
-        outln!(
-            "{:<24} {:<22} {:>6} {:>5}  {}",
-            n,
+        t.row(vec![
+            addr.to_string(),
             if agents.is_empty() {
                 "-".into()
             } else {
                 agents
             },
-            unread,
-            owed,
-            root
-        );
+            ctx.store.mailbox(&addr).unread().len().to_string(),
+            ctx.store.owed(&addr).len().to_string(),
+            ctx.store
+                .seat_root(addr.seat())
+                .map(|r| tilde(ctx, &r))
+                .unwrap_or_default(),
+        ]);
     }
+    t.print();
     Ok(0)
 }
 
-/// A pane for `read`/`type`/`keys`: a tmux target, a sub-seat's pane, or a
-/// seat's single agent pane (else its single pane).
-fn target_pane(ctx: &Ctx, t: &Tmux, pm: &PaneMap, arg: &str) -> Result<Pane> {
-    if let (base, Some(id)) = seat::split_sub_seat(arg) {
-        return pm
-            .find(id)
-            .filter(|p| pm.seat_of(p) == Some(base))
-            .cloned()
-            .ok_or_else(|| Error::Usage(format!("no pane {id} in seat {base}")));
-    }
-    let in_seat = pm.in_seat(arg);
-    if !in_seat.is_empty() {
-        let agents: Vec<&&Pane> = in_seat.iter().filter(|p| p.agent.is_some()).collect();
-        return match (agents.len(), in_seat.len()) {
-            (1, _) => Ok((**agents[0]).clone()),
-            (0, 1) => Ok(in_seat[0].clone()),
-            _ => Err(Error::Seat(format!(
-                "seat {arg} has several panes ({}); name one",
-                in_seat
-                    .iter()
-                    .map(|p| p.id.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ))),
-        };
-    }
-    if looks_like_pane(arg) {
-        let id = t.pane_id(arg)?;
-        return pm
-            .find(&id)
-            .cloned()
-            .ok_or_else(|| Error::Usage(format!("no pane {arg}")));
-    }
-    let _ = ctx;
-    Err(Error::Usage(format!(
-        "no pane or seat '{arg}'; hail list shows panes"
-    )))
-}
+/// The read guard for driving a pane: `read` sets the mark, `type` and
+/// `keys` require it and consume it, so nobody types into a pane unseen.
+struct ReadMark(PathBuf);
 
-fn read_mark(ctx: &Ctx, pane: &str) -> PathBuf {
-    ctx.store.root().join("read").join(pane.replace('%', "_"))
+impl ReadMark {
+    fn of(ctx: &Ctx, pane: &str) -> Self {
+        Self(ctx.store.root().join("read").join(pane.replace('%', "_")))
+    }
+
+    fn set(&self) {
+        if let Some(d) = self.0.parent() {
+            let _ = fs::create_dir_all(d);
+        }
+        let _ = fs::write(&self.0, "");
+    }
+
+    fn require(&self, pane: &str) -> Result<()> {
+        if self.0.is_file() {
+            Ok(())
+        } else {
+            Err(Error::State(format!(
+                "read the pane before typing into it: hail read {pane}"
+            )))
+        }
+    }
+
+    fn consume(&self) {
+        let _ = fs::remove_file(&self.0);
+    }
 }
 
 pub fn read(ctx: &Ctx, arg: &str, lines: usize) -> Result<u8> {
     let (t, pm) = tmux_and_panes(ctx)?;
-    let p = target_pane(ctx, &t, &pm, arg)?;
+    let p = route::drive(ctx, arg, &pm, &t)?;
     // -S moves the start into scrollback but the capture still ends at the
     // bottom of the screen: drop the blank rows under the cursor, keep N.
-    let text = t.capture(&p.id, Some(-(lines as i64)))?;
+    let text = t.capture(&p.id, Some(-i64::try_from(lines).unwrap_or(i64::MAX)))?;
     let all: Vec<&str> = text.lines().collect();
     let last = all
         .iter()
@@ -187,64 +164,51 @@ pub fn read(ctx: &Ctx, arg: &str, lines: usize) -> Result<u8> {
     for l in &kept[kept.len().saturating_sub(lines)..] {
         outln!("{l}");
     }
-    let mark = read_mark(ctx, &p.id);
-    if let Some(d) = mark.parent() {
-        let _ = fs::create_dir_all(d);
-    }
-    let _ = fs::write(mark, "");
+    ReadMark::of(ctx, &p.id).set();
     Ok(0)
-}
-
-fn require_read(ctx: &Ctx, pane: &str) -> Result<()> {
-    if read_mark(ctx, pane).is_file() {
-        Ok(())
-    } else {
-        Err(Error::State(format!(
-            "read the pane before typing into it: hail read {pane}"
-        )))
-    }
 }
 
 pub fn type_text(ctx: &Ctx, arg: &str, text: &str) -> Result<u8> {
     let (t, pm) = tmux_and_panes(ctx)?;
-    let p = target_pane(ctx, &t, &pm, arg)?;
-    require_read(ctx, &p.id)?;
+    let p = route::drive(ctx, arg, &pm, &t)?;
+    let mark = ReadMark::of(ctx, &p.id);
+    mark.require(&p.id)?;
     if type_verified(&t, &p, text)? == Woken::NotConfirmed {
         return Err(Error::State(format!(
-            "could not see the text in {} after 2 s; it was typed once. hail read {} to check",
-            p.id, p.id
+            "could not see the text in {0} after 2 s; it was typed once. hail read {0} to check",
+            p.id
         )));
     }
-    let _ = fs::remove_file(read_mark(ctx, &p.id));
+    mark.consume();
     Ok(0)
 }
 
 pub fn keys(ctx: &Ctx, arg: &str, keys: &[String]) -> Result<u8> {
     let (t, pm) = tmux_and_panes(ctx)?;
-    let p = target_pane(ctx, &t, &pm, arg)?;
-    require_read(ctx, &p.id)?;
+    let p = route::drive(ctx, arg, &pm, &t)?;
+    let mark = ReadMark::of(ctx, &p.id);
+    mark.require(&p.id)?;
     for (i, k) in keys.iter().enumerate() {
         t.send_key(&p.id, k, i == 0 && p.in_mode)?;
     }
-    let _ = fs::remove_file(read_mark(ctx, &p.id));
+    mark.consume();
     Ok(0)
 }
 
 // --- 0.3 identity verbs, kept as shims through 0.4 ---------------------------
 
-/// `name` must not fail: seat.sh calls it from a SessionStart hook.
-pub fn name_shim(ctx: &Ctx, target: Option<&str>) -> Result<u8> {
+/// `name` must not fail: seat.sh calls it from a `SessionStart` hook.
+pub fn name_shim(ctx: &Ctx, target: Option<&str>) -> u8 {
     let here = ctx
         .seat_here()
         .ok()
         .flatten()
-        .map(|s| s.name)
-        .unwrap_or_else(|| "(none here)".into());
+        .map_or_else(|| "(none here)".into(), |s| s.name);
     eprintln!(
         "hail: labels are gone in 0.4; {} is seat {here}, named by its directory (hail whoami)",
         target.unwrap_or("this pane")
     );
-    Ok(0)
+    0
 }
 
 pub fn hello_shim(ctx: &Ctx) -> Result<u8> {
@@ -252,21 +216,16 @@ pub fn hello_shim(ctx: &Ctx) -> Result<u8> {
     Ok(0)
 }
 
-pub fn resolve_shim(ctx: &Ctx, seat_name: &str) -> Result<u8> {
+pub fn resolve_shim(ctx: &Ctx, seat: &str) -> Result<u8> {
     let (t, pm) = tmux_and_panes(ctx)?;
-    let p = target_pane(ctx, &t, &pm, seat_name)?;
-    outln!("{}", p.id);
+    outln!("{}", route::drive(ctx, seat, &pm, &t)?.id);
     Ok(0)
 }
 
 pub fn id_shim(ctx: &Ctx) -> Result<u8> {
-    match &ctx.tmux_pane {
-        Some(p) => {
-            outln!("{p}");
-            Ok(0)
-        }
-        None => Err(Error::State(
-            "not running inside a tmux pane ($TMUX_PANE is unset)".into(),
-        )),
-    }
+    let pane = ctx.tmux_pane.as_ref().ok_or_else(|| {
+        Error::State("not running inside a tmux pane ($TMUX_PANE is unset)".into())
+    })?;
+    outln!("{pane}");
+    Ok(0)
 }

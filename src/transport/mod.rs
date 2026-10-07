@@ -3,6 +3,7 @@
 //! Nothing outside this module types into a pane for a send.
 
 pub mod dialog;
+pub mod panes;
 pub mod tmux;
 
 use std::thread::sleep;
@@ -46,8 +47,7 @@ impl Wake for TypedEnvelope<'_> {
             let in_mode = self
                 .tmux
                 .run(&["display-message", "-t", &pane.id, "-p", "#{pane_in_mode}"])
-                .map(|s| s.trim() == "1")
-                .unwrap_or(false);
+                .is_ok_and(|s| s.trim() == "1");
             self.tmux.send_key(&pane.id, "Enter", in_mode)?;
         }
         Ok(Woken::Typed)

@@ -25,12 +25,12 @@ pub struct Pane {
     pub session: String,
     pub window: String,
     pub size: String,
-    /// The agent this pane runs, when it runs one (`claude`, `codex`).
-    pub agent: Option<String>,
+    /// The agent this pane runs, when it runs one.
+    pub agent: Option<Agent>,
 }
 
 impl Tmux {
-    pub fn detect() -> Result<Tmux> {
+    pub fn detect() -> Result<Self> {
         for var in ["HAIL_SOCKET", "TMUX_BRIDGE_SOCKET"] {
             if let Some(v) = std::env::var_os(var).filter(|v| !v.is_empty()) {
                 let p = PathBuf::from(&v);
@@ -40,7 +40,7 @@ impl Tmux {
                         p.display()
                     )));
                 }
-                return Ok(Tmux {
+                return Ok(Self {
                     socket: Some(p),
                     source: if var == "HAIL_SOCKET" {
                         "HAIL_SOCKET"
@@ -54,20 +54,16 @@ impl Tmux {
             let s = t.to_string_lossy();
             let p = PathBuf::from(s.split(',').next().unwrap_or(""));
             if is_socket(&p) {
-                return Ok(Tmux {
+                return Ok(Self {
                     socket: Some(p),
                     source: "$TMUX",
                 });
             }
         }
-        Ok(Tmux {
+        Ok(Self {
             socket: None,
             source: "default server",
         })
-    }
-
-    pub fn socket(&self) -> Option<&PathBuf> {
-        self.socket.as_ref()
     }
 
     fn command(&self) -> Command {
@@ -90,10 +86,6 @@ impl Tmux {
             return Err(Error::State(format!("tmux: {err}")));
         }
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-    }
-
-    pub fn reachable(&self) -> bool {
-        self.run(&["list-sessions"]).is_ok()
     }
 
     /// Every pane on the server in one call, with agents detected.
@@ -184,13 +176,47 @@ impl Tmux {
 
 fn is_socket(p: &std::path::Path) -> bool {
     use std::os::unix::fs::FileTypeExt;
-    std::fs::metadata(p)
-        .map(|m| m.file_type().is_socket())
-        .unwrap_or(false)
+    std::fs::metadata(p).is_ok_and(|m| m.file_type().is_socket())
+}
+
+/// The agent a pane runs. Claude Code and Codex are known by name; any other
+/// command in `HAIL_AGENT_COMMANDS` (the scenario harness uses `bash` and
+/// `cat`) counts as an agent too.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Agent {
+    Claude,
+    Codex,
+    Other(String),
+}
+
+impl Agent {
+    pub fn from_name(name: &str) -> Self {
+        match name {
+            "claude" => Self::Claude,
+            "codex" => Self::Codex,
+            other => Self::Other(other.to_string()),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+            Self::Other(n) => n,
+        }
+    }
+
+    /// Whether this pane can be told apart from other agents in its
+    /// directory (a sub-seat). Not Codex: its commands carry the shared
+    /// daemon's `TMUX_PANE`, so hail cannot tell which Codex pane a command
+    /// came from.
+    pub fn can_hold_sub_seat(&self) -> bool {
+        !matches!(self, Self::Codex)
+    }
 }
 
 /// Commands that count as agents. `HAIL_AGENT_COMMANDS` overrides the
-/// default (the scenario harness drives `bash` and `cat` panes as agents).
+/// default.
 pub fn agent_commands() -> Vec<String> {
     std::env::var("HAIL_AGENT_COMMANDS")
         .ok()
@@ -202,10 +228,8 @@ pub fn agent_commands() -> Vec<String> {
         .collect()
 }
 
-/// A pane runs an agent when its foreground command is one, or when its root
-/// shell has an agent as a direct child: tmux reports the process an agent's
-/// tool is running as the foreground command, so the shell check is needed
-/// mid-turn. One `ps`, only when some pane is not already settled.
+/// Detect each pane's agent ([`mark_agents`]). One `ps`, only when some pane
+/// is not settled by its foreground command alone.
 fn detect_agents(panes: &mut [Pane]) {
     let agents = agent_commands();
     if panes.iter().all(|p| agents.contains(&p.command)) {
@@ -232,14 +256,14 @@ pub struct Procs {
 
 impl Procs {
     /// From `ps -A -o pid= -o ppid= -o comm=`.
-    pub fn parse(ps: &str) -> Procs {
-        let mut procs = Procs::default();
+    pub fn parse(ps: &str) -> Self {
+        let mut procs = Self::default();
         for line in ps.lines() {
             let mut f = line.split_whitespace();
-            let (Some(pid), Some(ppid)) = (f.next(), f.next()) else {
+            let (Some(own), Some(parent)) = (f.next(), f.next()) else {
                 continue;
             };
-            let (Ok(pid), Ok(ppid)) = (pid.parse::<u32>(), ppid.parse::<u32>()) else {
+            let (Ok(own), Ok(parent)) = (own.parse::<u32>(), parent.parse::<u32>()) else {
                 continue;
             };
             let comm: Vec<&str> = f.collect();
@@ -250,8 +274,8 @@ impl Procs {
                 .unwrap_or("")
                 .trim_start_matches('-')
                 .to_string();
-            procs.children.entry(ppid).or_default().push(name.clone());
-            procs.name.insert(pid, name);
+            procs.children.entry(parent).or_default().push(name.clone());
+            procs.name.insert(own, name);
         }
         procs
     }
@@ -260,20 +284,16 @@ impl Procs {
 /// A pane runs an agent when tmux names its foreground command as one, when
 /// its root process is one, or when its root has an agent as a direct child
 /// (a shell that started the agent; tmux then reports the agent's running
-/// tool as the foreground command).
+/// tool as the foreground command, so the foreground check alone misses a
+/// busy agent).
 pub fn mark_agents(panes: &mut [Pane], agents: &[String], procs: &Procs) {
-    let is_agent = |n: &String| agents.contains(n);
+    let is_agent = |n: &&String| agents.contains(n);
     for p in panes.iter_mut() {
-        p.agent = if is_agent(&p.command) {
-            Some(p.command.clone())
-        } else if let Some(n) = procs.name.get(&p.pid).filter(|n| is_agent(n)) {
-            Some(n.clone())
-        } else {
-            procs
-                .children
-                .get(&p.pid)
-                .and_then(|kids| kids.iter().find(|k| is_agent(k)).cloned())
-        };
+        let name = Some(&p.command)
+            .filter(is_agent)
+            .or_else(|| procs.name.get(&p.pid).filter(is_agent))
+            .or_else(|| procs.children.get(&p.pid)?.iter().find(is_agent));
+        p.agent = name.map(|n| Agent::from_name(n));
     }
 }
 
@@ -318,7 +338,10 @@ mod tests {
             pane("%5", 3540, "zsh"),    // a plain shell running just
         ];
         mark_agents(&mut panes, &agents, &procs);
-        let got: Vec<Option<&str>> = panes.iter().map(|p| p.agent.as_deref()).collect();
+        let got: Vec<Option<&str>> = panes
+            .iter()
+            .map(|p| p.agent.as_ref().map(Agent::name))
+            .collect();
         assert_eq!(
             got,
             [

@@ -66,8 +66,13 @@ are unchanged; identity, storage and setup are new. Spec:
   - `just check` adds fmt, clippy, cargo tests and `scripts/bench.sh`.
   - The scenario harness covers 48 scenarios, including shared seats, heredoc
     bodies, setup and migration.
-  - CI runs on Linux and macOS.
-  - The Nix package builds with `buildRustPackage`.
+  - CI runs on Linux and macOS, on the toolchain pinned in
+    `rust-toolchain.toml` (Rust 1.99.0), under the nx-rs lint set (clippy
+    pedantic, unwrap and expect denied).
+  - The Nix package builds with `buildRustPackage` and is published to the
+    `flowerornament` Cachix cache for four systems on every push to `main`.
+    `just release-tag` refuses to tag until every build is cached.
+  - Releases attach binaries for aarch64/x86_64 macOS and Linux.
 
 From the unreleased 0.3.9, which ships here:
 

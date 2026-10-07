@@ -11,6 +11,7 @@ renders one CHANGELOG section for the GitHub release.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -28,6 +29,8 @@ LOCK_ENTRY_RE = re.compile(r'(?m)^(name = "hail"\nversion = ")(\d+\.\d+\.\d+)(")
 CHANGELOG_INTRO_MARKER = "All notable changes to `hail` are documented in this file.\n\n"
 UNRELEASED_HEADING = "## Unreleased"
 RELEASE_BRANCH = "release"
+CACHE_NAME = "flowerornament"
+CACHE_URI = f"https://{CACHE_NAME}.cachix.org"
 
 
 def fail(message: str) -> None:
@@ -220,6 +223,40 @@ def require_pushed(remote: str = "origin", branch: str = "main") -> None:
         fail(f"HEAD is not on {remote}/{branch}; push before tagging")
 
 
+def flake_package_systems() -> list[str]:
+    out = capture(["nix", "eval", "--accept-flake-config", "--json", ".#packages", "--apply", "builtins.attrNames"])
+    return json.loads(out)
+
+
+def nix_output_path(system: str) -> str:
+    return capture(["nix", "eval", "--accept-flake-config", "--raw", f".#packages.{system}.default.outPath"])
+
+
+def cache_contains(path: str) -> bool:
+    # Publication probes the same path before and after pushing, so bypass cached misses.
+    return command_succeeds(
+        ["nix", "path-info", "--store", CACHE_URI, "--option", "narinfo-cache-negative-ttl", "0", path]
+    )
+
+
+def verify_release_cache() -> None:
+    """Every advertised system's package is in the public cache, so a
+    consumer's `nx upgrade hail` substitutes instead of compiling."""
+    missing = [
+        (system, output)
+        for system in flake_package_systems()
+        if not cache_contains(output := nix_output_path(system))
+    ]
+    if missing:
+        details = "\n".join(f"  - {system}: {output}" for system, output in missing)
+        fail(
+            "release outputs are missing from the public Cachix cache:\n"
+            f"{details}\n"
+            "Wait for the Nix Cache workflow for this commit to succeed, then retry."
+        )
+    print("all advertised Nix package outputs are present in Cachix")
+
+
 def verify() -> None:
     version = manifest_version()
     nix = nix_version()
@@ -255,6 +292,7 @@ def tag(version: str) -> None:
     if capture(["git", "ls-remote", "--tags", "origin", f"refs/tags/{tag_name}"]):
         fail(f"tag {tag_name} already exists on origin")
     require_pushed()
+    verify_release_cache()
     run(["git", "tag", "-a", tag_name, "-m", tag_name])
     run(["git", "push", "origin", tag_name])
     # Keep the moving release branch pointed at the latest published tag for
@@ -276,6 +314,7 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("bump", help="set the version in Cargo.toml and scaffold CHANGELOG.md").add_argument("version")
     subparsers.add_parser("verify", help="run release readiness checks")
+    subparsers.add_parser("cache-verify", help="check every package output is in the public Cachix cache")
     subparsers.add_parser("tag", help="create and push a release tag, move the release branch").add_argument("version")
     subparsers.add_parser("notes", help="render one CHANGELOG section as GitHub release notes").add_argument("version")
     subparsers.add_parser("version", help="print the version declared in Cargo.toml")
@@ -284,6 +323,8 @@ def main() -> None:
         bump(args.version)
     elif args.command == "verify":
         verify()
+    elif args.command == "cache-verify":
+        verify_release_cache()
     elif args.command == "tag":
         tag(args.version)
     elif args.command == "notes":

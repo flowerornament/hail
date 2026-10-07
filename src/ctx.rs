@@ -1,39 +1,58 @@
 //! What a command knows about where it runs: the store, the working
-//! directory's seat, and (for verbs that need tmux) the panes and their seats.
+//! directory's seat, and the mailboxes this process reads.
 
-use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::error::{Error, Result};
-use crate::seat::{self, Seat, Source};
+use crate::seat::{self, Addr, Seat, Source};
 use crate::store::Store;
-use crate::transport::tmux::{Pane, Tmux};
 
 pub struct Ctx {
     pub store: Store,
     pub cwd: PathBuf,
     pub home: Option<PathBuf>,
-    /// `$TMUX_PANE`. Trusted only after a check against the pane's own
-    /// directory (sub-seats); a Codex command inherits the daemon's.
+    /// `$TMUX_PANE`: names this process's sub-seat when one exists (see
+    /// [`Ctx::mailboxes`]); never identity on its own, since a Codex command
+    /// inherits the shared daemon's.
     pub tmux_pane: Option<String>,
+    /// Run by Codex. Codex 0.160 sets `CODEX_THREAD_ID` and
+    /// `CODEX_SESSION_ID` on every command it runs (checked 2026-10-07).
+    pub codex: bool,
     /// Headline cap in characters (`HAIL_ENVELOPE_MAX`, default 400).
     pub max: usize,
 }
 
+/// The mailboxes a process reads, from the filesystem alone: its sub-seat
+/// when one exists for `$TMUX_PANE` (and it signs as that), then its seat.
+/// Reading both keeps a sub-seat's mail reachable after the directory stops
+/// being shared, and replies to an old `reply:` keep landing there.
+#[derive(Debug, Clone)]
+pub struct Boxes {
+    /// The mailbox this process signs and replies as.
+    pub primary: Addr,
+    /// The seat itself, when `primary` is a sub-seat.
+    pub seat: Option<Addr>,
+}
+
+impl Boxes {
+    pub fn iter(&self) -> impl Iterator<Item = &Addr> {
+        std::iter::once(&self.primary).chain(&self.seat)
+    }
+}
+
 impl Ctx {
-    pub fn from_env() -> Ctx {
-        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .map(|h| fs::canonicalize(&h).unwrap_or(h));
-        Ctx {
+    pub fn from_env() -> Self {
+        let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+        Self {
             store: Store::from_env(),
-            cwd,
-            home,
-            tmux_pane: std::env::var("TMUX_PANE").ok().filter(|p| !p.is_empty()),
-            max: std::env::var("HAIL_ENVELOPE_MAX")
-                .ok()
+            cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            home: std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .map(|h| fs::canonicalize(&h).unwrap_or(h)),
+            tmux_pane: var("TMUX_PANE"),
+            codex: var("CODEX_THREAD_ID").is_some() || var("CODEX_SESSION_ID").is_some(),
+            max: var("HAIL_ENVELOPE_MAX")
                 .and_then(|v| v.parse().ok())
                 .filter(|&n| n >= 20)
                 .unwrap_or(400),
@@ -83,105 +102,32 @@ impl Ctx {
         self.store.bind_seat(&seat.name, &seat.root)
     }
 
-    /// A command Codex runs carries the daemon's `TMUX_PANE`, which may name
-    /// another agent's pane, so Codex never reads or signs as a sub-seat.
-    pub fn is_codex(&self) -> bool {
-        ["CODEX_THREAD_ID", "CODEX_SESSION_ID"]
-            .iter()
-            .any(|v| std::env::var_os(v).is_some_and(|x| !x.is_empty()))
-    }
-
-    /// This process's mailboxes, from the filesystem alone (hooks, inbox,
-    /// brief): its sub-seat when one exists for `$TMUX_PANE`, then the seat.
-    /// Reading both keeps a sub-seat's mail reachable after the directory
-    /// stops being shared and replies to an old `reply:` keep landing there.
-    pub fn my_mailboxes(&self, seat: &Seat) -> Vec<String> {
-        let mut boxes = Vec::with_capacity(2);
-        if let (false, Some(p)) = (self.is_codex(), &self.tmux_pane) {
-            let sub = seat::sub_seat(&seat.name, p);
-            if self.store.seat_dir(&sub).is_dir() {
-                boxes.push(sub);
-            }
+    /// Like [`Ctx::bind`], but never claims a name: for `doctor`, which is
+    /// often run from the wrong directory.
+    pub fn check_binding(&self, seat: &Seat) -> Result<()> {
+        if seat.source != Source::Env {
+            self.store.check_seat(&seat.name, &seat.root)?;
         }
-        boxes.push(seat.name.clone());
-        boxes
+        Ok(())
     }
 
-    /// The mailbox this process signs as: its sub-seat when it has one.
-    pub fn my_mailbox(&self, seat: &Seat) -> String {
-        self.my_mailboxes(seat).swap_remove(0)
-    }
-}
-
-/// The panes on the server, each mapped to the seat of its directory.
-pub struct PaneMap {
-    pub panes: Vec<Pane>,
-    seats: HashMap<PathBuf, Option<String>>,
-}
-
-impl PaneMap {
-    pub fn load(tmux: &Tmux, home: Option<&Path>) -> Result<PaneMap> {
-        let panes = tmux.panes()?;
-        let mut seats = HashMap::new();
-        for p in &panes {
-            seats
-                .entry(p.path.clone())
-                .or_insert_with(|| seat::seat_of(&p.path, home).ok().flatten().map(|s| s.name));
+    pub fn mailboxes(&self, seat: &Seat) -> Boxes {
+        let seat_box = Addr::from(seat);
+        let sub = self
+            .tmux_pane
+            .as_deref()
+            .filter(|_| !self.codex)
+            .map(|p| Addr::sub(&seat.name, p))
+            .filter(|a| self.store.seat_dir(a).is_dir());
+        match sub {
+            Some(sub) => Boxes {
+                primary: sub,
+                seat: Some(seat_box),
+            },
+            None => Boxes {
+                primary: seat_box,
+                seat: None,
+            },
         }
-        Ok(PaneMap { panes, seats })
     }
-
-    pub fn seat_of(&self, pane: &Pane) -> Option<&str> {
-        self.seats.get(&pane.path).and_then(|s| s.as_deref())
-    }
-
-    pub fn find(&self, id: &str) -> Option<&Pane> {
-        self.panes.iter().find(|p| p.id == id)
-    }
-
-    pub fn in_seat(&self, seat: &str) -> Vec<&Pane> {
-        self.panes
-            .iter()
-            .filter(|p| self.seat_of(p) == Some(seat))
-            .collect()
-    }
-
-    pub fn agents_in(&self, seat: &str) -> Vec<&Pane> {
-        self.in_seat(seat)
-            .into_iter()
-            .filter(|p| p.agent.is_some())
-            .collect()
-    }
-
-    pub fn seat_names(&self) -> Vec<String> {
-        let mut v: Vec<String> = self.seats.values().flatten().cloned().collect();
-        v.sort();
-        v.dedup();
-        v
-    }
-}
-
-/// A Claude pane may hold a sub-seat; a Codex pane may not, because its
-/// commands carry the daemon's TMUX_PANE, not their own.
-pub fn sub_seat_eligible(p: &Pane) -> bool {
-    p.agent.as_deref().is_some_and(|a| a != "codex")
-}
-
-/// Keep `seats/<seat>/shared` in step with the panes seen: present, listing
-/// them, when more than one agent works in the seat's directory.
-pub fn note_sharing(store: &Store, seat: &str, agents: &[&Pane]) {
-    let marker = store.seat_dir(seat).join("shared");
-    if agents.len() > 1 {
-        let ids: Vec<&str> = agents.iter().map(|p| p.id.as_str()).collect();
-        let _ = crate::store::write_atomic(&marker, format!("{}\n", ids.join(" ")).as_bytes());
-    } else if marker.exists() {
-        let _ = fs::remove_file(marker);
-    }
-}
-
-/// `%5`, `sess:1.2`, `3`: a tmux target rather than a seat name.
-pub fn looks_like_pane(arg: &str) -> bool {
-    (arg.starts_with('%') && arg[1..].chars().all(|c| c.is_ascii_digit()) && arg.len() > 1)
-        || arg.contains(':')
-        || (!arg.is_empty() && arg.chars().all(|c| c.is_ascii_digit()))
 }

@@ -1,32 +1,98 @@
 //! Kinds, the one-line envelope, headline folding and bead detection. Pure.
 
-pub const KINDS: [&str; 11] = [
-    "ruling", "go", "nogo", "ask", "fyi", "done", "stop", "hold", "block", "release", "announce",
-];
+use crate::out::Tag;
 
-pub fn kinds_list() -> String {
-    KINDS.join(" ")
+/// What a message asks of its recipient. Control kinds are complete in the
+/// envelope and never sit behind a fetch (DESIGN.md principle 5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Ruling,
+    Go,
+    Nogo,
+    Ask,
+    Fyi,
+    Done,
+    Stop,
+    Hold,
+    Block,
+    Release,
+    Announce,
 }
 
-pub fn is_kind(k: &str) -> bool {
-    KINDS.contains(&k)
+impl Kind {
+    pub const ALL: [Self; 11] = [
+        Self::Ruling,
+        Self::Go,
+        Self::Nogo,
+        Self::Ask,
+        Self::Fyi,
+        Self::Done,
+        Self::Stop,
+        Self::Hold,
+        Self::Block,
+        Self::Release,
+        Self::Announce,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ruling => "ruling",
+            Self::Go => "go",
+            Self::Nogo => "nogo",
+            Self::Ask => "ask",
+            Self::Fyi => "fyi",
+            Self::Done => "done",
+            Self::Stop => "stop",
+            Self::Hold => "hold",
+            Self::Block => "block",
+            Self::Release => "release",
+            Self::Announce => "announce",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|k| k.as_str() == s)
+    }
+
+    /// `ruling go nogo …`, for error messages.
+    pub fn list() -> String {
+        Self::ALL.map(Self::as_str).join(" ")
+    }
+
+    /// Typed in full, no body, claimed (`inline`) at send.
+    pub const fn is_control(self) -> bool {
+        matches!(
+            self,
+            Self::Stop | Self::Hold | Self::Block | Self::Release | Self::Announce
+        )
+    }
+
+    /// Leaves an obligation on the recipient until it sends `done --re`.
+    pub const fn creates_obligation(self) -> bool {
+        matches!(self, Self::Ruling | Self::Go | Self::Ask)
+    }
+
+    /// Closes or lifts another message, so `--re` is required.
+    pub const fn needs_re(self) -> bool {
+        matches!(self, Self::Done | Self::Release)
+    }
+
+    /// Sets a hold in effect until a `release`.
+    pub const fn is_hold(self) -> bool {
+        matches!(self, Self::Hold | Self::Block)
+    }
 }
 
-/// Control kinds are complete in the envelope and never sit behind a fetch
-/// (DESIGN.md principle 5): typed in full, no body, receipt pre-written.
-pub fn is_control(k: &str) -> bool {
-    matches!(k, "stop" | "hold" | "block" | "release" | "announce")
-}
-
-/// Kinds that leave an obligation on the recipient until it sends `done --re`.
-pub fn creates_obligation(k: &str) -> bool {
-    matches!(k, "ruling" | "go" | "ask")
+impl std::fmt::Display for Kind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// Fields of the envelope head, in their printed order.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Head<'a> {
-    pub kind: &'a str,
+    pub kind: Kind,
     pub from: &'a str,
     pub reply: &'a str,
     pub id: &'a str,
@@ -37,22 +103,20 @@ pub struct Head<'a> {
 
 /// `[hail kind:<k> from:<f> reply:<r> id:<id> [bead:] [re:] [scope:]] <headline>[ — hail inbox]`.
 /// The fetch hint appears only when there is a body to fetch.
-pub fn render(head: &Head, headline: &str, hint: bool) -> String {
-    let mut s = format!(
-        "[hail kind:{} from:{} reply:{} id:{}",
-        head.kind, head.from, head.reply, head.id
-    );
-    for (k, v) in [("bead", head.bead), ("re", head.re), ("scope", head.scope)] {
-        if let Some(v) = v {
-            s.push_str(&format!(" {k}:{v}"));
-        }
-    }
-    s.push_str("] ");
-    s.push_str(headline);
+pub fn render(head: &Head<'_>, headline: &str, hint: bool) -> String {
+    let line = Tag::envelope(head.kind)
+        .field("from", head.from)
+        .field("reply", head.reply)
+        .field("id", head.id)
+        .opt("bead", head.bead)
+        .opt("re", head.re)
+        .opt("scope", head.scope)
+        .text(headline);
     if hint {
-        s.push_str(" — hail inbox");
+        format!("{line} — hail inbox")
+    } else {
+        line
     }
-    s
 }
 
 /// A headline is typed into a terminal: tabs and newlines become spaces and
@@ -146,7 +210,7 @@ mod tests {
     #[test]
     fn renders_the_envelope() {
         let head = Head {
-            kind: "ruling",
+            kind: Kind::Ruling,
             from: "murail-1a/%5",
             reply: "murail-1a",
             id: "0905T171200-a3f1",

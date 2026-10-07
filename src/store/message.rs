@@ -1,6 +1,8 @@
 //! The message and record file format, unchanged from 0.3: `key: value`
 //! header lines, a blank line, then the body. Agents and humans `cat` these.
 
+use std::fmt::Write as _;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Message {
     pub headers: Vec<(String, String)>,
@@ -18,6 +20,12 @@ impl Message {
             Some(v) => self.header(key, v),
             None => self,
         }
+    }
+
+    #[must_use]
+    pub fn with_body(mut self, body: &str) -> Self {
+        self.body = body.to_string();
+        self
     }
 
     pub fn get(&self, key: &str) -> Option<&str> {
@@ -44,16 +52,15 @@ impl Message {
 
     /// A record (an obligation, hold or pending send) is headers only.
     pub fn render_record(&self) -> String {
-        let mut s = String::new();
-        for (k, v) in &self.headers {
-            s.push_str(&format!("{k}: {v}\n"));
-        }
-        s
+        self.headers.iter().fold(String::new(), |mut s, (k, v)| {
+            let _ = writeln!(s, "{k}: {v}");
+            s
+        })
     }
 
     /// Lenient: header lines run until the first blank line; a line without
     /// `: ` ends the headers too. The body is the rest, minus one trailing newline.
-    pub fn parse(text: &str) -> Message {
+    pub fn parse(text: &str) -> Self {
         let mut headers = Vec::new();
         let mut rest = text;
         loop {
@@ -75,7 +82,7 @@ impl Message {
             }
         }
         let body = rest.strip_suffix('\n').unwrap_or(rest).to_string();
-        Message { headers, body }
+        Self { headers, body }
     }
 
     /// True when the body is just the headline: the recipient already has it
@@ -103,15 +110,8 @@ mod tests {
     proptest! {
         #[test]
         fn round_trips_any_body(body in "\\PC*", ask in "[^\n]{0,80}") {
-            let m = Message::default().header("kind", "fyi").header("ask", ask).with_body(body);
+            let m = Message::default().header("kind", "fyi").header("ask", ask).with_body(&body);
             prop_assert_eq!(Message::parse(&m.render()), m);
-        }
-    }
-
-    impl Message {
-        fn with_body(mut self, b: String) -> Self {
-            self.body = b;
-            self
         }
     }
 }

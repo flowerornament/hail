@@ -14,7 +14,7 @@ pub fn iso(ts: Timestamp) -> String {
 }
 
 /// `1006T190046`: the time part of a message id. No year, kept from 0.3 because
-/// agents copy and type ids; uniqueness comes from the id index (store::ids).
+/// agents copy and type ids; uniqueness comes from the id index (`store::ids`).
 pub fn id_stamp(ts: Timestamp) -> String {
     ts.strftime("%m%dT%H%M%S").to_string()
 }

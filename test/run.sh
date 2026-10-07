@@ -929,6 +929,11 @@ EOF
 ); id=$(last_id)
   expect "body kept" grep -qxF "the heredoc body" "$(msgfile "$id")" || ok=1
   expect "hint present" contains "$(envelope_line "id:$id")" "] headline as an argument — hail inbox" || ok=1
+  local d
+  for d in 0.05 0.5; do
+    OUT=$( (sleep "$d"; printf 'piped after %s s\n' "$d") | (cd "$BOSS_DIR" && TMUX_PANE="$SENDER" "$HAIL" worker fyi "headline, body piped late" 2>/dev/null) ); id=$(last_id)
+    expect "a body piped $d s late is kept" grep -qxF "piped after $d s" "$(msgfile "$id")" || ok=1
+  done
   as "$RECV" inbox >/dev/null
   reset_recv; return "$ok"
 }
@@ -963,7 +968,7 @@ s48() { # migrating messy real-world state; a backlog is delivered a few bodies 
 
 scenario 45 "real agent detection: root, child of the root shell, none" s45
 scenario 46 "sharing ends: sub-seat mail and obligations stay reachable; Codex never reads one" s46
-scenario 47 "a headline argument with a heredoc: the heredoc is the body" s47
+scenario 47 "a headline argument with a heredoc or a late pipe: that is the body" s47
 scenario 48 "migration of pane keys, old labels and a backlog; deliver caps per prompt" s48
 
 echo "---"

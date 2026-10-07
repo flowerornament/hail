@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -13,7 +14,7 @@ struct World {
 }
 
 impl World {
-    fn new() -> World {
+    fn new() -> Self {
         let tmp = tempfile::tempdir().unwrap();
         let root = fs::canonicalize(tmp.path()).unwrap();
         for seat in ["boss", "worker"] {
@@ -21,7 +22,7 @@ impl World {
             fs::write(root.join(seat).join(".hail-seat"), seat).unwrap();
         }
         fs::create_dir_all(root.join("home")).unwrap();
-        let w = World { _tmp: tmp, root };
+        let w = Self { _tmp: tmp, root };
         // Each seat's agent has run hail once (its session-start hook does).
         for seat in ["boss", "worker"] {
             assert!(w.run(seat, &["whoami"]).status.success());
@@ -77,7 +78,6 @@ fn send_deliver_receipt() {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    use std::io::Write;
     child
         .stdin
         .take()
@@ -124,7 +124,6 @@ fn a_closed_stdout_gives_the_mail_back() {
         .stdin(Stdio::piped())
         .spawn()
         .unwrap();
-    use std::io::Write;
     child
         .stdin
         .take()
@@ -151,7 +150,6 @@ fn a_closed_stdout_gives_the_mail_back() {
 #[test]
 fn racing_hooks_claim_each_message_once() {
     let w = World::new();
-    let mut ids = Vec::new();
     for i in 0..30 {
         let mut child = w
             .hail("boss")
@@ -159,15 +157,13 @@ fn racing_hooks_claim_each_message_once() {
             .stdin(Stdio::piped())
             .spawn()
             .unwrap();
-        use std::io::Write;
         child
             .stdin
             .take()
             .unwrap()
             .write_all(format!("m{i}\nbody {i}\n").as_bytes())
             .unwrap();
-        let out = child.wait_with_output().unwrap();
-        ids.push(out);
+        child.wait().unwrap();
     }
     let children: Vec<_> = (0..8)
         .map(|_| {
@@ -265,7 +261,6 @@ fn a_failing_claim_never_fails_the_hook() {
         .stdin(Stdio::piped())
         .spawn()
         .unwrap();
-    use std::io::Write;
     child
         .stdin
         .take()
@@ -287,4 +282,61 @@ fn a_failing_claim_never_fails_the_hook() {
         stdout(&w.run("worker", &["deliver"])).contains("the body"),
         "still unread, delivered next time"
     );
+}
+
+/// What agents read and copy, pinned: the help map, the send page, a brief
+/// and the hook JSON. Ids and times are redacted.
+mod snapshots {
+    use super::*;
+
+    fn redacted(f: impl FnOnce()) {
+        let mut settings = insta::Settings::clone_current();
+        settings.add_filter(r"\d{4}T\d{6}-[0-9a-f]{4}", "[id]");
+        settings.add_filter(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", "[time]");
+        settings.bind(f);
+    }
+
+    #[test]
+    fn help_pages() {
+        let w = World::new();
+        insta::assert_snapshot!("help_map", stdout(&w.run("boss", &["help"])));
+        insta::assert_snapshot!("help_send", stdout(&w.run("boss", &["help", "send"])));
+    }
+
+    #[test]
+    fn brief_and_hook_json() {
+        let w = World::new();
+        w.run(
+            "boss",
+            &[
+                "worker",
+                "ask",
+                "review the auth change",
+                "--scope",
+                "auth",
+                "--no-wake",
+            ],
+        );
+        let mut child = w
+            .hail("boss")
+            .args(["worker", "fyi", "--no-wake"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"status with a body\nline one\nline two\n")
+            .unwrap();
+        child.wait().unwrap();
+        w.run("boss", &["worker", "hold", "hold the merge", "--no-wake"]);
+        redacted(|| {
+            insta::assert_snapshot!("brief_worker", stdout(&w.run("worker", &["brief"])));
+            insta::assert_snapshot!(
+                "deliver_claude",
+                stdout(&w.run("worker", &["deliver", "--format", "claude"]))
+            );
+        });
+    }
 }

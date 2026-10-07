@@ -62,14 +62,19 @@ build:
 release-bump version:
     python3 scripts/release.py bump {{quote(version)}}
 
+# Every advertised Nix package output is in the public Cachix cache
+[group('release')]
+cache-verify:
+    python3 scripts/release.py cache-verify
+
 # Release readiness: versions agree, changelog filled, clean tree, checks, Nix build
 [group('release')]
 release-verify:
     python3 scripts/release.py verify
 
-# Tag vX.Y.Z, push it, move origin/release to it; GitHub publishes the release
+# Verify the cache, tag vX.Y.Z, push it, move origin/release; GitHub publishes the release
 [group('release')]
 [arg('version', pattern='[0-9]+\.[0-9]+\.[0-9]+', help='Semver release, e.g. 0.3.1')]
-[confirm("This will tag, push the tag, force-update origin/release and publish a GitHub release. Continue?")]
+[confirm("This will verify cached Nix outputs, tag, push the tag, force-update origin/release and publish a GitHub release. Continue?")]
 release-tag version:
     python3 scripts/release.py tag {{quote(version)}}

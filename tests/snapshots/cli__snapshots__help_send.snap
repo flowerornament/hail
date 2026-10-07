@@ -1,0 +1,39 @@
+---
+source: tests/cli.rs
+expression: "stdout(&w.run(\"boss\", &[\"help\", \"send\"]))"
+---
+hail send — deliver a message to a seat
+
+  hail <seat> <kind> [options] <<'EOF'
+  <headline: the ask and the why, one line>
+  <body: any detail, any length; optional>
+  EOF
+  hail <seat> <kind> '<headline>' [options]
+
+<seat> is a workspace name (murail-1b), a sub-seat in a shared directory
+(hail@%28), or a pane (%7). 'hail seats' lists them. With a headline argument
+stdin is never read. In a heredoc, quote the delimiter (<<'EOF') so nothing
+in the body is expanded.
+
+Options:
+  --re <id>       The message this answers, closes (done) or lifts (release)
+  --bead <id>     Cite a beads issue; the body is also posted with 'bd comment'.
+                  An issue id in the headline is detected.
+  --scope <s>     What it applies to: a bead, ref, path or action (one line)
+  --no-submit     Type the envelope but do not press Enter
+  --force         Skip the dialog guard. Only after 'hail read <seat> 10'.
+
+The headline is capped at HAIL_ENVELOPE_MAX characters (400). A longer one is
+folded at a sentence boundary and the full text rides in the body; a control
+kind (stop hold block release announce) is refused instead (exit 2). Write
+plain sentences.
+
+Envelope typed into the recipient's pane:
+  [hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [bead:] [re:] [scope:]] <headline>[ — hail inbox]
+Reply to the reply: value.
+
+Exit: 0 typed and submitted; 5 written to the inbox but not typed (no agent
+pane, or typing not confirmed): do NOT resend, it arrives on their next
+prompt; 3 seat problem; 4 the target shows a permission dialog.
+
+The 0.3 form still works: hail <target> '<headline>' --kind <k> [--body text|file|-]

@@ -8,24 +8,16 @@ permissions:
   contents: write
 
 jobs:
+  # The release itself, with the CHANGELOG section as its notes. The binaries
+  # are attached by the build jobs below; Nix users get the cached package.
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
-        with:
-          extra_nix_config: experimental-features = nix-command flakes
-
-      - name: Build and check the tag matches Cargo.toml
-        run: |
-          out="$(nix build --no-link --print-out-paths .)"
-          reported="$("$out/bin/hail" --version)"
-          expected="hail ${GITHUB_REF_NAME#v}"
-          test "$reported" = "$expected" || { echo "built $reported, tag says $expected" >&2; exit 1; }
-          tar -C "$out" -czf "hail-${GITHUB_REF_NAME}-x86_64-linux.tar.gz" bin share
+      - name: Check the tag matches Cargo.toml
+        run: test "$(python3 scripts/release.py version)" = "${GITHUB_REF_NAME#v}"
 
       - name: Render release notes
         run: python3 scripts/release.py notes "$GITHUB_REF_NAME" > release-notes.md
@@ -33,5 +25,41 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
         with:
-          files: hail-*.tar.gz
           body_path: release-notes.md
+
+  binaries:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, runner: macos-15 }
+          - { target: x86_64-apple-darwin, runner: macos-15-intel }
+          - { target: aarch64-unknown-linux-gnu, runner: ubuntu-24.04-arm }
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-24.04 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Install pinned Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        with:
+          rustflags: ""
+
+      - name: Build
+        run: |
+          cargo build --release --locked
+          test "$(target/release/hail --version)" = "hail ${GITHUB_REF_NAME#v}"
+
+      - name: Package and attach
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name="hail-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir -p "$name/share/hail/skills"
+          cp target/release/hail "$name/"
+          ln -s hail "$name/tmux-bridge"
+          cp -r skills/hail "$name/share/hail/skills/hail"
+          tar -czf "$name.tar.gz" "$name"
+          gh release upload "$GITHUB_REF_NAME" "$name.tar.gz" --clobber
