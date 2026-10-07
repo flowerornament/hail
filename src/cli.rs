@@ -94,7 +94,7 @@ pub enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    // 0.3 identity verbs, shims through 0.4.
+    // Old identity verbs: shims that never fail (see commands/panes.rs).
     Name {
         #[arg(allow_hyphen_values = true)]
         args: Vec<String>,

@@ -34,7 +34,7 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<u8> {
         Cmd::Gc { days } => gc(ctx, days),
         Cmd::Help { topic } => help(topic.as_deref().unwrap_or("")),
         Cmd::Version { json } => Ok(version(json)),
-        // 0.3 identity verbs, shims through 0.4.
+        // Old identity verbs: shims that never fail (see panes.rs).
         Cmd::Name { args } => Ok(panes::name_shim(ctx, args.first().map(String::as_str))),
         Cmd::Hello => panes::hello_shim(ctx),
         Cmd::Who { seat } => {

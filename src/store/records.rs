@@ -21,7 +21,7 @@ use crate::time;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub id: Id,
-    /// `None` when a 0.3 record names a kind 0.4 does not know.
+    /// `None` when a 0.3 record names a kind this version does not know.
     pub kind: Option<Kind>,
     pub issuer: Addr,
     pub to: Addr,
@@ -82,7 +82,8 @@ impl Pending {
             .header("headline", &self.headline)
     }
 
-    /// 0.3 wrote the send time as epoch seconds; so does 0.4, for revert.
+    /// 0.3 wrote the send time as epoch seconds; so does this version, so
+    /// that revert can hand it back.
     pub fn from_message(id: Id, m: &Message) -> Self {
         Self {
             id,

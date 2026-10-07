@@ -12,8 +12,9 @@
 //!
 //! Both refuse a seat shared by several agents and list its sub-seats.
 //!
-//! This is the other end of identity: who the sender is comes from `ctx.rs`,
-//! and the seat of any directory from `seat.rs`.
+//! The seat of any directory comes from `seat.rs` and a process's mailboxes
+//! from `ctx.rs`; [`sender`] here checks, against the live panes, whether a
+//! sending Claude pane signs as its sub-seat.
 
 use std::path::{Path, PathBuf};
 

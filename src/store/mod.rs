@@ -1,4 +1,4 @@
-//! State under `$XDG_STATE_HOME/hail` (spec §6). No daemon, no database: the
+//! State under `$XDG_STATE_HOME/hail`. No daemon, no database: the
 //! files are the state, and every write that others read is a rename.
 
 pub mod gc;
@@ -64,7 +64,7 @@ impl Store {
         self.root.join("archive")
     }
 
-    /// 0.3 state not yet migrated (spec §11.1).
+    /// 0.3 state not yet migrated (`hail migrate` imports it).
     pub fn legacy_present(&self) -> bool {
         self.root.join("inbox").is_dir()
     }

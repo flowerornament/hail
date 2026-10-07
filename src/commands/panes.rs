@@ -1,5 +1,6 @@
 //! Panes and seats: `list`, `seats`, `whoami`; driving a non-agent pane with
-//! `read`, `type`, `keys`; and the 0.3 identity verbs kept as shims for 0.4.
+//! `read`, `type`, `keys`; and the old identity verbs, kept as
+//! shims that never fail so older scripts and hooks keep working.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -196,7 +197,7 @@ pub fn keys(ctx: &Ctx, arg: &str, keys: &[String]) -> Result<u8> {
     Ok(0)
 }
 
-// --- 0.3 identity verbs, kept as shims through 0.4 ---------------------------
+// --- old identity verbs: shims that never fail ------------------------------
 
 /// `name` must not fail: seat.sh calls it from a `SessionStart` hook.
 pub fn name_shim(ctx: &Ctx, target: Option<&str>) -> u8 {

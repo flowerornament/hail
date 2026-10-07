@@ -1,6 +1,6 @@
-//! The one-time import of 0.3 state (spec §11.1), and its revert.
-//! The transition lives here so the rest of the code reads as if the bash
-//! never existed; 0.5 deletes the import and revert.
+//! The one-time import of the 0.3 (bash) state, and its revert. The
+//! transition lives here so the rest of the code reads as if the bash never
+//! existed. Delete this module once no machine has 0.3 state left.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -296,8 +296,8 @@ fn report_stranded(keys: &Keys, counts: &Counts) {
     }
 }
 
-/// Put the 0.3 tree back and export everything 0.4 holds into it, so the
-/// bash version reads mail sent since the cutover.
+/// Put the 0.3 tree back and export everything this version holds into
+/// it, so the bash version reads mail sent since the cutover.
 pub fn revert(ctx: &Ctx) -> Result<u8> {
     let store = &ctx.store;
     let _lock = Lock::take(store)?;

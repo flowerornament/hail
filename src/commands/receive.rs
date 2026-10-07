@@ -1,5 +1,6 @@
 //! Receiving: `deliver` (hooks), `inbox`, `show`; receipts: `sent`, `await`.
-//! None of these runs a subprocess (spec D8); keep bd and tmux out of them.
+//! None of these runs a subprocess, because hooks run them on every prompt
+//! and one fork costs more than the whole budget; keep bd and tmux out.
 
 use std::fs;
 use std::io::Write;

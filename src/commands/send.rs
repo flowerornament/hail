@@ -1,4 +1,4 @@
-//! `hail <seat> <kind> [headline]` (body on stdin), and the 0.3 form
+//! `hail <seat> <kind> [headline]` (body on stdin), and the legacy form
 //! `hail <target> '<headline>' --kind k [--body X]`.
 //!
 //! A send is: compose the message, find who is sending and where it goes
@@ -42,8 +42,9 @@ pub enum Form {
     /// The headline as an argument, or as the first line of stdin with the
     /// body after it.
     Current { headline: Option<String> },
-    /// 0.3: the headline as an argument, and `--body`: `-` is stdin, a
-    /// readable file is read, anything else is literal text. Removed in 0.5.
+    /// The legacy form: the headline as an argument, and `--body`: `-` is
+    /// stdin, a readable file is read, anything else is literal text. Kept
+    /// while agents still type it; remove it with its scenarios.
     Legacy {
         headline: String,
         body: Option<String>,

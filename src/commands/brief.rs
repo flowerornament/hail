@@ -2,7 +2,7 @@
 //! a year from now: at most five entries per section unless `--all`.
 //!
 //! One write, by design: pending sends that have a receipt, or that lapsed,
-//! leave the pending set here (spec §6.5).
+//! leave the pending set here, so it holds only open sends.
 
 use std::fmt::Write as _;
 use std::fs;

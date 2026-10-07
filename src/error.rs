@@ -1,4 +1,5 @@
-//! Errors carry their exit code and end with what to run (spec §4.4, §10.2).
+//! Errors carry their exit code and end with what to run, because
+//! agents act on the text and the code, never on a stack trace.
 
 use std::fmt;
 use std::path::Path;
@@ -48,5 +49,6 @@ impl fmt::Display for Error {
     }
 }
 
-/// Exit code for a send that wrote the message but did not type it (spec §4.4).
+/// Exit code for a send that wrote the message but did not type it. It is not an
+/// error: the message is safe, and resending would duplicate it.
 pub const EXIT_NOT_WOKEN: u8 = 5;

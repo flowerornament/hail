@@ -1,5 +1,5 @@
-//! How an envelope reaches an agent. 0.4 types it into the agent's pane; S3
-//! (0.5) adds a typed wake token and harness-native channels behind `Wake`.
+//! How an envelope reaches an agent: typed into the agent's pane. Another
+//! way to wake an agent (a harness-native channel) belongs behind `Wake`.
 //! Nothing outside this module types into a pane for a send.
 
 pub mod agent;
@@ -15,7 +15,8 @@ use tmux::{Pane, Tmux};
 
 /// Wait between the text showing in the composer and Enter. It exists for
 /// paste-burst detection after the text has rendered, so faster verification
-/// does not shorten it. Lower it only after the trial in spec §7.
+/// does not shorten it. Lower it only after a live trial in a Claude and a
+/// Codex pane, under load, with no envelope left unsubmitted.
 pub const SUBMIT_DELAY: Duration = Duration::from_millis(300);
 const VERIFY_EVERY: Duration = Duration::from_millis(25);
 const VERIFY_FOR: Duration = Duration::from_secs(2);
@@ -70,7 +71,7 @@ pub fn guard_dialog(tmux: &Tmux, pane: &Pane) -> Result<()> {
 }
 
 /// Type text and poll until its opening characters show in the pane. Never
-/// clears or retypes: retyping doubled messages and ate drafts (0.3.6).
+/// clears or retypes: retyping doubled messages and ate drafts.
 pub fn type_verified(tmux: &Tmux, pane: &Pane, text: &str) -> Result<Woken> {
     let probe: String = text
         .chars()

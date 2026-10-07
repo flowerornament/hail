@@ -1,5 +1,6 @@
-//! The message and record file format, unchanged from 0.3: `key: value`
-//! header lines, a blank line, then the body. Agents and humans `cat` these.
+//! The message and record file format: `key: value` header lines, a blank
+//! line, then the body. Agents and humans `cat` these, and the 0.3 import and
+//! revert read and write it, so keep it stable.
 
 use std::fmt::Write as _;
 
