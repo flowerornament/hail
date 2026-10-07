@@ -9,6 +9,8 @@
 # HAIL_BIN selects the binary (default: target/debug/hail; `just test` builds it).
 # shellcheck disable=SC1010,SC2034,SC2010  # 'done' is a hail kind; loop counters; ls|grep counts
 set -uo pipefail
+# Heredocs inside $( ) need bash 4+; macOS ships 3.2 as /bin/bash.
+(( BASH_VERSINFO[0] >= 4 )) || { echo "test/run.sh needs bash 4 or later (this is $BASH_VERSION)"; exit 2; }
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 HAIL="${HAIL_BIN:-$HERE/../target/debug/hail}"

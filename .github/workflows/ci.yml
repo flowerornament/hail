@@ -32,7 +32,8 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y tmux shellcheck hyperfine
           else
-            brew install tmux shellcheck hyperfine
+            # macOS ships bash 3.2; the harness needs 4+ (brew's is first on PATH).
+            brew install bash tmux shellcheck hyperfine
           fi
 
       # Reads rust-toolchain.toml (the pinned toolchain and its components)
