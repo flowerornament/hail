@@ -110,12 +110,21 @@ impl Mailbox {
         Ok(())
     }
 
-    /// Unread ids, oldest first (ids sort by time).
+    /// Unread ids, oldest first. Ids sort by time only to the second, and two
+    /// sends in one second would then sort by their random suffix; the
+    /// file's arrival time (nanoseconds) orders them as they were sent.
     pub fn unread(&self) -> Vec<Id> {
-        super::list_names(&self.sub("new"))
+        let dir = self.sub("new");
+        let mut ids: Vec<(Option<SystemTime>, Id)> = super::list_names(&dir)
             .into_iter()
-            .filter_map(|n| Id::parse(n.strip_suffix(".md")?))
-            .collect()
+            .filter_map(|n| {
+                let id = Id::parse(n.strip_suffix(".md")?)?;
+                let at = fs::metadata(dir.join(&n)).and_then(|m| m.modified()).ok();
+                Some((at, id))
+            })
+            .collect();
+        ids.sort();
+        ids.into_iter().map(|(_, id)| id).collect()
     }
 
     /// Claimed ids with their receipts, oldest first.
