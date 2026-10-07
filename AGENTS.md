@@ -64,9 +64,10 @@ there.
 - **Work:** `jj new main`, edit, then `jj describe -m "area: subject
   (hail-xxxx)"`. To pick up others' work, run `jj git fetch` and then
   `jj rebase -d main`.
-- **Publish:** `just land`. It gates exactly the described change and only
-  then moves `main` and pushes. A raw `jj git push` skips the gate, so never
-  run one. The implementer lands after the coordinator's GO.
+- **Publish:** `just land`. It runs the gate on your change, together with
+  any described commits beneath it, and only then moves `main` and pushes.
+  A raw `jj git push` skips the gate, so never run one. The implementer
+  lands after the coordinator's GO.
 - **Trailers:** a SessionStart hook (`scripts/jj-identity`) adds
   `Jj-Workspace:`, `Agent:` and `Session:` to every description. Don't type
   or strip them.
@@ -83,12 +84,9 @@ there.
   change that is an ancestor of another workspace's `@`.
 - **Recovery:** start with `jj op log`, `jj undo` or `jj op restore`, before
   any destructive file operation. The `jj-ops` skill has the full model.
-- **New workspace:** run `jj workspace add --name hail-<pair><letter>
-  ../hail-<pair><letter>` from `~/code/hail`. Then write `../hail/.beads`
-  into its `.beads/redirect`. Then symlink the workspace's Claude memory
-  directory to the main checkout's. Claude keys memory by directory, under
-  `projects/` in its config directory, with each path's `/` replaced by
-  `-`. `jj workspace list` is the roster.
+- **New workspace:** run `just workspace-add hail-<pair><letter>` in
+  `~/code/hail`. It also points bd and Claude's memory at the main
+  checkout. `jj workspace list` is the roster.
 
 ## Done means landed
 

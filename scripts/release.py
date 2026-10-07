@@ -215,7 +215,6 @@ def require_colocated_checkout() -> None:
 
 
 def require_clean_worktree() -> None:
-    require_colocated_checkout()
     status = capture(["git", "status", "--porcelain"])
     entries = [line for line in status.splitlines() if line.strip()]
     if not entries:
@@ -327,6 +326,8 @@ def main() -> None:
     subparsers.add_parser("notes", help="render one CHANGELOG section as GitHub release notes").add_argument("version")
     subparsers.add_parser("version", help="print the version declared in Cargo.toml")
     args = parser.parse_args()
+    if args.command in ("verify", "tag"):
+        require_colocated_checkout()
     if args.command == "bump":
         bump(args.version)
     elif args.command == "verify":

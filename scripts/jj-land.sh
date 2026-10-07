@@ -11,13 +11,17 @@
 # pushes it. It rewrites nothing, so the gated bytes are the published bytes.
 # A raw `jj git push` skips the gate; do not use one.
 #
-# The candidate is `@` when `@` has changes, otherwise `@-`. It refuses:
+# The candidate is `@` when `@` has changes, otherwise `@-`. Everything
+# between the bookmark and the candidate is published with it; the gate runs
+# on the candidate's tree, which includes them all. It refuses:
 #   - nothing to publish (the candidate is empty or already in the bookmark);
-#   - an undescribed candidate;
+#   - any undescribed commit in the range it would publish;
 #   - a candidate not on top of the bookmark (rebase first);
 #   - a local bookmark that differs from the remote one (fetch first);
 #   - `@-` as candidate while `@` holds uncommitted edits;
 #   - any change to the working copy or the bookmark while the gate ran.
+# The gate must write only ignored paths: a file it leaves behind changes `@`.
+# If the push fails, the bookmark moves back, so a later land starts clean.
 #
 # The gate command is LAND_GATE (default `just check`). --dry-run runs the
 # gate and every check, then stops before publishing.
@@ -67,10 +71,11 @@ observe
 [ -n "$target" ] || refuse "bookmark $bookmark does not exist"
 [ -n "$(rev "$candidate & ::$bookmark")" ] &&
   refuse "nothing to publish: ${candidate:0:12} is already in $bookmark"
-[ -n "$(rev "$candidate & description(exact:'')")" ] &&
-  refuse "${candidate:0:12} has no description; run: jj describe -m \"area: subject\""
 [ -n "$(rev "$bookmark & ::$candidate")" ] ||
   refuse "$bookmark is not an ancestor of ${candidate:0:12}; run: jj rebase -d $bookmark"
+undescribed="$(rev "$bookmark..$candidate & description(exact:'')")"
+[ -z "$undescribed" ] ||
+  refuse "${undescribed:0:12} has no description; run: jj describe -r ${undescribed:0:12} -m \"area: subject\""
 if [ -n "$remote_tip" ] && [ "$remote_tip" != "$target" ]; then
   refuse "$bookmark differs from $bookmark@$remote; run: jj git fetch, then jj rebase -d $bookmark"
 fi
@@ -79,15 +84,18 @@ if [ "$candidate" != "$at" ] && [ -n "$(jj diff --from "$candidate" --to @ --sum
 fi
 
 pinned_candidate="$candidate" pinned_at="$at" pinned_target="$target" pinned_remote="$remote_tip"
-echo "land: pinned ${pinned_candidate:0:12} for $bookmark (on ${pinned_target:0:12}); gate: $gate"
+count="$(jj log --no-graph -r "$bookmark..$candidate" -T '"x\n"' | grep -c x || true)"
+echo "land: pinned ${pinned_candidate:0:12} for $bookmark (on ${pinned_target:0:12}, $count commit(s)); gate: $gate"
 
 if ! bash -c "$gate"; then
   refuse "gate failed ($gate); nothing published"
 fi
 
 observe
-[ "$at" = "$pinned_at" ] && [ "$candidate" = "$pinned_candidate" ] ||
-  refuse "the working copy changed while the gate ran; land again"
+if [ "$at" != "$pinned_at" ] || [ "$candidate" != "$pinned_candidate" ]; then
+  jj diff --from "$pinned_at" --to "$at" --summary >&2 || true
+  refuse "the working copy changed while the gate ran (above); land again"
+fi
 [ "$target" = "$pinned_target" ] && [ "$remote_tip" = "$pinned_remote" ] ||
   refuse "$bookmark moved while the gate ran; run: jj git fetch, jj rebase -d $bookmark, land again"
 
@@ -97,5 +105,8 @@ if [ "$dry_run" = 1 ]; then
 fi
 
 jj bookmark move "$bookmark" --to "$pinned_candidate"
-jj git push --remote "$remote" --bookmark "$bookmark"
+if ! jj git push --remote "$remote" --bookmark "$bookmark"; then
+  jj bookmark move "$bookmark" --to "$pinned_target" --allow-backwards
+  refuse "push failed; $bookmark moved back to ${pinned_target:0:12}; land again"
+fi
 echo "land: PUBLISHED ${pinned_candidate:0:12} -> $bookmark"

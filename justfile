@@ -19,8 +19,8 @@ fmt-check:
 [group('check')]
 lint:
     cargo clippy --all-targets --quiet -- -D warnings
-    bash -n test/run.sh scripts/test-home-manager-module.sh scripts/bench.sh
-    shellcheck -S warning test/run.sh scripts/test-home-manager-module.sh scripts/bench.sh
+    bash -n test/run.sh scripts/*.sh scripts/jj-identity
+    shellcheck -S warning test/run.sh scripts/*.sh scripts/jj-identity
 
 # Unit and integration tests (no tmux needed)
 [group('check')]
@@ -55,6 +55,11 @@ test-home-manager-module:
 [group('vcs')]
 land *args:
     scripts/jj-land.sh {{args}}
+
+# Add a jj workspace for one more agent (run in ~/code/hail): ../<name>, with bd and Claude memory linked
+[group('vcs')]
+workspace-add name:
+    scripts/workspace-add.sh {{quote(name)}}
 
 # Build the Nix package and print its version
 [group('build')]
