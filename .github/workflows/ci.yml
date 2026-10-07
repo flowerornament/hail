@@ -10,17 +10,32 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      # Hosted runners are slower and noisier than a dev machine.
+      BENCH_FACTOR: "10"
+      HAIL_TEST_DELIVER_MS: "100"
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - uses: taiki-e/install-action@be5d41457cdd7bd9986d07500bf51a8c67803dbf # just
 
-      - name: Install tmux and shellcheck
+      - name: Install tmux, shellcheck and hyperfine
         run: |
-          sudo apt-get update
-          sudo apt-get install -y tmux shellcheck
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get update
+            sudo apt-get install -y tmux shellcheck hyperfine
+          else
+            brew install tmux shellcheck hyperfine
+          fi
+
+      - name: Rust components
+        run: rustup component add clippy rustfmt
 
       - name: Check gate
         run: just check

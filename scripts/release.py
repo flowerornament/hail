@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Release helper for hail.
 
-The one version source is the VERSION= line in bin/hail. `bump` rewrites it
+The one version source is the [package] version in Cargo.toml. `bump` rewrites it
+(and the matching Cargo.lock entry)
 and scaffolds a CHANGELOG entry, `verify` proves the tree is releasable,
 `tag` pushes an annotated tag and moves the `release` branch, and `notes`
 renders one CHANGELOG section for the GitHub release.
@@ -18,10 +19,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SCRIPT = ROOT / "bin" / "hail"
+MANIFEST = ROOT / "Cargo.toml"
+LOCKFILE = ROOT / "Cargo.lock"
 CHANGELOG = ROOT / "CHANGELOG.md"
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
-VERSION_LINE_RE = re.compile(r'(?m)^VERSION="(\d+\.\d+\.\d+)"$')
+VERSION_LINE_RE = re.compile(r'(?m)^version = "(\d+\.\d+\.\d+)"$')
+LOCK_ENTRY_RE = re.compile(r'(?m)^(name = "hail"\nversion = ")(\d+\.\d+\.\d+)(")')
 CHANGELOG_INTRO_MARKER = "All notable changes to `hail` are documented in this file.\n\n"
 UNRELEASED_HEADING = "## Unreleased"
 RELEASE_BRANCH = "release"
@@ -43,24 +46,29 @@ def write_text(path: Path, text: str) -> None:
 # --- versions ---------------------------------------------------------------
 
 
-def script_version_text(text: str) -> str:
+def manifest_version_text(text: str) -> str:
     matches = VERSION_LINE_RE.findall(text)
     if len(matches) != 1:
-        raise ValueError("bin/hail must contain exactly one VERSION=\"x.y.z\" line")
+        raise ValueError('Cargo.toml must contain exactly one top-level version = "x.y.z" line')
     return matches[0]
 
 
-def script_version() -> str:
+def manifest_version() -> str:
     try:
-        return script_version_text(read_text(SCRIPT))
+        return manifest_version_text(read_text(MANIFEST))
     except ValueError as error:
         fail(str(error))
 
 
-def set_script_version_text(text: str, version: str) -> str:
-    updated, count = VERSION_LINE_RE.subn(f'VERSION="{version}"', text, count=1)
+def set_manifest_version_text(text: str, version: str) -> str:
+    manifest_version_text(text)
+    return VERSION_LINE_RE.sub(f'version = "{version}"', text, count=1)
+
+
+def set_lock_version_text(text: str, version: str) -> str:
+    updated, count = LOCK_ENTRY_RE.subn(rf"\g<1>{version}\g<3>", text, count=1)
     if count != 1:
-        raise ValueError("bin/hail must contain exactly one VERSION=\"x.y.z\" line")
+        raise ValueError('Cargo.lock has no [[package]] entry for hail')
     return updated
 
 
@@ -162,7 +170,8 @@ def bump(version: str) -> None:
     if SEMVER_RE.fullmatch(version) is None:
         fail("version must be semver like 0.3.1")
     try:
-        write_text(SCRIPT, set_script_version_text(read_text(SCRIPT), version))
+        write_text(MANIFEST, set_manifest_version_text(read_text(MANIFEST), version))
+        write_text(LOCKFILE, set_lock_version_text(read_text(LOCKFILE), version))
         updated, pending = changelog_insert_entry_text(
             changelog_text(), version, date.today().isoformat()
         )
@@ -173,7 +182,7 @@ def bump(version: str) -> None:
     if warning is not None:
         print(warning, file=sys.stderr)
     print(f"updated release version to {version}")
-    print("  - bin/hail")
+    print("  - Cargo.toml, Cargo.lock")
     print("  - CHANGELOG.md")
     print("Fill in the CHANGELOG.md entry, commit, push, then `just release-tag`.")
 
@@ -212,10 +221,10 @@ def require_pushed(remote: str = "origin", branch: str = "main") -> None:
 
 
 def verify() -> None:
-    version = script_version()
+    version = manifest_version()
     nix = nix_version()
     if nix != version:
-        fail(f"release versions do not match: bin/hail={version}, nix={nix}")
+        fail(f"release versions do not match: Cargo.toml={version}, nix={nix}")
     if not changelog_entry_is_ready(version):
         fail(
             "CHANGELOG.md must contain a release entry for "
@@ -234,9 +243,9 @@ def verify() -> None:
 def tag(version: str) -> None:
     if SEMVER_RE.fullmatch(version) is None:
         fail("version must be semver like 0.3.1")
-    current = script_version()
+    current = manifest_version()
     if current != version:
-        fail(f"bin/hail version is {current}, expected {version}")
+        fail(f"Cargo.toml version is {current}, expected {version}")
     if not changelog_entry_is_ready(version):
         fail(f"CHANGELOG.md entry for {version} is not ready")
     require_clean_worktree()
@@ -265,11 +274,11 @@ def print_release_notes(version_or_tag: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Release helper for hail")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("bump", help="set the version in bin/hail and scaffold CHANGELOG.md").add_argument("version")
+    subparsers.add_parser("bump", help="set the version in Cargo.toml and scaffold CHANGELOG.md").add_argument("version")
     subparsers.add_parser("verify", help="run release readiness checks")
     subparsers.add_parser("tag", help="create and push a release tag, move the release branch").add_argument("version")
     subparsers.add_parser("notes", help="render one CHANGELOG section as GitHub release notes").add_argument("version")
-    subparsers.add_parser("version", help="print the version declared in bin/hail")
+    subparsers.add_parser("version", help="print the version declared in Cargo.toml")
     args = parser.parse_args()
     if args.command == "bump":
         bump(args.version)
@@ -280,7 +289,7 @@ def main() -> None:
     elif args.command == "notes":
         print_release_notes(args.version)
     else:
-        print(script_version())
+        print(manifest_version())
 
 
 if __name__ == "__main__":

@@ -19,13 +19,13 @@ jobs:
         with:
           extra_nix_config: experimental-features = nix-command flakes
 
-      - name: Build and check the tag matches the script
+      - name: Build and check the tag matches Cargo.toml
         run: |
           out="$(nix build --no-link --print-out-paths .)"
           reported="$("$out/bin/hail" --version)"
           expected="hail ${GITHUB_REF_NAME#v}"
           test "$reported" = "$expected" || { echo "built $reported, tag says $expected" >&2; exit 1; }
-          cp bin/hail hail
+          tar -C "$out" -czf "hail-${GITHUB_REF_NAME}-x86_64-linux.tar.gz" bin share
 
       - name: Render release notes
         run: python3 scripts/release.py notes "$GITHUB_REF_NAME" > release-notes.md
@@ -33,5 +33,5 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
         with:
-          files: hail
+          files: hail-*.tar.gz
           body_path: release-notes.md

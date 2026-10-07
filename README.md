@@ -1,34 +1,39 @@
 # hail
 
-Messaging between coding agents that share a machine and a tmux server.
+Messages between coding agents (Claude Code, Codex) that share a machine and
+a tmux server.
 
-hail types a one-line envelope into the recipient's pane, keeps the body in a
-file, delivers the body through the harness's prompt hook, and records a
-receipt the sender can query.
+You address a **seat**: the workspace an agent works in. hail writes the
+body to the seat's inbox, types a one-line envelope into its agent's prompt,
+hands the body over through the agent's prompt hook, and records a receipt
+the sender can query.
 
 ```
-[hail kind:ruling from:murail-1a/%5 reply:%5 id:0905T1712-a3f1 bead:murail-ke7is scope:commit] convert at the receipt, not the producer — hail inbox
+[hail kind:ruling from:murail-1a/%5 reply:murail-1a id:1006T171200-a3f1 bead:murail-ke7is] convert at the receipt, not the producer — hail inbox
 ```
 
-- **Envelope** in the pane: kind, sender, id, optional bead, `re:`, `scope:`,
-  and a headline the sender wrote. Over the cap, the headline is folded at a
-  sentence boundary and the full text rides in the body; control kinds
-  (stop, hold, block, release, announce) have no body and are refused instead.
-- **Body** on disk, injected into the recipient's context by the
-  `UserPromptSubmit` hook (`hail deliver`), or fetched with `hail inbox`.
-- **Receipt** written by that delivery: `injected <time>` or `read <time>`.
-  `hail sent` and `hail await` read it.
-- **State**: `ruling`, `go` and `ask` create obligations closed by `done`;
-  `hold` and `block` stay in effect until `release`. `hail brief` lists them.
-- **Identity**: labels are registered to a pane and its incarnation; a send
-  to a label that moved is refused.
-- **Control kinds** (`stop`, `hold`, `block`, `release`, `announce`) are typed
-  in full.
+- **Seat:** the jj workspace or git root a process runs in, by name, or the
+  content of a `.hail-seat` file. It comes from the working directory, never
+  from the process tree or `TMUX_PANE`. Several agents in one directory are
+  told apart as `<seat>@<pane>`.
+- **Envelope** in the prompt: kind, sender, reply seat, id, and optionally a
+  bead, `re:` and `scope:`, then the headline. The headline is the ask and the
+  why, at most 400 characters; a longer one folds into the body.
+- **Body** in the seat's inbox (a Maildir). The `UserPromptSubmit` hook
+  claims it, puts it in the agent's context and writes the receipt. Exactly
+  one claimer wins.
+- **Receipts:** `injected <time>`, `read <time>` or `inline <time>`.
+  `hail sent` and `hail await` read them.
+- **State:** `ruling`, `go` and `ask` leave obligations closed by `done`;
+  `hold` and `block` stay in effect until `release`. `hail brief` lists them,
+  bounded.
 - No daemon, no database. State is files under `~/.local/state/hail`.
+- One Rust binary. Hooks and receipt checks run in a few milliseconds and
+  start no other process.
 
 ## Install
 
-Nix flake with a home-manager module:
+Nix flake with a Home Manager module:
 
 ```nix
 # flake.nix inputs — the `release` branch always points at the latest tag
@@ -40,115 +45,98 @@ programs.hail = {
   enable = true;
   skill.enable = true;                       # links skills/hail into the paths below
   skill.targets = [ ".agents/skills/hail" ".claude/skills/hail" ];
-  # envelopeMax = 400;                       # HAIL_ENVELOPE_MAX
 };
 ```
 
-Or `nix build .#` and put `result/bin/hail` on your PATH, or `nix run
-github:flowerornament/hail -- --help`. Each GitHub release also attaches the
-script itself as `hail`. `hail --version` prints the installed version.
-Requires `tmux`.
-`fswatch` is optional; `await` polls without it. `bd` (beads) is optional; when
-a message names an issue id the body is also posted there.
+Or `nix build .#` and put `result/bin/hail` on your PATH, or `cargo install
+--path .`. Each GitHub release also attaches a Linux tarball. Requires `tmux`.
+`bd` (beads) is optional: when a message names an issue, the body is also
+posted there.
 
-Install the hooks once at user level: `hooks/README.md` has the blocks for
-`~/.claude/settings.json` and `~/.codex/config.toml` (Codex needs `/hooks`
-trust once), plus per-project overrides. Without hooks everything still
-works: the envelope lands in the prompt, `hail inbox` fetches bodies and
-writes `read` receipts, and `hail brief` on demand shows the standing state.
+Then install the hooks once:
+
+```bash
+hail setup        # shows the change to ~/.claude/settings.json and ~/.codex/config.toml, asks, applies
+hail doctor       # checks everything; each problem names its fix
+```
+
+In Codex, run `/hooks` once to trust them. `hooks/README.md` has the blocks
+for doing it by hand. Without hooks everything still works: the envelope
+lands in the prompt, `hail inbox` fetches bodies, and `hail brief` shows the
+standing state.
+
+### Upgrading from 0.3
+
+Run `hail migrate` once after the upgrade:
+- It moves the 0.3 inboxes, receipts, obligations and pending sends into the
+  0.4 layout. Mail keyed by a live pane id goes to that pane's seat.
+- It parks the old tree in `~/.local/state/hail/archive/0.3`.
+- Until it runs, hooks stay silent and other verbs ask for it.
+- `hail migrate --revert` goes back.
+
+Labels are gone: a seat is named by its directory, and `hail name` is a no-op.
 
 ## Use
 
-Label your pane once. Inboxes, envelopes and identity use labels.
-
 ```bash
-hail name "$(hail id)" murail-1b
-hail list                                   # every pane, with labels
-hail who murail-1a                          # pane, label, incarnation, last event, last 2 lines
-```
+hail whoami                                 # this directory's seat
+hail seats                                  # every seat: agent panes, unread, open obligations
 
-Send: read the target, then send. `send` types the envelope, verifies it and
-presses Enter.
+hail murail-1b ask --bead murail-ke7is <<'EOF'
+Review src/auth.ts against murail-ke7is; verdict on the bead
+The refresh path is auth/refresh.rs:40-120.
+EOF
+#   id=1006T171200-a3f1  bead=murail-ke7is comment=7
 
-```bash
-hail read murail-1b 5
-hail murail-1b 'convert at the receipt, not the producer' --kind ruling --bead murail-ke7is --body ruling.md
-#   id=0905T1712-a3f1  bead=murail-ke7is comment=7
-```
-
-`send`, `message` and `msg` are accepted before the target. `--re <id>` names
-the message this answers, closes or lifts; `--scope` says what it applies to;
-`--no-submit` skips Enter; `--force` skips the dialog guard. A
-message with no `--body` is complete in the envelope: no `— hail inbox` hint
-and nothing injected by the hook; the receipt is still written.
-
-Receive: with the hooks installed the body arrives with the envelope. Otherwise:
-
-```bash
-hail inbox                                  # print unread bodies, write receipts
-hail inbox --peek                           # look without marking read
+hail murail-1b fyi 'gate green'             # headline only
+hail sent 1006T171200-a3f1                  # delivered | injected <t> | read <t> | inline <t> | unknown
+hail await 1006T171200-a3f1 --timeout 900   # block until a receipt; --any for several ids
+hail murail-1a done --re 1006T171200-a3f1 'committed on abc123'
 hail brief                                  # unread, sends without receipt, holds, obligations
 ```
 
-Confirm delivery:
+- **Exit codes:** 0 typed and submitted; 5 in the inbox but not typed (do
+  not resend); 3 seat problem; 4 the target shows a permission dialog;
+  2 control-kind headline over the cap.
+- **Panes:** `read`, `type` and `keys` drive non-agent panes: a shell, a gate
+  run, a prompt waiting for `y`.
+- **Help:** `hail help` is the map, and `hail help <topic>` has the details.
 
-```bash
-hail sent 0905T1712-a3f1                    # delivered | read <time> | injected <time> | unknown
-hail await 0905T1712-a3f1 --timeout 600     # block until a receipt; --any for several ids
-```
-
-Close and lift:
-
-```bash
-hail murail-1a 'committed on base abc123' --kind done --re 0905T1712-a3f1 --scope commit
-hail murail-1b 'gate green' --kind release --re 0905T1650-1c2e
-```
-
-Kinds: `ruling go nogo ask fyi done stop hold block release announce`. `--kind`
-is required. The headline is capped at `HAIL_ENVELOPE_MAX` characters (default
-400); the body has no limit. `--body` takes text, a file, or `-` for stdin. Exit codes: 2 headline over cap, 3 label moved,
-4 permission dialog in the target.
-`hail --help` documents every verb and flag.
-
-`read`, `type` and `keys` drive non-agent panes: a shell, a gate run, a prompt
-waiting for `y`.
-
-## For agents
+### For agents
 
 `skills/hail/SKILL.md` is the agent-facing instruction set. With the module's
 `skill.enable`, it is linked where Claude Code and Codex discover skills.
 
-## Compatibility
+### Compatibility
 
-`tmux-bridge` is installed as an alias of `hail` and `message` as an alias of
-`send`. Envelopes tagged `[tb …]` or `[tmux-bridge …]` mean the same as
-`[hail …]`.
-
-## Development
-
-```bash
-test/run.sh         # 35 scenarios on a scratch tmux server; never touches yours
-bash -n bin/hail && shellcheck bin/hail
-```
-
-Design and rationale: [DESIGN.md](DESIGN.md). Hook snippets: [hooks/README.md](hooks/README.md).
+- `tmux-bridge` is installed as an alias of `hail`.
+- `message` and `msg` are aliases of `send`.
+- The 0.3 send form `hail <target> '<headline>' --kind k --body X` still works.
+- Envelopes tagged `[tb …]` or `[tmux-bridge …]` mean the same as `[hail …]`.
 
 ## Develop and release
 
-`just check` runs the shell lint, the release-script tests and the scenario
-harness (`test/run.sh`, on a scratch tmux server that never touches yours).
-`just build` builds the Nix package; `just test-home-manager-module` evaluates
-the Home Manager module. CI runs the same on every push.
+`just check` runs:
+- `cargo fmt --check` and clippy;
+- the unit and integration tests;
+- the release-script tests;
+- the scenario harness (`test/run.sh`, on a scratch tmux server and state
+  root that never touch yours);
+- the speed checks (`scripts/bench.sh`).
 
-The version lives in one place, the `VERSION=` line in `bin/hail`; the package,
-the flake and the tests read it from there. To cut a release:
+`just build` builds the Nix package. CI runs the gate on Linux and macOS.
+
+Design: [DESIGN.md](DESIGN.md) and the 0.4 spec in [docs/](docs/). Hook
+blocks: [hooks/README.md](hooks/README.md).
+
+The version lives in one place, `Cargo.toml`. To cut a release:
 
 ```
-just release-bump 0.3.1      # sets bin/hail, scaffolds a CHANGELOG.md entry
+just release-bump 0.4.1      # sets Cargo.toml and Cargo.lock, scaffolds a CHANGELOG.md entry
 $EDITOR CHANGELOG.md         # replace the TODO bullet with what changed
-git commit -am "0.3.1" && git push
+git commit -am "0.4.1" && git push
 just release-verify          # versions agree, changelog filled, checks, Nix build
-just release-tag 0.3.1       # tags v0.3.1, pushes it, moves origin/release
+just release-tag 0.4.1       # tags v0.4.1, pushes it, moves origin/release
 ```
 
 Pushing the tag publishes a GitHub release with that CHANGELOG section as its

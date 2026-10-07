@@ -16,26 +16,31 @@ import release  # noqa: E402
 INTRO = "# Changelog\n\nAll notable changes to `hail` are documented in this file.\n\n"
 
 
-class ScriptVersionTests(unittest.TestCase):
-    def test_reads_the_single_version_line(self) -> None:
-        text = '#!/usr/bin/env bash\nset -euo pipefail\n\nVERSION="0.2.5"\n\nKINDS="a b"\n'
-        self.assertEqual(release.script_version_text(text), "0.2.5")
+class ManifestVersionTests(unittest.TestCase):
+    MANIFEST = '[package]\nname = "hail"\nversion = "0.4.0"\nedition = "2024"\n\n[dependencies]\nclap = { version = "4.6.7" }\n'
+
+    def test_reads_the_package_version(self) -> None:
+        self.assertEqual(release.manifest_version_text(self.MANIFEST), "0.4.0")
 
     def test_rejects_missing_or_duplicate_lines(self) -> None:
         with self.assertRaisesRegex(ValueError, "exactly one"):
-            release.script_version_text('echo "hail $VERSION"\n')
+            release.manifest_version_text('[package]\nname = "hail"\n')
         with self.assertRaisesRegex(ValueError, "exactly one"):
-            release.script_version_text('VERSION="1.0.0"\nVERSION="1.0.1"\n')
+            release.manifest_version_text('version = "1.0.0"\nversion = "1.0.1"\n')
 
-    def test_set_rewrites_only_the_version_line(self) -> None:
-        text = 'VERSION="0.2.5"\necho "hail doctor v${VERSION}"\n'
-        self.assertEqual(
-            release.set_script_version_text(text, "0.3.0"),
-            'VERSION="0.3.0"\necho "hail doctor v${VERSION}"\n',
-        )
+    def test_set_rewrites_only_the_package_version(self) -> None:
+        out = release.set_manifest_version_text(self.MANIFEST, "0.4.1")
+        self.assertIn('version = "0.4.1"\nedition', out)
+        self.assertIn('clap = { version = "4.6.7" }', out)
 
-    def test_the_real_script_declares_a_version(self) -> None:
-        version = release.script_version_text(release.SCRIPT.read_text(encoding="utf-8"))
+    def test_set_lock_rewrites_only_hail(self) -> None:
+        lock = '[[package]]\nname = "clap"\nversion = "4.6.7"\n\n[[package]]\nname = "hail"\nversion = "0.4.0"\n'
+        out = release.set_lock_version_text(lock, "0.4.1")
+        self.assertIn('name = "hail"\nversion = "0.4.1"', out)
+        self.assertIn('name = "clap"\nversion = "4.6.7"', out)
+
+    def test_the_real_manifest_declares_a_version(self) -> None:
+        version = release.manifest_version_text(release.MANIFEST.read_text(encoding="utf-8"))
         self.assertRegex(version, r"^\d+\.\d+\.\d+$")
 
 
@@ -87,7 +92,7 @@ class ChangelogTests(unittest.TestCase):
         self.assertIn("2 entries", release.unreleased_warning("0.2.0", ["a", "b"]) or "")
 
     def test_the_real_changelog_has_the_declared_version(self) -> None:
-        version = release.script_version_text(release.SCRIPT.read_text(encoding="utf-8"))
+        version = release.manifest_version_text(release.MANIFEST.read_text(encoding="utf-8"))
         text = release.CHANGELOG.read_text(encoding="utf-8")
         self.assertTrue(release.changelog_text_has_entry(text, version), f"CHANGELOG.md has no entry for {version}")
 

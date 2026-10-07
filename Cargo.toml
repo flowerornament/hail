@@ -1,0 +1,37 @@
+[package]
+name = "hail"
+version = "0.4.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Agent-to-agent messaging over tmux: envelope in the pane, body in the inbox, receipts, await"
+license = "MIT"
+repository = "https://github.com/flowerornament/hail"
+publish = false
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+getrandom = "0.4.3"
+jiff = "0.2.38"
+serde_json = { version = "1.0.151", features = ["preserve_order"] }
+similar = "3.2.0"
+toml_edit = "0.25.15"
+
+[dev-dependencies]
+assert_cmd = "2.2.2"
+insta = "1.49.0"
+predicates = "3.1.4"
+proptest = "1.11.0"
+tempfile = "3.27.0"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

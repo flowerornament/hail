@@ -4,6 +4,84 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.4.0 - 2026-10-07
+
+hail is now one Rust binary. The envelope, kinds and receipts an agent sees
+are unchanged; identity, storage and setup are new. Spec:
+`docs/2026-10-06-rust-port-spec.md`.
+
+- **Identity is the seat.** A seat is the jj workspace or git root a process
+  runs in, by name, or a `.hail-seat` file. It comes from the working
+  directory, never from the process tree or `TMUX_PANE`, so a Codex command
+  under the shared app-server can no longer sign as another pane (every Codex
+  seat signed as `%2` in 0.3.6). Labels, `hail name`, incarnations and exit
+  3 "label moved" are gone. `name`, `hello`, `who`, `resolve` and `id` stay
+  as shims through 0.4.
+- **Shared directories.** Several agents in one directory are told apart as
+  `<seat>@<pane>`, accepted only for a Claude pane whose own directory is the
+  seat. A send to the bare shared seat is refused (exit 3) with the
+  sub-seats listed, so one agent can no longer drain another's mail.
+- **Maildir store.** Each seat's inbox is `seats/<seat>/{tmp,new,cur}`.
+  - A body is claimed by a rename, so exactly one reader wins and it is never
+    injected twice (murail-m65jq).
+  - A hook whose output never lands gives the mail back.
+  - An id index (`ids/`) makes `sent`, `show` and `await` a few stats.
+  - `await` polls every 100 ms and no longer needs fswatch.
+- **Send takes the body on stdin:** `hail <seat> <kind> <<'EOF'`, with the
+  headline on the first line. Backticks, `$()` and quotes arrive
+  byte-identical.
+  - A headline argument means stdin is never read, so a tool runner's open
+    pipe cannot hang a send.
+  - No `hail read` is needed before a send.
+  - The 0.3 form (`--kind`, `--body`) still works.
+- **Exit 5:** the message is in the inbox but was not typed (no agent pane,
+  or typing not confirmed). `id=` is still printed, and stderr says not to
+  resend.
+- **reply:** names the sender's seat rather than its pane.
+- **Delivery is capped per prompt:** at most five bodies (about 8 KB); the
+  rest wait for the next prompt or `hail inbox`. `deliver` and
+  `brief --hook` never fail a session: errors go to `hook-errors.log`, and
+  any claim made before the error is given back.
+- **The message file** cites `bead: <id>`; the comment number goes only to
+  the sender's stdout.
+- **Bounded brief:** five entries per section, `--all` for the rest. Holds
+  sent to or by you show in full, and other seats' holds as a count. Pending
+  sends expire from the brief after seven days. Nothing else expires.
+- **`hail setup`** installs the Claude Code and Codex hooks. It shows a diff
+  and asks first, replaces 0.3 hook lines in place, and keeps comments and
+  other tools' hooks. `--check` reports drift.
+- **`hail doctor`** checks the seat, tmux, the shared seats, orphaned
+  sub-seats, the hooks and the state size; each problem names its fix.
+- **New verbs:** `hail whoami` and `hail seats`. `hail gc` archives read mail
+  older than 90 days.
+- **Upgrading:** run `hail migrate` once after the upgrade.
+  - It imports the 0.3 state; mail keyed by a live pane id goes to that
+    pane's seat.
+  - Until it runs, hooks are silent and other verbs ask for it.
+  - `hail migrate --revert` goes back.
+- **Speed:** hooks and receipt checks start no other process. They take about
+  2 ms idle, against 15–175 ms for the bash version. A send's own work is
+  under 20 ms, plus the 300 ms wait before Enter.
+- **Tooling:**
+  - `just check` adds fmt, clippy, cargo tests and `scripts/bench.sh`.
+  - The scenario harness covers 48 scenarios, including shared seats, heredoc
+    bodies, setup and migration.
+  - CI runs on Linux and macOS.
+  - The Nix package builds with `buildRustPackage`.
+
+From the unreleased 0.3.9, which ships here:
+
+- The dialog guard no longer refuses an idle Codex pane. It matched the bare
+  word `Approve`, and Codex prints `Approved` in its history and status line,
+  so a pane at its prompt read as a permission dialog (exit 4) and agents
+  learned to `--force` past it (herald-b6mzr). The guard now matches the
+  dialogs' own question and option lines: Claude Code's as before, plus
+  Codex's `Would you like to run the following command?`, `Yes, proceed`,
+  `Yes, just this once` and `No, and tell Codex what to do`. New scenario 40.
+- The skill says to read the pane before `--force`.
+- The skill no longer says every over-cap headline is refused: only control
+  kinds are; the rest fold into the body (since 0.2.4).
+
 ## v0.3.8 - 2026-10-06
 
 - A send, its Enter and `hail keys` leave copy mode first. A pane scrolled

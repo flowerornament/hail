@@ -8,7 +8,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
       });
     in {
-      # Version comes from the VERSION= line in bin/hail (see package.nix).
+      # Version comes from Cargo.toml (see package.nix).
       packages = forAllSystems ({ pkgs }: {
         default = pkgs.callPackage ./package.nix { };
       });

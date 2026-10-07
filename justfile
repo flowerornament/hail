@@ -6,20 +6,40 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 default:
     @just --list
 
-# All checks: shell lint, release-script tests, tmux scenario harness
+# All checks: format, lint, unit and integration tests, release-script tests, tmux scenarios, speed
 [group('check')]
-check: lint test-release test
+check: fmt-check lint test-rust test-release test bench
 
-# bash -n and shellcheck over the script, the harness and the scripts
+# cargo fmt --check
+[group('check')]
+fmt-check:
+    cargo fmt --check
+
+# clippy with warnings as errors; bash -n and shellcheck over the harness and scripts
 [group('check')]
 lint:
-    bash -n bin/hail test/run.sh scripts/test-home-manager-module.sh
-    shellcheck -S warning bin/hail test/run.sh scripts/test-home-manager-module.sh
+    cargo clippy --all-targets --quiet -- -D warnings
+    bash -n test/run.sh scripts/test-home-manager-module.sh scripts/bench.sh
+    shellcheck -S warning test/run.sh scripts/test-home-manager-module.sh scripts/bench.sh
 
-# Scenario harness on a scratch tmux server (-L hailtest); never touches yours
+# Unit and integration tests (no tmux needed)
+[group('check')]
+test-rust:
+    cargo test --quiet
+
+# Scenario harness on a scratch tmux server (-L hailtest); never touches yours.
+# Scenario 23 holds an empty deliver to HAIL_TEST_DELIVER_MS (default 25 ms,
+# an idle-machine budget); CI sets 100 for hosted runners, and so should a
+# loaded dev machine.
 [group('check')]
 test:
+    cargo build --quiet
     bash test/run.sh
+
+# Hot paths against their budgets (spec §9); fails at 3x on a loaded host
+[group('check')]
+bench:
+    bash scripts/bench.sh
 
 # Unit tests for scripts/release.py
 [group('check')]

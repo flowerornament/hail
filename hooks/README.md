@@ -4,13 +4,15 @@ With the hooks installed, a message body reaches the recipient on the turn its
 envelope lands, as hook context, with no tool call; the receipt says
 `injected <time>`. At session start the agent gets its brief: unread
 envelopes, sends without receipt, holds and blocks in effect, open
-obligations, and a one-line notice if its label needs re-registration.
+obligations, five per section.
 
 hail keeps no per-project state, so install the hooks once at user level and
-every directory works without setup. Both commands print nothing when there
-is nothing to say and need no tmux server; `$TMUX_PANE` is inherited from the
-pane the agent runs in, and the `[ -n "$TMUX_PANE" ]` guard keeps the hook
-silent outside tmux.
+every directory works without setup. `hail setup` does it for both harnesses
+(it shows the change and asks first, and replaces older hail lines in place);
+the blocks below are for doing it by hand. Both commands print nothing when
+there is nothing to say, need no tmux server, and are silent outside a seat
+(a directory with no jj workspace, git repo or `.hail-seat`), so no guard is
+needed in front of them.
 
 ## Without hooks
 
@@ -29,14 +31,14 @@ complete in the envelope either way.
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "[ -n \"$TMUX_PANE\" ] || exit 0; hail deliver --format claude" }
+          { "type": "command", "command": "hail deliver --format claude" }
         ]
       }
     ],
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "[ -n \"$TMUX_PANE\" ] || exit 0; hail brief" }
+          { "type": "command", "command": "hail brief --hook" }
         ]
       }
     ]
@@ -53,10 +55,10 @@ Merge into the existing file; other keys and other tools' hooks stay.
 hooks = true
 
 [[hooks.UserPromptSubmit]]
-hooks = [{ type = "command", command = "[ -n \"$TMUX_PANE\" ] || exit 0; hail deliver --format codex" }]
+hooks = [{ type = "command", command = "hail deliver --format codex" }]
 
 [[hooks.SessionStart]]
-hooks = [{ type = "command", command = "[ -n \"$TMUX_PANE\" ] || exit 0; hail brief" }]
+hooks = [{ type = "command", command = "hail brief --hook" }]
 ```
 
 The `[[hooks.<Event>]]` tables carry the same `hooks = [...]` array as the
@@ -78,14 +80,14 @@ The same blocks in a project's `.claude/settings.json` (or
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "[ -n \"$TMUX_PANE\" ] || exit 0; hail deliver --format codex" }
+          { "type": "command", "command": "hail deliver --format codex" }
         ]
       }
     ],
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "[ -n \"$TMUX_PANE\" ] || exit 0; hail brief" }
+          { "type": "command", "command": "hail brief --hook" }
         ]
       }
     ]
@@ -103,18 +105,13 @@ needs its own review. A layer carrying both `.codex/hooks.json` and
 | event | command | output |
 |---|---|---|
 | `UserPromptSubmit` | `hail deliver --format <harness>` | `{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"<unread bodies>"}}`, or nothing. Marks each body `injected <UTC time>`. Control kinds are complete in the envelope and are not injected. |
-| `SessionStart` | `hail brief` | The brief as plain text (injected as context), or nothing. |
+| `SessionStart` | `hail brief --hook` | The brief as plain text (injected as context), or nothing. |
 
-`deliver` is idempotent and takes about 15 ms with nothing unread; it runs on
+`deliver` claims each body once (a Maildir rename) and takes a few
+milliseconds with nothing unread; it runs on
 every prompt-like event (on Claude Code, task notifications too). The
 injected body is not retained through compaction; the file under
 `~/.local/state/hail/inbox/` and the bead comment are.
-
-The hook does not run `hail hello`: Codex fires SessionStart at the first
-prompt, after `hail name` has registered the label, and `hail name` mints the
-pane's incarnation itself. After a real restart of the pane's process (a new shell in the pane; relaunching
-the harness inside the same shell is not one) the
-brief prints `label <l>: pane restarted — run: hail name "$(hail id)" <l>`.
 
 Both harnesses read hooks at session start; installing or changing them needs
 a new session.
@@ -124,8 +121,7 @@ a new session.
 Start a fresh session inside tmux, then from another pane:
 
 ```console
-$ hail read <label> 5
-$ hail <label> 'hook check' --kind fyi
+$ hail <seat> fyi 'hook check'
 $ hail sent <id>            # injected <time> once the recipient's next turn ran the hook
 ```
 
