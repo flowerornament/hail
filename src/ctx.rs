@@ -1,5 +1,8 @@
 //! What a command knows about where it runs: the store, the working
 //! directory's seat, and the mailboxes this process reads.
+//!
+//! Identity starts in `seat.rs` (the seat of a directory); targets resolve
+//! in `route.rs`. This module sits between them: who this process is.
 
 use std::fs;
 use std::path::PathBuf;

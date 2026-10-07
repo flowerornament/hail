@@ -11,6 +11,9 @@
 //!   that pane; a seat is its one agent pane, else its one pane.
 //!
 //! Both refuse a seat shared by several agents and list its sub-seats.
+//!
+//! This is the other end of identity: who the sender is comes from `ctx.rs`,
+//! and the seat of any directory from `seat.rs`.
 
 use std::path::{Path, PathBuf};
 

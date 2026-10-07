@@ -2,6 +2,10 @@
 //! directory and nothing else. Process trees and an inherited `TMUX_PANE` named
 //! the wrong pane three times in 0.3 (murail-4vc8v, murail-m65jq, the Codex
 //! app-server as a pane's child); the working directory survives all of them.
+//!
+//! Identity has three steps: this module names a directory's seat;
+//! `ctx.rs` picks the mailboxes this process reads and signs as; `route.rs`
+//! resolves the other end, a send's target or a pane to drive.
 
 use std::fs;
 use std::path::{Path, PathBuf};
