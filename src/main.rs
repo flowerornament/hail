@@ -1,5 +1,28 @@
-//! hail — messages between coding agents that share a machine. See DESIGN.md
-//! and docs/2026-10-06-rust-port-spec.md.
+//! hail — messages between coding agents that share a machine.
+//!
+//! Start with DESIGN.md: "Shape" follows one message from send to receipt in
+//! six steps, and "Code map" names the module behind each step.
+//!
+//! Words used throughout:
+//! - **seat**: an agent's address, the name of the workspace it works in
+//!   (`seat.rs`). A **sub-seat**, `<seat>@<pane>`, is one Claude pane in a
+//!   directory several agents share. Either one is an `Addr`.
+//! - **mailbox**: the Maildir that holds a seat's or sub-seat's mail, under
+//!   `$XDG_STATE_HOME/hail/seats/<addr>/` (`store/`).
+//! - **message**: a headline (one line, capped) and a body (any length).
+//!   The **envelope** is the one `[hail …]` line typed into the recipient's
+//!   pane. Typing it is the **wake**. The body is fetched separately.
+//! - **claim**: a hook or `hail inbox` renames the message from `new/` to
+//!   `cur/`. That rename is the **receipt** `hail sent` and `hail await` read.
+//! - **kind**: what a message asks (`envelope::Kind`). **Control kinds**
+//!   (stop, hold, block, release, announce) are complete in the envelope.
+//!   An **obligation** (left by ruling, go, ask) stays on the recipient until
+//!   it sends `done --re <id>`. A **hold** or block stays in effect until a
+//!   `release`.
+//! - **harness**: the agent program, Claude Code or Codex. Its **hooks** run
+//!   `hail deliver` and `hail brief` (`hooks/`).
+//! - **bd**: the beads issue tracker. A message naming a bead is also posted
+//!   there as a comment (`bd.rs`).
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
