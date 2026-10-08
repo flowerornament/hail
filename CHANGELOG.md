@@ -4,6 +4,14 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.5.0 - 2026-10-07
+
+Quiet mail: the tool makes the cheap path the default. Measured on Murail
+(2026-10-07/08): 68% of the coordinator's 667 messages were `fyi`, mostly
+progress, each typed into its pane at the cost of a turn. Design and reviews:
+`docs/2026-10-08-quiet-mail-design.md`. Agents pick up the new skill at their
+next session start.
+
 - **An `fyi` never interrupts.** It is no longer typed into the recipient's
   pane; it arrives with their next prompt. Where the recipient's hooks have
   never run (no `hooked` mark from `deliver` in the last 7 days), it is typed
@@ -17,8 +25,8 @@ All notable changes to `hail` are documented in this file.
   Tools now serialize landing, installs and timing runs, so a hold is a
   person's decision, not a lock. A lapsed hold leaves every brief at once;
   its issuer's brief says so once, `release` still works on it, and `gc`
-  deletes old and orphaned ones. The 33 holds recorded before 0.5 lapse 8h
-  (7d for blocks) after they were sent (quiet mail §3).
+  deletes old and orphaned ones. Of the 34 holds recorded before 0.5, 29
+  lapse at once and 5 blocks stay in effect (quiet mail §3).
 - **Sub-agents have an address: `<seat>/<name>`.** Mail to
   `murail-2b/scout` goes to murail-2b's mailbox with `for: scout`, the
   envelope shows `for:scout`, and the parent relays it. `--as <name>` signs a
