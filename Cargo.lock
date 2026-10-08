@@ -257,7 +257,7 @@ dependencies = [
 
 [[package]]
 name = "hail"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "clap",
  "getrandom 0.4.3",
