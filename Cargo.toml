@@ -43,7 +43,7 @@ semicolon_if_nothing_returned = "warn"
 
 # Nursery lints with a low noise floor in this codebase. Avoid enabling the
 # whole group: some nursery lints are intentionally experimental or mostly
-# style churn for nx-rs.
+# style churn.
 as_ptr_cast_mut = "warn"
 clear_with_drain = "warn"
 coerce_container_to_any = "warn"
