@@ -159,10 +159,10 @@ impl Addr {
 /// side goes through [`Addr::parse`] or the name rules, so nothing here can
 /// name a directory outside the store.
 ///
-/// - `murail-1b`, `hail@%28`: a mailbox.
-/// - `murail-1b/%7`: a pane in that seat, the form `from:` prints, so a
+/// - `api-1b`, `hail@%28`: a mailbox.
+/// - `api-1b/%7`: a pane in that seat, the form `from:` prints, so a
 ///   `from:` value pasted as a target works.
-/// - `murail-1b/recip-consumer`, `hail@%28/scout`: a sub-agent. It has no
+/// - `api-1b/recip-consumer`, `hail@%28/scout`: a sub-agent. It has no
 ///   mailbox of its own: mail goes to the parent's, marked `for: <name>`,
 ///   and the parent relays it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -216,8 +216,8 @@ mod tests {
 
     fn tree() -> tempfile::TempDir {
         let t = tempfile::tempdir().unwrap();
-        fs::create_dir_all(t.path().join("home/code/murail-1b/.jj")).unwrap();
-        fs::create_dir_all(t.path().join("home/code/murail-1b/src/deep")).unwrap();
+        fs::create_dir_all(t.path().join("home/code/api-1b/.jj")).unwrap();
+        fs::create_dir_all(t.path().join("home/code/api-1b/src/deep")).unwrap();
         fs::create_dir_all(t.path().join("home/code/wt")).unwrap();
         fs::write(t.path().join("home/code/wt/.git"), "gitdir: elsewhere").unwrap();
         fs::create_dir_all(t.path().join("home/code/named/sub")).unwrap();
@@ -239,10 +239,10 @@ mod tests {
     fn derives_seats() {
         let t = tree();
         let home = t.path().join("home");
-        let s = seat_of(&home.join("code/murail-1b/src/deep"), Some(&home))
+        let s = seat_of(&home.join("code/api-1b/src/deep"), Some(&home))
             .unwrap()
             .unwrap();
-        assert_eq!((s.name.as_str(), s.source), ("murail-1b", Source::Jj));
+        assert_eq!((s.name.as_str(), s.source), ("api-1b", Source::Jj));
         let s = seat_of(&home.join("code/wt"), Some(&home))
             .unwrap()
             .unwrap();
@@ -290,17 +290,17 @@ mod tests {
             name: n.into(),
         };
         assert_eq!(
-            Address::parse("murail-2b/recip-consumer"),
-            Some(agent("murail-2b", "recip-consumer"))
+            Address::parse("web-1b/recip-consumer"),
+            Some(agent("web-1b", "recip-consumer"))
         );
         assert_eq!(
             Address::parse("hail@%28/scout"),
             Some(agent("hail@%28", "scout"))
         );
         assert_eq!(
-            Address::parse("murail-1a/%5"),
+            Address::parse("api-1a/%5"),
             Some(Address::Pane {
-                seat: "murail-1a".into(),
+                seat: "api-1a".into(),
                 pane: "%5".into()
             })
         );

@@ -8,7 +8,7 @@ metadata:
 # hail
 
 One-way messages between coding agents. You address a **seat**, the
-workspace an agent works in (`murail-1b`). The body goes to the seat's inbox,
+workspace an agent works in (`api-1b`). The body goes to the seat's inbox,
 a one-line envelope is typed into its agent's prompt, and a hook hands the
 body over on the agent's next turn and writes the receipt. `hail sent` and
 `hail await` read the receipt.
@@ -28,10 +28,10 @@ When several agents share one directory, each Claude pane is a sub-seat,
 
 **Sub-agents** (Claude Task agents, Codex sub-agents) run in their parent's
 directory, so they are the parent's seat. Each has an address,
-`<seat>/<name>` (`murail-2b/scout`). Mail to it goes to the parent's mailbox
+`<seat>/<name>` (`web-1b/scout`). Mail to it goes to the parent's mailbox
 marked `for: scout`, and the parent relays it. A sub-agent signs its sends
 with `--as <name>`, so replies come back the same way:
-`hail murail-1a fyi 'parser checked' --as scout`.
+`hail api-1a fyi 'parser checked' --as scout`.
 
 **A sub-agent runs no verb that reads mail** (`inbox`, `deliver`, `brief`).
 It shares its parent's directory and environment, so those would take the
@@ -40,7 +40,7 @@ parent's mail and prune its pending sends. It only sends, with `--as`.
 ## Sending
 
 ```bash
-hail murail-1b ask <<'EOF'
+hail api-1b ask <<'EOF'
 Review src/auth.ts before the merge; reply done with your verdict
 The refresh path is auth/refresh.rs:40-120. Coverage report: /tmp/cov.txt
 EOF
@@ -50,13 +50,13 @@ EOF
 - **The first line is the headline:** the ask and the why, in plain
   sentences. Everything after it is the body, of any length.
 - **Quote the heredoc delimiter** (`<<'EOF'`) so nothing in it is expanded.
-- **No body?** Pass the headline as an argument: `hail murail-1b fyi 'gate green'`.
+- **No body?** Pass the headline as an argument: `hail api-1b fyi 'gate green'`.
 - **Options:** `--re <id>` answers, closes or lifts a message. `--scope <s>`
   names what it applies to. `--as <name>` signs as your
   sub-agent `<seat>/<name>`.
-- **Targets:** a seat (`murail-1b`), a sub-seat (`hail@%28`), a sub-agent
-  (`murail-2b/scout`, through its parent), or a `from:` value pasted as is
-  (`murail-1a/%5`, that pane, checked to be in that seat).
+- **Targets:** a seat (`api-1b`), a sub-seat (`hail@%28`), a sub-agent
+  (`web-1b/scout`, through its parent), or a `from:` value pasted as is
+  (`api-1a/%5`, that pane, checked to be in that seat).
 - **Headline length:** over 400 characters, the headline is folded into the
   body. Never squeeze words together to fit.
 
@@ -94,7 +94,7 @@ hail await <id>... --timeout 900       # blocks until each id has a receipt; --a
 An envelope is one line in your prompt:
 
 ```
-[hail kind:ruling from:murail-1a/%5 reply:murail-1a id:1006T171200-a3f1] convert at the receipt — hail inbox
+[hail kind:ruling from:api-1a/%5 reply:api-1a id:1006T171200-a3f1] convert at the receipt — hail inbox
 ```
 
 - **Reply to the `reply:` value** (a seat, or a sub-agent's `seat/name`).
@@ -130,7 +130,7 @@ runs it; run it yourself after a compaction.
 
 **A hold is a person's decision** ("don't touch the parser while I redesign
 it"), not a lock. To serialize landing, installs or timing runs, use the
-tool's lock (`just land`, `ferry hold`, the host lease). When your hold lapses,
+tool's lock (a land queue, a host lease). When your hold lapses,
 your brief says so once; send a new one if it still applies.
 
 `stop hold block release announce` are control kinds: typed in full, no body,

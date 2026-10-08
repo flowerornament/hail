@@ -6,13 +6,13 @@ bodies on disk, a one-line envelope in the recipient's prompt, receipts that mea
 
 ## Why it exists
 
-Measured in `~/code/agent-audit/CODEX.md` (Sep 2026):
+Measured on Claude Code and Codex sessions in September 2026:
 
 - Codex compaction keeps every **user** message verbatim (newest first, to a cap)
   and discards every tool output. Claude Code summarises everything.
-- A `tmux-bridge message` was typed into the pane, so it was a user message. In the
-  murail-dev pane 294 retained relays rode on every API call: ~60k of a 166k-token
-  call, 36 %, for the life of the pane.
+- A message typed into the pane is a user message. In one long-lived Codex pane,
+  retained relays were about a third of the context on every API call, for the
+  life of the pane.
 - Coordinators read the target pane ~4 times per message sent to learn whether the
   text landed and whether a reply came. Each read is a full-context API call.
 - Bodies over ~400 chars could not be verified as typed, so rulings went out in two
@@ -49,7 +49,7 @@ and triageable.
    the working directory only. Pane ids shift after restarts, labels were set
    by hand and drifted, and every rule that read the process tree or an
    inherited `TMUX_PANE` named the wrong pane once the Codex app-server moved
-   (murail-4vc8v, murail-m65jq, 0.3.7). The pane is a transport detail,
+   (fixed in 0.3.7). The pane is a transport detail,
    resolved at send time from the panes sitting in the seat's directory.
    Several agents in one directory are told apart as `<seat>@<pane>`, a
    sub-seat accepted only for a Claude pane whose own directory is the seat.
@@ -61,7 +61,7 @@ and triageable.
    envelope later without changing the skill.
 8. **No daemon.** Every verb is a short process (one Rust binary since 0.4)
    over files and tmux. State is files under `$XDG_STATE_HOME/hail`, outside
-   every repo tree, because herald's fan-in gate hashes checkout contents.
+   every repo tree, because build gates may hash checkout contents.
    Each seat's inbox is a Maildir (`tmp/`, `new/`, `cur/`): the claim is a
    rename, so exactly one reader wins and the receipt (the claimed file, its
    name saying how and its mtime saying when) cannot exist before the claim.
@@ -70,20 +70,20 @@ and triageable.
 ## Shape
 
 ```
-  sender (seat murail-1a, pane %5)                   recipient (seat murail-1b, pane %7)
+  sender (seat api-1a, pane %5)                      recipient (seat api-1b, pane %7)
   ┌──────────────────────────────┐                   ┌──────────────────────────────┐
   │ agent decides to send        │                   │ agent's prompt gets ONE line │
   │                              │                   │                              │
-  │ $ hail murail-1b ruling \    │    (2) envelope   │ [hail kind:ruling            │
-  │     <<'EOF'                  │ ───────────────►  │  from:murail-1a/%5           │
-  │ convert at the receipt       │  typed keystrokes │  reply:murail-1a             │
+  │ $ hail api-1b ruling \       │    (2) envelope   │ [hail kind:ruling            │
+  │     <<'EOF'                  │ ───────────────►  │  from:api-1a/%5              │
+  │ convert at the receipt       │  typed keystrokes │  reply:api-1a                │
   │ <body…>                      │  verified once    │  id:0905T171200-a3f1]        │
   │ EOF                          │                   │  convert at the receipt      │
   │   id=0905T171200-a3f1        │                   │  — hail inbox                │
   └──────┬───────────────────────┘                   │ UserPromptSubmit hook (3)    │
          │(1)                                        │  hail deliver → body as      │
          ▼                                           │  context, claimed            │
-  ~/.local/state/hail/seats/murail-1b/               └──────────────┬───────────────┘
+  ~/.local/state/hail/seats/api-1b/                  └──────────────┬───────────────┘
     new/0905T171200-a3f1.md                                         │ (4) rename new → cur
     cur/0905T171200-a3f1.injected.md ◄──────────────────────────────┘
          ▲

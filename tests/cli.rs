@@ -565,6 +565,12 @@ fn exit_5_says_whether_anything_will_deliver_it() {
             .status
             .success()
     );
+    // deliver exits 0 even when it fails; on failure say why.
+    let hook_log = fs::read_to_string(w.state().join("hook-errors.log")).unwrap_or_default();
+    assert!(
+        w.state().join("seats/worker/hooked").exists(),
+        "deliver --format left no hooked mark; hook-errors.log: {hook_log}"
+    );
     let out = w.run("boss", &["worker", "ask", "check y", "--no-wake"]);
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("it arrives on their next prompt"), "{err}");

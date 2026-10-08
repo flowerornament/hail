@@ -334,8 +334,8 @@ mod tests {
     /// `<…>` outside quotes fails, so a new placeholder is added here on
     /// purpose rather than slipping past the check.
     const PLACEHOLDERS: &[(&str, &str)] = &[
-        ("<seat>", "murail-1b"),
-        ("<issuer>", "murail-1a"),
+        ("<seat>", "api-1b"),
+        ("<issuer>", "api-1a"),
         ("<kind>", "ask"),
         ("<id>...", "1006T171200-a3f1"),
         ("<id>", "1006T171200-a3f1"),

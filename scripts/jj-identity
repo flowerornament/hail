@@ -9,7 +9,7 @@
 # `Jj-Workspace:`, `Agent:` and `Session:` trailers naming the session that
 # FIRST described the change. Each key is added only when the description
 # lacks it, so a later re-describe never adds a second line. The trailers join
-# commits to peat and to the session transcripts.
+# commits to the session transcripts.
 #
 # The session id is the top-level `session_id` of the hook's JSON payload on
 # stdin. An absent or malformed id leaves `Session:` out rather than borrowing
@@ -23,7 +23,7 @@
 # session: failures warn on stderr and exit 0. JJ_IDENTITY_DRY_RUN=1 prints
 # the template instead of writing it.
 #
-# Adapted from murail's scripts/seat.sh. The trailer key is `Jj-Workspace`,
+# The trailer key is `Jj-Workspace`,
 # naming the jj mechanism rather than a role.
 harness="${1:-}"
 command -v jj >/dev/null 2>&1 || exit 0

@@ -35,11 +35,11 @@ Tool:
   help [topic] · version          Topics: send kinds receive seats panes setup state
 
 Examples:
-  hail murail-1b ask <<'EOF'
+  hail api-1b ask <<'EOF'
   Review src/auth.ts before the merge; reply done with your verdict
   The refresh path is auth/refresh.rs:40-120.
   EOF
-  hail murail-1a done --re 1006T171200-a3f1 'committed on abc123'
+  hail api-1a done --re 1006T171200-a3f1 'committed on abc123'
   hail await 1006T171200-a3f1 --timeout 900
 ";
 
@@ -52,9 +52,9 @@ hail send — deliver a message to a seat
   EOF
   hail <seat> <kind> '<headline>' [options]
 
-<seat> is a workspace name (murail-1b), a sub-seat in a shared directory
-(hail@%28), a pane (%7, or murail-1a/%5 as from: prints it), or a sub-agent
-(murail-2b/scout), whose mail goes to its parent marked for: and is relayed.
+<seat> is a workspace name (api-1b), a sub-seat in a shared directory
+(hail@%28), a pane (%7, or api-1a/%5 as from: prints it), or a sub-agent
+(web-1b/scout), whose mail goes to its parent marked for: and is relayed.
 'hail seats' lists them. With a headline argument
 stdin is never read. In a heredoc, quote the delimiter (<<'EOF') so nothing
 in the body is expanded.

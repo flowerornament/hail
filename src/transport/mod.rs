@@ -130,8 +130,8 @@ mod tests {
 
     #[test]
     fn an_envelope_is_found_by_its_id() {
-        let a = "[hail kind:fyi from:murail-2b/%8 reply:murail-2b id:1007T224623-3b07 bead:x] one";
-        let b = "[hail kind:fyi from:murail-2b/%8 reply:murail-2b id:1007T225740-cdf8] two";
+        let a = "[hail kind:fyi from:web-1b/%8 reply:web-1b id:1007T224623-3b07 bead:x] one";
+        let b = "[hail kind:fyi from:web-1b/%8 reply:web-1b id:1007T225740-cdf8] two";
         assert_eq!(probe(a), "id:1007T224623-3b07");
         assert_eq!(probe(b), "id:1007T225740-cdf8");
         // The old probe, the first 40 non-space characters, was the same for both.

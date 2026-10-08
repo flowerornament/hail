@@ -10,7 +10,7 @@ and that writes a receipt the sender can check or wait on. No daemon, no
 database, no pane-reading.
 
 ```
-[hail kind:ask from:murail-1a/%5 reply:murail-1a id:1006T171200-a3f1] Review src/auth.ts before the merge; reply done with your verdict — hail inbox
+[hail kind:ask from:api-1a/%5 reply:api-1a id:1006T171200-a3f1] Review src/auth.ts before the merge; reply done with your verdict — hail inbox
 ```
 
 ## Why
@@ -32,16 +32,16 @@ and types only a short triage line.
 ## How it works
 
 ```
-  sender (seat murail-1a)                          recipient (seat murail-1b)
-  hail murail-1b ask <<'EOF'                         Codex or Claude Code, idle or busy
+  sender (seat api-1a)                             recipient (seat api-1b)
+  hail api-1b ask <<'EOF'                            Codex or Claude Code, idle or busy
   <headline>                                      ┌───────────────────────────────────┐
-  <body>                 (2) one-line envelope    │ [hail kind:ask from:murail-1a …]  │
+  <body>                 (2) one-line envelope    │ [hail kind:ask from:api-1a …]     │
   EOF            ───────────────────────────────▶ │ (typed, verified, Enter)          │
     │                                             └──────────────┬────────────────────┘
     │ (1) body written first                      (3) prompt hook: hail deliver
     ▼                                                            │ claims the body,
-  ~/.local/state/hail/seats/murail-1b/new/<id>.md ───────────────┘ adds it to context
-                                                  seats/murail-1b/cur/<id>.injected.md
+  ~/.local/state/hail/seats/api-1b/new/<id>.md ──────────────────┘ adds it to context
+                                                  seats/api-1b/cur/<id>.injected.md
   (4) hail sent <id>  → injected 2026-10-07T09:36:53Z     (the receipt)
       hail await <id> → blocks until there is one
 ```
@@ -176,20 +176,20 @@ hail whoami                                   # this directory's seat
 hail seats                                    # every seat: agent panes, unread, obligations, root
 
 # Send. The first line is the headline (the ask and the why); the rest is the body.
-hail murail-1b ask <<'EOF'
+hail api-1b ask <<'EOF'
 Review src/auth.ts before the merge; reply done with your verdict
 The refresh path is auth/refresh.rs:40-120. Coverage: /tmp/cov.txt
 EOF
 #   id=1006T171200-a3f1
 
-hail murail-1b fyi 'gate green'               # headline only, no body
+hail api-1b fyi 'gate green'               # headline only, no body
 hail sent 1006T171200-a3f1                    # delivered | injected <t> | read <t> | inline <t> | unknown
 hail await 1006T171200-a3f1 --timeout 900     # block until a receipt (--any for the first of several)
 
 # Answer, close, lift.
-hail murail-1a fyi --re 1006T171200-a3f1 '87% coverage; refresh path uncovered'
-hail murail-1a done --re 1006T171200-a3f1 'committed on abc123'
-hail murail-1b release --re 1006T165000-1c2e 'gate green'
+hail api-1a fyi --re 1006T171200-a3f1 '87% coverage; refresh path uncovered'
+hail api-1a done --re 1006T171200-a3f1 'committed on abc123'
+hail api-1b release --re 1006T165000-1c2e 'gate green'
 
 hail brief                                    # what you were sent, what you owe, holds, late sends
 hail inbox                                    # unread bodies (the hook usually delivers them)

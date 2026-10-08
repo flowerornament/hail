@@ -113,8 +113,8 @@ scenario() { # scenario N "title" fn
 
 # --- scenarios ---------------------------------------------------------------
 
-LONG_ASK='Ruling on herald-ke7is: convert at the receipt, not the producer; the fan-in gate hashes checkout contents so scratch state must stay outside every repo tree, and the coordinator should not read panes for replies'
-ASK1='Ruling on herald-ke7is: convert at the receipt, not the producer; scratch state stays outside every repo tree; do not read panes for replies'
+LONG_ASK='Ruling on issue 41: convert at the receipt, not the producer; the fan-in gate hashes checkout contents so scratch state must stay outside every repo tree, and the coordinator should not read panes for replies'
+ASK1='Ruling on issue 41: convert at the receipt, not the producer; scratch state stays outside every repo tree; do not read panes for replies'
 
 s1() { # from inside the sender pane via send-keys, --kind ruling --body -
   printf 'line one of the body\nline two of the body\n' > "$SCRATCH/body1"
@@ -154,7 +154,7 @@ EOS
 s2() { # hail never runs bd: --bead is ignored with a notice, no bead: anywhere
   local ok=0 id
   rm -f "$SCRATCH/bd-called"
-  send "$SENDER" worker "please look at herald-ke7is again" --kind ask --bead herald-ke7is
+  send "$SENDER" worker "please look at issue 41 again" --kind ask --bead web-41
   id=$(last_id)
   expect "rc=0" eq "$RC" 0 || ok=1
   expect "--bead noticed as ignored" contains "$ERR" "--bead is ignored" || ok=1
@@ -417,10 +417,10 @@ s24() { # brief: silent when empty; inbox section; sends without receipt; disapp
   clear_state
   local ok=0 id out
   expect "brief silent when empty" empty "$(as "$RECV" brief)" || ok=1
-  send "$SENDER" worker "brief me" --kind nogo --scope herald/x; id=$(last_id)
+  send "$SENDER" worker "brief me" --kind nogo --scope web/x; id=$(last_id)
   out=$(as "$RECV" brief)
   expect "inbox header" contains "$out" "inbox (1 unread)" || ok=1
-  expect "envelope-style line" contains "$out" "[hail nogo from:boss id:$id scope:herald/x] brief me" || ok=1
+  expect "envelope-style line" contains "$out" "[hail nogo from:boss id:$id scope:web/x] brief me" || ok=1
   expect "no sends section on recipient" not_contains "$out" "my sends" || ok=1
   expect "sender brief: fresh send not listed" empty "$(as "$SENDER" brief)" || ok=1
   sed -i.bak "s/^epoch: .*/epoch: $(( $(date +%s) - 200 ))/" "$SEATS/boss/pending/$id" && rm -f "$SEATS/boss/pending/$id.bak"
@@ -437,18 +437,18 @@ s24() { # brief: silent when empty; inbox section; sends without receipt; disapp
 s25() { # hold -> release by issuer / refused by another; block; envelope carries re: and scope:
   clear_state
   local ok=0 h b line out
-  send "$SENDER" worker "HOLD landing until gate is green" --kind hold --scope murail-ke7is; h=$(last_id)
+  send "$SENDER" worker "HOLD landing until gate is green" --kind hold --scope issue-41; h=$(last_id)
   expect "hold rc=0" eq "$RC" 0 || ok=1
   expect "hold file" exists "$STATE/holds/$h" || ok=1
   expect "hold issuer" grep -qx "issuer: boss" "$STATE/holds/$h" || ok=1
   line=$(envelope_line "id:$h")
-  expect "scope in envelope" contains "$line" "id:$h scope:murail-ke7is until:" || ok=1
+  expect "scope in envelope" contains "$line" "id:$h scope:issue-41 until:" || ok=1
   expect "hold typed in full, no hint" not_contains "$line" "hail inbox" || ok=1
   send "$SENDER" worker "BLOCK: anchor dirty" --kind block; b=$(last_id)
   expect "block file" exists "$STATE/holds/$b" || ok=1
   out=$(as "$RECV" brief)
   expect "brief lists holds (2)" contains "$out" "holds / blocks on me (2)" || ok=1
-  expect "brief hold line" contains "$out" "[hail hold from:boss to:worker id:$h scope:murail-ke7is] HOLD landing" || ok=1
+  expect "brief hold line" contains "$out" "[hail hold from:boss to:worker id:$h scope:issue-41] HOLD landing" || ok=1
   expect "brief block line" contains "$out" "[hail block from:boss to:worker id:$b]" || ok=1
   reset_sender
   send "$SENDER" worker "lifted" --kind release
@@ -516,7 +516,7 @@ s27() { # headline over the cap refused for a control kind, folded for others; m
   send "$SENDER" worker "$LONG_ASK" --kind ask
   expect "ask over cap folds, rc=0" eq "$RC" 0 || ok=1
   expect "fold is announced" contains "$ERR" "headline folded to" || ok=1
-  expect "folded headline typed" contains "$(pane_text "$RECV")" "Ruling on herald-ke7is: convert at the receipt, not the producer" || ok=1
+  expect "folded headline typed" contains "$(pane_text "$RECV")" "Ruling on issue 41: convert at the receipt, not the producer" || ok=1
   expect "folded headline ends with an ellipsis" contains "$(pane_text "$RECV")" " …" || ok=1
   expect "full text in the body" contains "$(cat "$(msgfile "$(last_id)")")" "coordinator should not read panes for replies" || ok=1
   as "$RECV" inbox >/dev/null   # drain the folded message so later scenarios start clean

@@ -230,8 +230,8 @@ mod tests {
     fn renders_the_envelope() {
         let head = Head {
             kind: Kind::Ruling,
-            from: "murail-1a/%5",
-            reply: "murail-1a",
+            from: "api-1a/%5",
+            reply: "api-1a",
             id: "0905T171200-a3f1",
             for_: None,
             until: None,
@@ -240,7 +240,7 @@ mod tests {
         };
         assert_eq!(
             render(&head, "convert at the receipt", true),
-            "[hail kind:ruling from:murail-1a/%5 reply:murail-1a id:0905T171200-a3f1 scope:commit] convert at the receipt — hail inbox"
+            "[hail kind:ruling from:api-1a/%5 reply:api-1a id:0905T171200-a3f1 scope:commit] convert at the receipt — hail inbox"
         );
     }
 

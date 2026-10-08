@@ -385,7 +385,7 @@ mod tests {
         for yes in ["%5", "%123", "sess:1.2", "3"] {
             assert!(looks_like_pane(yes), "{yes}");
         }
-        for no in ["%", "%x", "murail-1b", ".nix-config", "hail@%28"] {
+        for no in ["%", "%x", "api-1b", ".nix-config", "hail@%28"] {
             assert!(!looks_like_pane(no), "{no}");
         }
     }
