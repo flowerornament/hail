@@ -24,6 +24,10 @@ pub struct Cli {
 pub enum Cmd {
     #[command(alias = "message", alias = "msg")]
     Send(SendCli),
+    Note {
+        bead: String,
+        headline: Option<String>,
+    },
     Sent {
         id: String,
     },
@@ -137,9 +141,9 @@ pub struct SendCli {
 }
 
 pub const VERBS: &[&str] = &[
-    "send", "message", "msg", "sent", "await", "deliver", "brief", "inbox", "show", "whoami",
-    "seats", "list", "read", "type", "keys", "setup", "doctor", "migrate", "gc", "help", "version",
-    "name", "hello", "who", "resolve", "id",
+    "send", "message", "msg", "note", "sent", "await", "deliver", "brief", "inbox", "show",
+    "whoami", "seats", "list", "read", "type", "keys", "setup", "doctor", "migrate", "gc", "help",
+    "version", "name", "hello", "who", "resolve", "id",
 ];
 
 /// What to do before clap sees the arguments.

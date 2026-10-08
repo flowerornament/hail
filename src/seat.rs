@@ -40,11 +40,8 @@ impl Source {
 }
 
 /// Names that would read as a verb in `hail <seat> ...`.
-pub const RESERVED: &[&str] = &[
-    "send", "message", "msg", "sent", "await", "deliver", "brief", "inbox", "show", "whoami",
-    "seats", "list", "read", "type", "keys", "setup", "doctor", "migrate", "gc", "help", "version",
-    "name", "hello", "who", "resolve", "id",
-];
+/// Verb names cannot be seats: `hail <verb>` would never reach them.
+pub use crate::cli::VERBS as RESERVED;
 
 pub fn valid_name(name: &str) -> bool {
     path_safe(name)

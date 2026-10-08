@@ -9,23 +9,22 @@ pub enum Posted {
     Comment(u64),
     /// Posted; bd did not say which comment.
     Unnumbered,
-    /// bd is missing or failed: the message is file-only.
-    Failed,
+    /// bd is missing or failed, and why.
+    Failed(String),
 }
 
 pub fn comment(bead: &str, body: &str) -> Posted {
     let mut path = std::env::temp_dir();
     path.push(format!("hail-body-{}-{bead}.md", std::process::id()));
     let written = std::fs::File::create(&path).and_then(|mut f| writeln!(f, "{body}"));
-    if written.is_err() {
-        return Posted::Failed;
+    if let Err(e) = written {
+        return Posted::Failed(format!("writing {}: {e}", path.display()));
     }
     let out = Command::new("bd")
         .args(["comment", bead, "--file"])
         .arg(&path)
         .arg("--json")
         .stdin(Stdio::null())
-        .stderr(Stdio::null())
         .output();
     let _ = std::fs::remove_file(&path);
     match out {
@@ -36,6 +35,14 @@ pub fn comment(bead: &str, body: &str) -> Posted {
                 id.as_u64().or_else(|| id.as_str()?.parse().ok())
             })
             .map_or(Posted::Unnumbered, Posted::Comment),
-        _ => Posted::Failed,
+        Ok(o) => Posted::Failed(
+            String::from_utf8_lossy(&o.stderr)
+                .lines()
+                .rfind(|l| !l.trim().is_empty())
+                .unwrap_or("bd failed")
+                .trim()
+                .to_string(),
+        ),
+        Err(e) => Posted::Failed(format!("bd: {e}")),
     }
 }

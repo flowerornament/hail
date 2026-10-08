@@ -143,7 +143,7 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         match bd::comment(b, &draft.body) {
             Posted::Comment(n) => outln!("bead={b} comment={n}"),
             Posted::Unnumbered => {}
-            Posted::Failed => {
+            Posted::Failed(_) => {
                 eprintln!(
                     "hail: warning: could not post to bead {b} with bd; the message is file-only"
                 );
@@ -216,7 +216,7 @@ fn compose(ctx: &Ctx, a: &SendArgs) -> Result<Draft> {
     })
 }
 
-fn headline_and_body(form: &Form) -> Result<(String, Option<String>)> {
+pub fn headline_and_body(form: &Form) -> Result<(String, Option<String>)> {
     match form {
         Form::Legacy { headline, body } => Ok((
             headline.clone(),

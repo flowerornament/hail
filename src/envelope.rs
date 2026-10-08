@@ -213,7 +213,7 @@ pub fn detect_bead(text: &str) -> Option<String> {
     })
 }
 
-fn is_bead_id(tok: &str) -> bool {
+pub fn is_bead_id(tok: &str) -> bool {
     let Some((prefix, rest)) = tok.split_once('-') else {
         return false;
     };
