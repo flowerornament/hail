@@ -1,6 +1,6 @@
 [package]
 name = "hail"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 rust-version = "1.98"
 description = "Agent-to-agent messaging over tmux: envelope in the pane, body in the inbox, receipts, await"
