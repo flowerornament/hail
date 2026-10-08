@@ -6,7 +6,7 @@ All notable changes to `hail` are documented in this file.
 
 ## v0.5.1 - 2026-10-07
 
-Fixes from the first day of 0.5, and hail stops talking to bd.
+Delivery fixes, and hail no longer integrates with bd.
 
 - **Fixed: Codex was left with envelopes typed but not submitted.** A send
   waits until the typed text shows in the pane before it presses Enter, to
@@ -15,56 +15,51 @@ Fixes from the first day of 0.5, and hail stops talking to bd.
   earlier envelope still on screen satisfied it at once. When Codex was
   busy and read the text and the Enter together, it took the Enter for a
   newline in a paste. hail now looks for the envelope's `id:`, and waits up
-  to 10 s instead of 2 s. In a trial against Codex 0.161 with a frozen TUI,
-  sends went from 1 in 5 submitted to 5 in 5 (hail-lha).
-- **hail no longer talks to bd.** Posting message bodies to beads, bead-id
+  to 10 s instead of 2 s.
+- **Removed: bd integration.** Posting message bodies to beads, bead-id
   detection, the `bead:` envelope field and `hail note` (new in 0.5.0) are
-  gone: hail was coupled to another moving target for little gain. Post to
-  your tracker yourself. `--bead` is accepted and ignored with a notice, and
+  removed, so hail no longer depends on an external issue tracker. Post to
+  your tracker directly. `--bead` is accepted and ignored with a notice, and
   `hail note` says what to use instead, until 0.6.
 - **Exit 5 no longer promises what will not happen.** When no hook has read
   the target mailbox lately, the send says the message waits until someone
-  runs `hail inbox` there, instead of "it arrives on their next prompt". On
-  ferry, 8 messages to a workspace whose agent ran elsewhere sat 1-3.5 h
-  (hail-2xl).
+  runs `hail inbox` there, instead of "it arrives on their next prompt".
 - **A pane sending from another seat's directory is warned.** An agent that
   `cd`s into a workspace signs as that seat, while its hooks still deliver to
   the seat its session started in, so replies went where it never looked.
-  The send now warns and says where to run hail from (hail-xe9).
+  The send now warns and says where to run hail from.
 
 ## v0.5.0 - 2026-10-07
 
-Quiet mail: the tool makes the cheap path the default. Measured on Murail
-(2026-10-07/08): 68% of the coordinator's 667 messages were `fyi`, mostly
-progress, each typed into its pane at the cost of a turn. Design and reviews:
-`docs/2026-10-08-quiet-mail-design.md`. Agents pick up the new skill at their
-next session start.
+Quiet mail: informational messages no longer interrupt the recipient, and
+holds expire. Design: `docs/2026-10-08-quiet-mail-design.md`. Agents pick up
+the new skill at their next session start.
 
 - **An `fyi` never interrupts.** It is no longer typed into the recipient's
   pane; it arrives with their next prompt. Where the recipient's hooks have
   never run (no `hooked` mark from `deliver` in the last 7 days), it is typed
   as before, so it cannot strand. A quiet `fyi` exits 0 and leaves no pending
-  record. Every other kind still types (quiet mail §1a).
+  record. Every other kind still types.
 - **`hail note <bead> '<headline>'` puts progress on the bead.** A bd comment
   signed with your seat (body on stdin); no mailbox, no pane, no receipt. A
-  bd failure is an error that quotes bd (quiet mail §1b).
+  bd failure is an error that quotes bd. (Removed in 0.5.1.)
 - **Holds lapse.** A `hold` lapses after 8h and a `block` after 7d, unless
   `--for 30m|8h|3d` (at most 7d) says otherwise; the envelope shows `until:`.
   Tools now serialize landing, installs and timing runs, so a hold is a
   person's decision, not a lock. A lapsed hold leaves every brief at once;
   its issuer's brief says so once, `release` still works on it, and `gc`
-  deletes old and orphaned ones. Of the 34 holds recorded before 0.5, 29
-  lapse at once and 5 blocks stay in effect (quiet mail §3).
+  deletes old and orphaned ones. Holds recorded before 0.5 lapse at their
+  send time plus the default for their kind.
 - **Sub-agents have an address: `<seat>/<name>`.** Mail to
-  `murail-2b/scout` goes to murail-2b's mailbox with `for: scout`, the
+  `api/scout` goes to the `api` seat's mailbox with `for: scout`, the
   envelope shows `for:scout`, and the parent relays it. `--as <name>` signs a
   sub-agent's send as `<seat>/<name>`, so replies come back the same way. The
   skill says a sub-agent runs no verb that reads mail (`inbox`, `deliver`,
-  `brief`), since those would take its parent's mail (hail-b28).
-- **A `from:` value works as a target.** `murail-1a/%5` is the pane `%5`,
-  checked to be in seat `murail-1a`.
-- **A seat-like name that isn't a seat is explained.** `murail-2b-scout`, when
-  `murail-2b` is a seat, suggests `murail-2b/scout`.
+  `brief`), since those would take its parent's mail.
+- **A `from:` value works as a target.** `api/%5` is the pane `%5`, checked
+  to be in seat `api`.
+- **A seat-like name that isn't a seat is explained.** `api-scout`, when `api`
+  is a seat, suggests `api/scout`.
 
 ## v0.4.1 - 2026-10-07
 
@@ -74,12 +69,11 @@ Two data fixes; nothing else changes.
   prompt hook assumed every message without a body had been typed into the
   pane, so mail to a seat with no agent pane (or one held at a dialog, or not
   confirmed) was marked `injected` and never shown. The hook now injects
-  every headline-only message as its envelope line. Lost since 0.4.0
-  (hail-2en).
+  every headline-only message as its envelope line. Affected 0.4.0.
 - **Fixed: a target of `..` wrote mail outside the store.** `hail .. fyi x`
   wrote `state/hail/new/<id>.md`, and `../..` wrote above it. An address part
   that is empty, `.` or `..`, or holds `/` or NUL, is now refused (exit 1),
-  and so is `HAIL_SEAT=..` (exit 3) (hail-cr9).
+  and so is `HAIL_SEAT=..` (exit 3).
 
 ## v0.4.0 - 2026-10-07
 
@@ -90,17 +84,16 @@ are unchanged; identity, storage and setup are new. Spec:
 - **Identity is the seat.** A seat is the jj workspace or git root a process
   runs in, by name, or a `.hail-seat` file. It comes from the working
   directory, never from the process tree or `TMUX_PANE`, so a Codex command
-  under the shared app-server can no longer sign as another pane (every Codex
-  seat signed as `%2` in 0.3.6). Labels, `hail name`, incarnations and exit
-  3 "label moved" are gone. `name`, `hello`, `who`, `resolve` and `id` stay
-  as shims through 0.4.
+  under the shared app-server can no longer sign as another pane. Labels,
+  `hail name`, incarnations and exit 3 "label moved" are gone. `name`,
+  `hello`, `who`, `resolve` and `id` stay as shims through 0.4.
 - **Shared directories.** Several agents in one directory are told apart as
   `<seat>@<pane>`, accepted only for a Claude pane whose own directory is the
   seat. A send to the bare shared seat is refused (exit 3) with the
   sub-seats listed, so one agent can no longer drain another's mail.
 - **Maildir store.** Each seat's inbox is `seats/<seat>/{tmp,new,cur}`.
   - A body is claimed by a rename, so exactly one reader wins and it is never
-    injected twice (murail-m65jq).
+    injected twice.
   - A hook whose output never lands gives the mail back.
   - An id index (`ids/`) makes `sent`, `show` and `await` a few stats.
   - `await` polls every 100 ms and no longer needs fswatch.
@@ -144,10 +137,10 @@ are unchanged; identity, storage and setup are new. Spec:
   - The scenario harness covers 48 scenarios, including shared seats, heredoc
     bodies, setup and migration.
   - CI runs on Linux and macOS, on the toolchain pinned in
-    `rust-toolchain.toml` (Rust 1.99.0), under the nx-rs lint set (clippy
-    pedantic, unwrap and expect denied).
+    `rust-toolchain.toml` (Rust 1.99.0), under clippy pedantic with unwrap
+    and expect denied.
   - The Nix package builds with `buildRustPackage` and is published to the
-    `flowerornament` Cachix cache for four systems on every push to `main`.
+    `flowerornament` Cachix cache for three systems on every push to `main`.
     `just release-tag` refuses to tag until every build is cached.
   - Releases attach binaries for aarch64/x86_64 macOS and Linux.
 
@@ -156,7 +149,7 @@ From the unreleased 0.3.9, which ships here:
 - The dialog guard no longer refuses an idle Codex pane. It matched the bare
   word `Approve`, and Codex prints `Approved` in its history and status line,
   so a pane at its prompt read as a permission dialog (exit 4) and agents
-  learned to `--force` past it (herald-b6mzr). The guard now matches the
+  learned to `--force` past it. The guard now matches the
   dialogs' own question and option lines: Claude Code's as before, plus
   Codex's `Would you like to run the following command?`, `Yes, proceed`,
   `Yes, just this once` and `No, and tell Codex what to do`. New scenario 40.
@@ -171,18 +164,17 @@ From the unreleased 0.3.9, which ships here:
   with vi keys the `:` of `kind:` opened a goto-line prompt that waited for
   Enter, and the envelope never reached the composer. New scenario 39.
 - The skill says to run hail directly, never through `tmux run-shell` with a
-  hand-set `TMUX_PANE`. Codex seats did that to dodge the `%2` identity bug
-  fixed in 0.3.7, and every failure opened tmux's view mode in the pane the
-  user was looking at.
+  hand-set `TMUX_PANE`. Each failure of that workaround opened tmux's view
+  mode in the pane the user was looking at.
 
 ## v0.3.7 - 2026-10-06
 
 - A command run under Codex's shared app-server no longer takes the pane that
   started the daemon as its own. The daemon is a child of the first Codex
-  seat's TUI, so the ancestor walk found that pane for every Codex seat: all
-  of them signed, registered and read as `%2`. The walk now stops at
-  `codex app-server`, and the pane is taken from the working directory, as
-  for a daemon reparented to pid 1. New scenario 38.
+  seat's TUI, so the ancestor walk found that pane for every Codex seat, and
+  all of them signed, registered and read as that one pane. The walk now
+  stops at `codex app-server`, and the pane is taken from the working
+  directory, as for a daemon reparented to pid 1. New scenario 38.
 
 ## v0.3.6 - 2026-09-30
 
@@ -202,9 +194,9 @@ From the unreleased 0.3.9, which ships here:
 
 ## v0.3.5 - 2026-09-30
 
-- Removed the unsent-draft guard. In two days it refused sends for a subagent
-  row, a queued-message placeholder, ghost-text suggestions and a grey glyph,
-  grew a colour parser and three regexes, and never once caught a real draft.
+- Removed the unsent-draft guard. It refused sends for subagent rows,
+  queued-message placeholders, ghost-text suggestions and grey glyphs, and its
+  heuristics grew without catching real drafts.
   A send now types the envelope after whatever the composer holds, as it did
   before 0.2.5. Exit code 5 is gone; the permission-dialog guard (exit 4) and
   `--force` stay.
@@ -217,8 +209,8 @@ From the unreleased 0.3.9, which ships here:
 - The unsent-draft guard reads the composer in colour. Claude Code draws its
   prompt glyph and ghost-text suggestions in grey (or dim) and typed text in
   the default colour, so only default-colour text in the composer is a draft.
-  A ghost-text suggestion (any text, not only the known placeholders) held a
-  GO for 40 minutes. Panes that draw no rules keep the last-row rule.
+  A ghost-text suggestion (any text, not only the known placeholders) could
+  block a send. Panes that draw no rules keep the last-row rule.
 - The rule-less fallback (Codex `›`, shells) reads its row in colour too, so a
   dim suggestion there is not a draft either.
 
