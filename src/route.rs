@@ -255,6 +255,30 @@ fn sub_seat_mail(ctx: &Ctx, to: Addr, pane: &Pane) -> Mail {
 /// The sending process: its mailboxes, and in a shared seat its own
 /// sub-seat, accepted only when `$TMUX_PANE` names a Claude pane in this
 /// seat (and the process is not Codex).
+/// A Claude pane running hail from a directory that is not its own seat: the
+/// send signs as `me`, but the pane's hooks read its own seat, so replies to
+/// `me` would never reach it (ferry, 2026-10-08). A warning, never an
+/// identity: the working directory still decides who sends. Codex is left
+/// out, because its commands carry the shared daemon's `TMUX_PANE`.
+pub fn identity_split(ctx: &Ctx, me: &Seat, pm: Option<&PaneMap>) -> Option<String> {
+    let pm = pm.filter(|_| !ctx.codex)?;
+    let tp = ctx.tmux_pane.as_deref()?;
+    let p = pm.find(tp).filter(|p| can_hold_sub_seat(p))?;
+    let own = pm.seat_of(p).filter(|s| *s != me.name)?;
+    let shared = pm.agents_in(own).len() > 1;
+    let address = if shared {
+        Addr::sub(own, tp).to_string()
+    } else {
+        own.to_string()
+    };
+    Some(format!(
+        "this sends as {me} (from this directory), but your pane {tp} works in {path}, seat {address}, where your hooks deliver: replies to {me} will not reach you. Run hail from {path}, or start the session in {root}",
+        me = me.name,
+        path = p.path.display(),
+        root = me.root.display(),
+    ))
+}
+
 pub fn sender(ctx: &Ctx, me: &Seat, pm: Option<&PaneMap>) -> Sender {
     let mut boxes = ctx.mailboxes(me);
     let Some(pm) = pm else {

@@ -38,7 +38,9 @@ An fyi is quiet: it is not typed, and arrives with the recipient's next prompt
 issue tracker, not in someone's prompt.
 
 Exit: 0 typed and submitted, or a quiet fyi; 5 written to the inbox but not
-typed (no agent pane, or typing not confirmed): do NOT resend, it arrives on
-their next prompt; 3 seat problem; 4 the target shows a permission dialog.
+typed (no agent pane, or typing not confirmed): do NOT resend. It arrives on
+their next prompt, unless hail says no hook reads that seat (then check hail
+seats for where its agent works); 3 seat problem; 4 the target shows a
+permission dialog.
 
 The 0.3 form still works: hail <target> '<headline>' --kind <k> [--body text|file|-]

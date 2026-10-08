@@ -673,6 +673,16 @@ s50() { # quiet fyi: nothing typed once the recipient's hook has run; it arrives
   reset_recv; return "$ok"
 }
 
+s51() { # a pane sending from another seat's directory is warned: replies would not reach it
+  local ok=0 err
+  err=$( (cd "$WORKER_DIR" && TMUX_PANE="$SENDER" "$HAIL" boss ask 'from the wrong directory' --no-wake </dev/null) 2>&1 >/dev/null)
+  expect "warned" contains "$err" "warning: this sends as worker (from this directory), but your pane $SENDER works in" || ok=1
+  expect "names the pane's own seat" contains "$err" "/boss, seat boss, where your hooks deliver" || ok=1
+  send "$SENDER" worker "from home" --kind ask --no-wake
+  expect "no warning at home" not_contains "$ERR" "warning:" || ok=1
+  reset_recv; return "$ok"
+}
+
 scenario 1  "send from inside the pane: ruling, --body -, submitted" s1
 scenario 2  "hail never runs bd: --bead ignored with a notice" s2
 scenario 3  "sent before read -> delivered" s3
@@ -998,6 +1008,7 @@ scenario 47 "a headline argument with a heredoc or a late pipe: that is the body
 scenario 48 "migration of pane keys, old labels and a backlog; deliver caps per prompt" s48
 scenario 49 "sub-agents: seat/name via the parent with for:, --as signs; seat/%N is the pane, checked" s49
 scenario 50 "quiet fyi once hooks run; typed where they have not" s50
+scenario 51 "a pane sending from another seat's directory is warned" s51
 
 echo "---"
 echo "passed $PASS, failed $FAIL"

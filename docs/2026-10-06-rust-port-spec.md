@@ -92,7 +92,8 @@ EOF
 
 **Output:**
 - `id=<id>` on stdout, on exit 0 and on exit 5.
-- On exit 5, stderr says `delivered to <seat>'s inbox; not typed (<reason>); do not resend; it arrives on their next prompt`.
+- On exit 5, stderr says `delivered to <seat>'s inbox; not typed (<reason>); do not resend; it arrives on their next prompt`. *(Amended 0.5.1, hail-2xl:)* when the mailbox has no `hooked` mark from the last 7 days, it says instead that no hook reads it, so it waits until someone runs `hail inbox` in the seat's root, and points to `hail seats`.
+- *(0.5.1, hail-xe9)* When the sending pane is a Claude pane whose own directory is another seat, stderr warns that replies to the sending seat will not reach that pane. A warning only: the working directory still decides who sends.
 - Warnings go to stderr, one line each, and say what to do.
 
 ### 4.3 The envelope (unchanged in form)

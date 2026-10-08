@@ -547,3 +547,25 @@ fn sub_agent_names_and_near_misses_are_explained() {
     let out = w.run("boss", &["worker/%7", "fyi", "x", "--no-wake"]);
     assert_eq!(out.status.code(), Some(1), "{out:?}");
 }
+
+#[test]
+fn exit_5_says_whether_anything_will_deliver_it() {
+    // hail-2xl: mail to a mailbox no hook reads was promised "on their next
+    // prompt" and sat for hours.
+    let w = World::new();
+    let out = w.run("boss", &["worker", "ask", "check x", "--no-wake"]);
+    assert_eq!(out.status.code(), Some(5));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("No hook has read worker lately"), "{err}");
+    assert!(err.contains("hail inbox in"), "{err}");
+    assert!(!err.contains("arrives on their next prompt"), "{err}");
+
+    assert!(
+        w.run("worker", &["deliver", "--format", "claude"])
+            .status
+            .success()
+    );
+    let out = w.run("boss", &["worker", "ask", "check y", "--no-wake"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("it arrives on their next prompt"), "{err}");
+}

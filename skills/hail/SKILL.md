@@ -17,8 +17,10 @@ body over on the agent's next turn and writes the receipt. `hail sent` and
 
 You are the seat of the directory you run hail from: the jj workspace or git
 root's name, or a `.hail-seat` file's content. Check with `hail whoami`.
-Always run hail from your own workspace. A `cd` into another workspace signs
-your message as that seat. Never set `TMUX_PANE` by hand and never wrap hail
+Always run hail from the directory your session started in: your hooks
+deliver to that seat. A `cd` into another workspace signs your message as that
+seat, and replies to it will not reach you (hail warns). If you work in a jj
+workspace, start the session there. Never set `TMUX_PANE` by hand and never wrap hail
 in `tmux run-shell`.
 
 When several agents share one directory, each Claude pane is a sub-seat,
@@ -75,7 +77,9 @@ time-critical fact is never an `fyi`. Use `ask` when you need the answer, and
 One send is one action. There is no read step and no polling. **Exit codes:**
 - `0`: typed and submitted, or a quiet `fyi` (it says so).
 - `5`: written to the inbox but not typed (no agent pane, or typing not
-  confirmed). **Do not resend**: it arrives on their next prompt.
+  confirmed). **Do not resend.** It arrives on their next prompt, unless hail
+  says no hook reads that seat: then nobody will see it until someone runs
+  `hail inbox` there. Check `hail seats` for where its agent really works.
 - `3`: seat problem; the message says the fix.
 - `4`: the target shows a permission dialog. Read it first (`hail read <seat> 10`);
   use `--force` only after reading it.

@@ -84,12 +84,16 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         .as_ref()
         .and_then(|t| PaneMap::load(t, ctx.home.as_deref()).ok());
     let sender = route::sender(ctx, &me, panes.as_ref());
+    if let Some(w) = route::identity_split(ctx, &me, panes.as_ref()) {
+        eprintln!("hail: warning: {w}");
+    }
     let mail = route::mail(ctx, &a.target, panes.as_ref(), tmux.as_ref())?;
     check_state(ctx, a, &sender)?;
     // An fyi never interrupts a seat whose hooks run: it rides in with the
     // recipient's next prompt. Where hooks have not run, typing is the only
     // way it would be seen, so it is typed as before.
-    let quiet = a.kind == Kind::Fyi && ctx.store.mailbox(&mail.to).hooked_within(QUIET_HOOKS_SEEN);
+    let hooked = ctx.store.mailbox(&mail.to).hooked_within(QUIET_HOOKS_SEEN);
+    let quiet = a.kind == Kind::Fyi && hooked;
     let wake_pane = mail.wake.as_ref().filter(|_| a.delivery.wake && !quiet);
     if let (Some(t), Some(p), false) = (&tmux, wake_pane, a.delivery.force) {
         transport::guard_dialog(t, p)?;
@@ -155,11 +159,30 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         .then(|| wake(tmux.as_ref(), wake_pane, &envelope, a.delivery, &mail))
         .flatten();
 
-    Ok(report(&id, quiet, &mail.to, not_woken))
+    let unread_where = (!hooked).then(|| {
+        ctx.store
+            .seat_root(mail.to.seat())
+            .map_or_else(|| "its seat".into(), |r| r.display().to_string())
+    });
+    Ok(report(
+        &id,
+        quiet,
+        &mail.to,
+        not_woken,
+        unread_where.as_deref(),
+    ))
 }
 
 /// Tell the sender what happened: the id, and how the recipient will see it.
-fn report(id: &Id, quiet: bool, to: &Addr, not_woken: Option<String>) -> u8 {
+/// `unread_where` is set when no hook has read the mailbox lately: then
+/// nothing will deliver the message until someone runs `hail inbox` there.
+fn report(
+    id: &Id,
+    quiet: bool,
+    to: &Addr,
+    not_woken: Option<String>,
+    unread_where: Option<&str>,
+) -> u8 {
     outln!("id={id}");
     if quiet {
         eprintln!(
@@ -169,9 +192,14 @@ fn report(id: &Id, quiet: bool, to: &Addr, not_woken: Option<String>) -> u8 {
     let Some(reason) = not_woken else {
         return 0;
     };
-    eprintln!(
-        "hail: delivered to {to}'s inbox; not typed ({reason}); do not resend: it arrives on their next prompt"
-    );
+    match unread_where {
+        None => eprintln!(
+            "hail: delivered to {to}'s inbox; not typed ({reason}); do not resend: it arrives on their next prompt"
+        ),
+        Some(root) => eprintln!(
+            "hail: delivered to {to}'s inbox; not typed ({reason}). No hook has read {to} lately, so it waits until someone runs hail inbox in {root}. If its agent works from another directory, hail seats shows where; do not resend."
+        ),
+    }
     EXIT_NOT_WOKEN
 }
 

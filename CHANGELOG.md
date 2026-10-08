@@ -9,6 +9,15 @@ All notable changes to `hail` are documented in this file.
   gone: hail was coupled to another moving target for little gain. Post to
   your tracker yourself. `--bead` is accepted and ignored with a notice, and
   `hail note` says what to use instead, until 0.6.
+- **Exit 5 no longer promises what will not happen.** When no hook has read
+  the target mailbox lately, the send says the message waits until someone
+  runs `hail inbox` there, instead of "it arrives on their next prompt". On
+  ferry, 8 messages to a workspace whose agent ran elsewhere sat 1-3.5 h
+  (hail-2xl).
+- **A pane sending from another seat's directory is warned.** An agent that
+  `cd`s into a workspace signs as that seat, while its hooks still deliver to
+  the seat its session started in, so replies went where it never looked.
+  The send now warns and says where to run hail from (hail-xe9).
 
 ## v0.5.0 - 2026-10-07
 
