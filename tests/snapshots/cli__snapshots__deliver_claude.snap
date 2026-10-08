@@ -2,4 +2,4 @@
 source: tests/cli.rs
 expression: "stdout(&w.run(\"worker\", &[\"deliver\", \"--format\", \"claude\"]))"
 ---
-{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"from: boss\nreply: boss\nkind: fyi\nid: [id]\ntime: [time]\nask: status with a body\n\nline one\nline two"}}
+{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"[hail kind:ask from:boss reply:boss id:[id] scope:auth] review the auth change\n---\nfrom: boss\nreply: boss\nkind: fyi\nid: [id]\ntime: [time]\nask: status with a body\n\nline one\nline two"}}

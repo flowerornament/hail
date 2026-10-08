@@ -100,7 +100,8 @@ and triageable.
    failure is one warning.
 4. The recipient's prompt hook (`hail deliver`) claims the body and puts it in
    context; without hooks, `hail inbox` does the same as tool output.
-5. The claim is the receipt: `cur/<id>.<how>.md`, mtime = when.
+5. The claim is the receipt: `cur/<id>.<how>.md`, mtime = when. A body that
+   is only the headline is injected as its envelope line.
 6. Sender checks or waits on the receipt through the id index. Never reads the pane.
 
 What survives compaction on the recipient side: the envelope (≤400 chars).

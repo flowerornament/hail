@@ -641,7 +641,7 @@ s33() { # no agent in the seat: written to the inbox, not typed, exit 5, do not 
   return "$ok"
 }
 
-s34() { # no --body: envelope complete (no hint), file unread, deliver silent but receipts; --body: hint + delivered once
+s34() { # no --body: envelope complete (no hint), file unread, deliver repeats the envelope line and receipts; --body: hint + delivered once
   local ok=0 a b line out
   send "$SENDER" worker "headline is the whole message" --kind ask; a=$(last_id)
   line=$(envelope_line "id:$a")
@@ -651,7 +651,7 @@ s34() { # no --body: envelope complete (no hint), file unread, deliver silent bu
   expect "sent -> delivered" eq "$(as "$SENDER" sent "$a")" delivered || ok=1
   expect "obligation recorded" exists "$SEATS/worker/owed/$a" || ok=1
   out=$(as "$RECV" deliver --format codex); RC=$?
-  expect "deliver prints nothing" empty "$out" || ok=1
+  expect "deliver repeats the envelope line" contains "$out" "$line" || ok=1
   expect "deliver rc=0" eq "$RC" 0 || ok=1
   expect "receipt injected" exists "$SEATS/worker/cur/$a.injected.md" || ok=1
   expect "sent -> injected" re "$(as "$SENDER" sent "$a")" '^injected [0-9]{4}-.*Z$' || ok=1
@@ -729,7 +729,7 @@ s35() { # --body literal text; over-cap headline folds into the body
   reset_sender; reset_recv; return "$ok"
 }
 
-scenario 34 "no --body: complete envelope, silent deliver with receipt; --body delivered once" s34
+scenario 34 "no --body: complete envelope, deliver repeats it with receipt; --body delivered once" s34
 scenario 35 "--body literal text; over-cap refusal names --body" s35
 scenario 36 "show <id>: one body by id, no receipt; missing id and missing --kind name it" s36
 

@@ -4,6 +4,13 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+- **Fixed: a headline-only message that was never typed was lost.** The
+  prompt hook assumed every message without a body had been typed into the
+  pane, so mail to a seat with no agent pane (or one held at a dialog, or not
+  confirmed) was marked `injected` and never shown. The hook now injects
+  every headline-only message as its envelope line. Lost since 0.4.0
+  (hail-2en).
+
 ## v0.4.0 - 2026-10-07
 
 hail is now one Rust binary. The envelope, kinds and receipts an agent sees

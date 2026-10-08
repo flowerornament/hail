@@ -86,8 +86,8 @@ impl Message {
         Self { headers, body }
     }
 
-    /// True when the body is just the headline: the recipient already has it
-    /// in the envelope, so a hook injects nothing for it.
+    /// True when the body is just the headline, so a typed envelope already
+    /// carried all of it.
     pub fn body_is_headline(&self) -> bool {
         self.get("ask") == Some(self.body.as_str())
     }

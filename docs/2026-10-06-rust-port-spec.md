@@ -185,7 +185,7 @@ The message is durable before anything is typed. A failed wake leaves a delivera
 1. For each entry, `rename(new/<id>.md → cur/<id>.<how>.md)`.
 2. ENOENT means another claimer won: skip it.
 3. After the rename, set the mtime to now.
-4. Emit.
+4. Emit. A message whose body is just its headline is emitted as its one-line envelope, typed or not: the composer can lose typed text (a dialog, a cleared prompt), and a repeated line costs less than a lost message. *(Amended 2026-10-08, hail-2en: the hook used to emit nothing for these, assuming the envelope had been typed, so untyped ones were marked injected and never shown. A typed-marker design was rejected in review: the marker proves Enter was pressed, not that the text arrived.)*
 5. If emitting fails (stdout closed, the hook was killed before the write finished), rename it back to `new/`. Delivery is at least once, under one id. The claim is never doubled.
 
 A crash between the rename and the mtime update leaves the send time as the receipt time. That is harmless, because it is earlier, never later.

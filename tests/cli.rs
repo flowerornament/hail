@@ -103,6 +103,20 @@ fn send_deliver_receipt() {
 }
 
 #[test]
+fn a_headline_only_message_goes_in_as_its_envelope() {
+    // hail-2en: the hook used to treat every headline-only message as already
+    // typed, so mail to a seat with no pane was marked injected and never shown.
+    let w = World::new();
+    let id = w.send("the build is green");
+    let d = stdout(&w.run("worker", &["deliver"]));
+    assert_eq!(
+        d.trim(),
+        format!("[hail kind:fyi from:boss reply:boss id:{id}] the build is green")
+    );
+    assert!(stdout(&w.run("boss", &["sent", &id])).starts_with("injected "));
+}
+
+#[test]
 fn a_closed_stdout_gives_the_mail_back() {
     let w = World::new();
     let id = w.send("before the crash");

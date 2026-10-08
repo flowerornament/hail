@@ -8,6 +8,7 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use crate::ctx::Ctx;
+use crate::envelope::{self, Head, Kind};
 use crate::error::{Error, Result};
 use crate::hooks;
 use crate::policy::{DELIVER_BODIES, DELIVER_BYTES};
@@ -50,11 +51,17 @@ fn deliver_inner(ctx: &Ctx, format: Option<&str>) -> Result<()> {
             let Some(text) = claims.claim(addr, &id)? else {
                 continue;
             };
-            // A headline-only message is already in the prompt: receipt, no text.
-            if !Message::parse(&text).body_is_headline() {
-                bytes += text.len();
-                parts.push(text.trim_end_matches('\n').to_string());
-            }
+            let msg = Message::parse(&text);
+            // A headline-only message goes in as its envelope line, whether or
+            // not the envelope was typed: the composer can lose typed text (a
+            // dialog, a cleared prompt), and a repeated line costs less than
+            // a lost message.
+            let text = match envelope_line(&msg) {
+                Some(line) if msg.body_is_headline() => line,
+                _ => text.trim_end_matches('\n').to_string(),
+            };
+            bytes += text.len();
+            parts.push(text);
         }
     }
     if parts.is_empty() {
@@ -77,6 +84,20 @@ fn deliver_inner(ctx: &Ctx, format: Option<&str>) -> Result<()> {
         claims.keep();
     }
     Ok(())
+}
+
+/// The one-line envelope a message was (or would have been) typed as.
+fn envelope_line(m: &Message) -> Option<String> {
+    let head = Head {
+        kind: Kind::parse(m.get("kind")?)?,
+        from: m.get("from")?,
+        reply: m.get("reply")?,
+        id: m.get("id")?,
+        bead: m.get("bead"),
+        re: m.get("re"),
+        scope: m.get("scope"),
+    };
+    Some(envelope::render(&head, m.get("ask")?, false))
 }
 
 /// The claims one delivery made. Dropped without [`Claims::keep`] (an error,
