@@ -4,12 +4,20 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.4.1 - 2026-10-07
+
+Two data fixes; nothing else changes.
+
 - **Fixed: a headline-only message that was never typed was lost.** The
   prompt hook assumed every message without a body had been typed into the
   pane, so mail to a seat with no agent pane (or one held at a dialog, or not
   confirmed) was marked `injected` and never shown. The hook now injects
   every headline-only message as its envelope line. Lost since 0.4.0
   (hail-2en).
+- **Fixed: a target of `..` wrote mail outside the store.** `hail .. fyi x`
+  wrote `state/hail/new/<id>.md`, and `../..` wrote above it. An address part
+  that is empty, `.` or `..`, or holds `/` or NUL, is now refused (exit 1),
+  and so is `HAIL_SEAT=..` (exit 3) (hail-cr9).
 
 ## v0.4.0 - 2026-10-07
 
