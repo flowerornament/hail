@@ -412,6 +412,7 @@ fn hail_seat_cannot_name_a_directory_outside_the_store() {
 
 /// A `bd` that records its directory, arguments and comment file, and prints
 /// a comment id; or, with `fail`, an error. Nothing reaches a real tracker.
+/// Shell builtins only: the Nix build sandbox has no `/usr/bin`.
 fn fake_bd(w: &World, fail: bool) -> PathBuf {
     let bin = w.root.join("fakebin");
     fs::create_dir_all(&bin).unwrap();
@@ -420,7 +421,7 @@ fn fake_bd(w: &World, fail: bool) -> PathBuf {
         "#!/bin/sh\necho 'Error: issue not found' >&2\nexit 1\n".to_string()
     } else {
         format!(
-            "#!/bin/sh\n{{ pwd; echo \"$@\"; cat \"$4\"; }} > '{}'\necho '{{\"id\": 7}}'\n",
+            "#!/bin/sh\n{{ pwd; echo \"$@\"; while IFS= read -r l; do echo \"$l\"; done < \"$4\"; }} > '{}'\necho '{{\"id\": 7}}'\n",
             log.display()
         )
     };
