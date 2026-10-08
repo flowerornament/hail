@@ -1,6 +1,8 @@
 # hail 0.4: the Rust port (spec)
 
-Status: reviewed 2026-10-07 (%28: approve with three blockers, all taken; see §16), ready to build. It replaces `bin/hail` (bash, 1521 lines at 0.3.9) with one Rust binary. It applies slices S1 (seat identity) and S2 (Maildir claim) of `2026-09-30-simplification-study.md`, and keeps everything an agent sees today working. This spec draws on the study, its 2026-10-06 revision, and a census of `~/.local/state/hail` on 2026-10-06.
+Status: reviewed 2026-10-07 (approved with three blockers, all taken; see §16) and shipped as 0.4.0. It replaces `bin/hail` (bash, about 1,500 lines at 0.3.9) with one Rust binary, and keeps everything an agent sees working.
+
+An earlier study of 0.3's failures named five slices of work: **S1** identity from the workspace directory, **S2** a Maildir store with an atomic claim, **S3** waking an agent without typing the message, **S4** moving holds and obligations out of hail, and **S5** workflow integration. This spec builds S1 and S2; the others are referred to by name below.
 
 ## 1. What 0.4 is, and what it is not
 
@@ -12,25 +14,25 @@ Status: reviewed 2026-10-07 (%28: approve with three blockers, all taken; see §
 
 **It is not:**
 - *Waking agents without typing (S3).* The envelope is still typed into the pane. The transport sits behind one module, so S3 can replace it in 0.5 once Codex's `PostToolUse`/`Stop` hooks are proven.
-- *Moving holds and obligations to bd (S4).* That needs `just land` changes in other repos. 0.4 keeps both in hail, bounded (§6.6).
+- *Moving holds and obligations out of hail (S4).* That needs changes in the workflow tools around it. 0.4 keeps both in hail, bounded (§6.6).
 
 ## 2. A year from now
 
 These are the conditions the design has to survive:
 
-1. **More seats, more harnesses.** Today there are about 30 seats and 2 harnesses. A year from now, expect 50 or more and 3 or more, and harness internals keep changing. 0.3.7 broke because the Codex app-server moved in the process tree. *So identity depends only on the directory the agent works in, which hail controls through the workspace layout.*
-2. **Volume.** Today about 6,700 messages and 1,500 obligations a week, with 144 MB of state after a month. That is about 350,000 messages a year. *So every hot path is O(1) or O(new), never O(history): an id index, no scans over read mail, bounded briefs, and a `gc` verb.*
+1. **More seats, more harnesses.** Today a busy machine runs a few dozen seats on two harnesses. A year from now, expect more of both, and harness internals keep changing. 0.3.7 broke because the Codex app-server moved in the process tree. *So identity depends only on the directory the agent works in, which hail controls through the workspace layout.*
+2. **Volume.** A busy machine sends thousands of messages a week, and its state grew past a hundred megabytes in a month. That is hundreds of thousands of messages a year. *So every hot path is O(1) or O(new), never O(history): an id index, no scans over read mail, bounded briefs, and a `gc` verb.*
 3. **The protocol outlives the transport.** Typing into tmux panes is the weakest part. Hooks are getting richer, and Claude Code already exposes a messaging socket. *So the transport is a seam: envelope, store and receipts do not know about tmux.*
-4. **Agents are the users.** They read the skill once per session, copy examples, and route around anything that fails. Examples are the 305 `tmux run-shell` workarounds and the `--force` habit. *So there are few verbs with few options, examples that work verbatim, and errors that name the fix. A guard that misfires is worse than no guard.*
+4. **Agents are the users.** They read the skill once per session, copy examples, and route around anything that fails. Examples are agents wrapping hail in `tmux run-shell` hundreds of times, and the habit of passing `--force`. *So there are few verbs with few options, examples that work verbatim, and errors that name the fix. A guard that misfires is worse than no guard.*
 5. **Bash is retired.** The tool must stay maintainable by a different agent each week. *So it has small modules with pure cores, unit tests beside the code, and one dependency per real need.*
 
 ## 3. Decisions at a glance
 
 | # | decision | why |
 |---|---|---|
-| D1 | A **seat** is the basename of the jj workspace root, else the git root, else the directory holding a `.hail-seat` file (whose content names the seat). It comes from the process's working directory only. | It is the only fact that survives the Codex daemon. It equals today's labels, which seat.sh already derives the same way. |
-| D2 | A directory holding more than one agent pane is a **shared seat**. Each Claude pane in it gets a checked sub-seat `<seat>@<pane>`. Sends to the bare shared seat are refused, with the sub-seats listed (exit 3). | Today three directories hold several agents (`peat`, `hail`, `.nix-config`). A shared mailbox would be drained by whichever agent prompts first: misdelivery with a receipt that says "injected". |
-| D3 | Store: `seats/<seat>/{tmp,new,cur}`. The claim is `rename(new → cur)`. The receipt is the claimed file: its name says how it was claimed, and its mtime says when. | One claimer wins, so there is no double injection (m65jq). The receipt cannot exist before the claim. |
+| D1 | A **seat** is the basename of the jj workspace root, else the git root, else the directory holding a `.hail-seat` file (whose content names the seat). It comes from the process's working directory only. | It is the only fact that survives the Codex daemon. It matches how workspace launchers already name seats. |
+| D2 | A directory holding more than one agent pane is a **shared seat**. Each Claude pane in it gets a checked sub-seat `<seat>@<pane>`. Sends to the bare shared seat are refused, with the sub-seats listed (exit 3). | In practice, several directories held more than one agent. A shared mailbox would be drained by whichever agent prompts first: misdelivery with a receipt that says "injected". |
+| D3 | Store: `seats/<seat>/{tmp,new,cur}`. The claim is `rename(new → cur)`. The receipt is the claimed file: its name says how it was claimed, and its mtime says when. | One claimer wins, so a body is never injected twice. The receipt cannot exist before the claim. |
 | D4 | `ids/<id>` is a symlink to the seat name, created exclusively. | Lookups take O(1) stats. Id uniqueness holds under any concurrency, and ids may keep their short format. |
 | D5 | Send takes the body from stdin; the headline is the first line. The legacy `--kind`/`--body` form is still accepted. | It removes the sender-shell class: backticks, `$()` and apostrophes. It is one action per send. |
 | D6 | Send needs no prior `hail read`. `type` and `keys` still do. | Sending to a seat is not driving a pane. The guard cost one call and one pane read per message, which DESIGN.md set out to remove. |
@@ -64,14 +66,14 @@ hail help [topic]  ·  hail --version
 The canonical form:
 
 ```bash
-hail murail-1b ask <<'EOF'
+hail api-1b ask <<'EOF'
 Review src/auth.ts before the merge; reply done with your verdict
 The refresh path is in auth/refresh.rs:40-120. Coverage report: /tmp/cov.txt
 EOF
 ```
 
 **Headline and body:**
-- With a positional headline (`hail murail-1b fyi 'gate green'`), stdin is never read and there is no body. An agent's tool runner often leaves stdin as an open pipe that never reaches EOF, so reading it could hang a send forever.
+- With a positional headline (`hail api-1b fyi 'gate green'`), stdin is never read and there is no body. An agent's tool runner often leaves stdin as an open pipe that never reaches EOF, so reading it could hang a send forever.
 - Without one, stdin is read only when data arrives within 50 ms (the hooks' test, §8), then to EOF. The first line is the headline and the rest is the body. One blank line between them is customary and stripped. With no data: exit 1, `no headline: pass it as an argument or on stdin (heredoc)`.
 - Control characters (C0 and C1, ESC especially) are stripped from the headline before it is typed. The body file keeps every byte.
 - A headline over `HAIL_ENVELOPE_MAX` (400) is folded at a sentence boundary into the body, as in 0.3. A control kind over the cap is refused (exit 2).
@@ -80,20 +82,20 @@ EOF
 **Legacy form, accepted for all of 0.4:** `hail <target> '<headline>' --kind k [--body X]` and the `send|message|msg` prefixes. It is recognised by `--kind` being present. `--body X` keeps 0.3's meaning exactly: `-` is stdin, an existing readable file is read, anything else is literal text. It prints no deprecation noise, because agents learn from the skill and not from warnings.
 
 **Targets:**
-- A seat name, which is the normal case, or a sub-seat (`hail@%28`).
+- A seat name, which is the normal case, or a sub-seat (`api-1a@%3`).
 - A pane id or tmux target (`%7`, `sess:1.2`), which resolves to the seat of that pane's directory, or to the pane's sub-seat when the directory is shared. Replies to 0.3 envelopes (`reply:%N`) keep working this way.
-- A bare shared seat is refused (exit 3): `seat hail has 2 agents: hail@%26 hail@%28; address one`.
+- A bare shared seat is refused (exit 3): `seat api-1a has 2 agents: api-1a@%2 api-1a@%3; address one`.
 - `seat/%N`, the form `from:` prints: the pane `%N`, resolved as above and checked to be in that seat (exit 3 otherwise), so a `from:` value can be pasted as a target.
 - `seat/name` (also `seat@%N/name`): a sub-agent. The message goes to the parent's mailbox with a `for: name` header and `for:name` in the envelope, and the parent relays it. `--as <name>` signs a send as `<mailbox>/<name>` in `from:` and `reply:`. Sub-agents have no mailbox of their own (quiet-mail design §2).
 - The target is parsed at one boundary (`seat::Address`): `/` is split first, then `@`, and every part must name exactly one directory entry. An empty part, `.`, `..`, `/` or NUL is refused (exit 1).
-- An unknown seat is an error that lists the near names (exit 1). One whose prefix is a known seat plus `-`, `_` or `.` also suggests the sub-agent address: `send to murail-2b/recip-consumer (its parent relays)`.
+- An unknown seat is an error that lists the near names (exit 1). One whose prefix is a known seat plus `-`, `_` or `.` also suggests the sub-agent address: `send to web-1b/scout (its parent relays)`.
 
 **Quiet `fyi` (0.5, docs/2026-10-08-quiet-mail-design.md §1):** an `fyi` is not typed when the recipient mailbox's `hooked` file (touched by every `deliver`) is under 7 days old. It arrives with the recipient's next prompt, exits 0, prints `quiet: arrives with <seat>'s next prompt` on stderr, and writes no pending record. Every other kind types as before, and so does an `fyi` to a mailbox whose hooks have not run.
 
 **Output:**
 - `id=<id>` on stdout, on exit 0 and on exit 5.
-- On exit 5, stderr says `delivered to <seat>'s inbox; not typed (<reason>); do not resend; it arrives on their next prompt`. *(Amended 0.5.1, hail-2xl:)* when the mailbox has no `hooked` mark from the last 7 days, it says instead that no hook reads it, so it waits until someone runs `hail inbox` in the seat's root, and points to `hail seats`.
-- *(0.5.1, hail-xe9)* When the sending pane is a Claude pane whose own directory is another seat, stderr warns that replies to the sending seat will not reach that pane. A warning only: the working directory still decides who sends.
+- On exit 5, stderr says `delivered to <seat>'s inbox; not typed (<reason>); do not resend; it arrives on their next prompt`. *(Amended 0.5.1:)* when the mailbox has no `hooked` mark from the last 7 days, it says instead that no hook reads it, so it waits until someone runs `hail inbox` in the seat's root, and points to `hail seats`.
+- *(0.5.1)* When the sending pane is a Claude pane whose own directory is another seat, stderr warns that replies to the sending seat will not reach that pane. A warning only: the working directory still decides who sends.
 - Warnings go to stderr, one line each, and say what to do.
 
 ### 4.3 The envelope (unchanged in form)
@@ -119,7 +121,7 @@ Exit 5 is new. Today these cases die with exit 1 after the message is written, w
 
 ### 4.5 Retired verbs (shims for 0.4, removed in 0.5)
 
-- `name <target> <label>`: exits 0 and prints `hail: labels are gone; <pane> is seat <seat> (from its directory)`. seat.sh calls it, and it must not fail a hook.
+- `name <target> <label>`: exits 0 and prints `hail: labels are gone; <pane> is seat <seat> (from its directory)`. Workspace launchers call it from a SessionStart hook, and it must not fail one.
 - `hello`: prints the seat.
 - `who [seat]`: the `seats` row for that seat.
 - `resolve <seat>`: prints the wake pane.
@@ -147,7 +149,7 @@ seat_of(dir):  walk up from dir, stopping before $HOME (never a seat itself);
 - **self:** `seat_of(cwd)`. `HAIL_SEAT` is honoured only when it equals `seat_of(cwd)` or `cwd` has no seat. It cannot override a seat the directory states, so a stale inherited variable is harmless.
 - **target pane for a seat:** from one `tmux list-panes -a -F '#{pane_id}\t#{pane_current_path}\t#{pane_current_command}\t#{pane_in_mode}\t#{pane_pid}'`, map each pane's path through `seat_of` (memoised per path), keep the panes in the seat, and prefer the one whose command is an agent (`claude`, `codex`, `node`; configurable later). One agent pane is the wake target. Zero means no wake, exit 5. Two or more makes a shared seat (above).
 - **sender's own pane, for `from:`:** the sub-seat's pane, or the pane in the sender's seat when there is exactly one agent pane there, else omitted. No process tree is consulted anywhere.
-- **Where Codex runs commands and hooks (verified 2026-10-06):** a Codex exec runs in the session's workspace (lsof: pid 37800 under the app-server, cwd `murail-1b`). Codex's SessionStart hook derived the right name from `jj workspace root` in seat.sh, so hooks run there too. `doctor` re-checks this per seat.
+- **Where Codex runs commands and hooks (verified 2026-10-06):** a Codex exec runs in the session's workspace, as `lsof` on an exec under the app-server shows, and a SessionStart hook calling `jj workspace root` derived the right name, so hooks run there too. `doctor` re-checks this per seat.
 
 **Accepted cost:** an agent that runs `cd ../other-seat && hail …` signs as the other seat. The skill says to run hail from your workspace. `whoami` shows the seat, so an agent can check its identity instead of inventing a workaround.
 
@@ -191,7 +193,7 @@ The message is durable before anything is typed. A failed wake leaves a delivera
 1. For each entry, `rename(new/<id>.md → cur/<id>.<how>.md)`.
 2. ENOENT means another claimer won: skip it.
 3. After the rename, set the mtime to now.
-4. Emit. A message whose body is just its headline is emitted as its one-line envelope, typed or not: the composer can lose typed text (a dialog, a cleared prompt), and a repeated line costs less than a lost message. *(Amended 2026-10-08, hail-2en: the hook used to emit nothing for these, assuming the envelope had been typed, so untyped ones were marked injected and never shown. A typed-marker design was rejected in review: the marker proves Enter was pressed, not that the text arrived.)*
+4. Emit. A message whose body is just its headline is emitted as its one-line envelope, typed or not: the composer can lose typed text (a dialog, a cleared prompt), and a repeated line costs less than a lost message. *(Amended 2026-10-08: the hook used to emit nothing for these, assuming the envelope had been typed, so untyped ones were marked injected and never shown. A typed-marker design was rejected in review: the marker proves Enter was pressed, not that the text arrived.)*
 5. If emitting fails (stdout closed, the hook was killed before the write finished), rename it back to `new/`. Delivery is at least once, under one id. The claim is never doubled.
 
 A crash between the rename and the mtime update leaves the send time as the receipt time. That is harmless, because it is earlier, never later.
@@ -221,7 +223,7 @@ New bounds, in `brief` only. Obligations never expire: hiding a live ruling by a
 
 *(Amended for 0.5, docs/2026-10-08-quiet-mail-design.md §3.)* Holds and blocks do lapse, because tools now serialize what holds were used for (landing, installs, timing). `hold` and `block` take `--for <span>` (default 8h for a hold, 7d for a block, at most 7d); the record carries `expires:` and the envelope `until:`. A record without `expires:` lapses at `time:` plus its kind's default. Lapse is a read-time filter: every reader agrees and none deletes. The issuer's own `brief` moves its lapsed holds to `holds/lapsed/` and says so once; `release` finds a hold there and says it had lapsed. `gc` deletes holds that lapsed more than `--days` ago, and lapsed ones whose issuer has no mailbox.
 - `brief` shows at most 5 obligations and 5 holds, newest first, then `… N more, oldest Nd (hail brief --all)`.
-- The 376 obligations on `%1` are an artefact of pane keys. Migration moves them out of every live seat (§11.1).
+- Obligations keyed by pane id are artefacts of 0.3's identity bug. Migration moves them out of every live seat (§11.1).
 
 Closing stays explicit (`done --re`). A reply of another kind with `--re` does not close an obligation, because progress `fyi`s carry `--re` too.
 
@@ -241,7 +243,7 @@ Closing stays explicit (`done --re`). A reply of another kind with `--re` does n
 1. `list-panes` (one call) resolves the wake pane and its mode.
 2. **Dialog guard:** `capture-pane`, last 8 non-blank lines, matched against the structural patterns of 0.3.9. These are a const table in `transport/dialog.rs`, with each harness's strings and the version they were taken from. `--force` skips it.
 3. **Leave copy mode and type, in one tmux call:** `send-keys -X cancel ; send-keys -l -- <envelope>`, with the cancel only if the pane is in a mode.
-4. **Verify:** poll `capture-pane` every 25 ms for up to 10 s for the envelope's `id:<id>` token, whitespace removed so a wrapped line still matches. Seeing it proves the agent has read the text, so Enter is read in a later batch; Codex treats an Enter read together with typed text as a pasted newline and leaves the envelope in the composer. The probe must be unique to this send: the opening characters repeat in every envelope from one seat, and an earlier one on screen matched before the new text was read (hail-lha). It never retypes.
+4. **Verify:** poll `capture-pane` every 25 ms for up to 10 s for the envelope's `id:<id>` token, whitespace removed so a wrapped line still matches. Seeing it proves the agent has read the text, so Enter is read in a later batch; Codex treats an Enter read together with typed text as a pasted newline and leaves the envelope in the composer. The probe must be unique to this send: the opening characters repeat in every envelope from one seat, and an earlier one on screen matched before the new text was read. It never retypes.
 5. **Submit:** wait, then `send-keys Enter`. The wait exists for paste-burst detection after the text has rendered, so a faster verify does not shorten it. It is 300 ms in 0.4, one named constant per harness in `transport/` (`SUBMIT_DELAY`).
 
    **Trial before lowering:** 100, 150 and 200 ms, in Claude and Codex panes, idle and loaded, 200 sends each, counting envelopes left unsubmitted. Lower it only at zero misses.
@@ -288,7 +290,7 @@ Budgets are measured with `hyperfine --warmup 5` on the dev machine, idle, and e
 
 | path | 0.3 (bash) | 0.4 budget |
 |---|---|---|
-| `deliver`, empty inbox | about 15 ms idle; 70–83 ms at load 170 | **< 2 ms** |
+| `deliver`, empty inbox | about 15 ms idle; 70–83 ms under heavy load | **< 2 ms** |
 | `brief`, typical | about 40 ms | **< 3 ms** |
 | `sent`, `show`, `whoami` | 10–20 ms | **< 2 ms** (`whoami` reports the seat only; `seats` shows panes) |
 | `send`, wall clock to Enter | about 0.6–2.5 s | **≤ 400 ms**, dominated by the 300 ms submit wait; the tool's own work is < 20 ms |
@@ -338,7 +340,7 @@ src/
 - **No `unwrap()` outside tests,** enforced by clippy (`unwrap_used`, `expect_used` = deny in `src/`).
 - **No `unsafe`** (`#![forbid(unsafe_code)]`). Nothing needs it now that there is no process-tree walk.
 - **Time:** `jiff::Timestamp` everywhere. Formats live in one place (`message.rs`).
-- **Comments say why,** in the style of the bash comments (incident ids where they explain a rule: m65jq, 4vc8v, b6mzr).
+- **Comments say why,** stating the rule and, where an incident explains it, what went wrong, in a plain clause.
 
 ### 10.3 Crates
 
@@ -364,7 +366,7 @@ Not used, on purpose:
 
 ### 11.1 Migration (`hail migrate`, explicit, once)
 
-Migration is a step of its own, not a side effect. The first command after an upgrade is usually a hook, and importing about 11,000 files there risks the hook timeout and a killed import holding the lock.
+Migration is a step of its own, not a side effect. The first command after an upgrade is usually a hook, and importing a store of thousands of files there risks the hook timeout and a killed import holding the lock.
 - **Until it runs:** hooks are silent, and every other verb exits 1 with `run: hail migrate`.
 - **The lock:** `state/.migrate.lock` holds a pid and a start time, and is taken over when that pid is gone.
 
@@ -375,7 +377,7 @@ Migration is a step of its own, not a side effect. The first command after an up
 
 **Keys:**
 - A key that is a seat name stays.
-- A pane-id key (`%14`) that is a live pane maps to `seat_of(pane_current_path)`, or to its sub-seat when that directory is shared. Unread mail lands where the agent will read it: today `%14` has 6 unread, `%17` 2, `%28` 1.
+- A pane-id key (`%14`) that is a live pane maps to `seat_of(pane_current_path)`, or to its sub-seat when that directory is shared. Unread mail lands where the agent will read it.
 - A pane-id key whose pane is gone goes to `seats/legacy-%1/`, reachable by `show` and `sent` but never delivered.
 
 **State:**
@@ -389,8 +391,8 @@ Migration is a step of its own, not a side effect. The first command after an up
 ### 11.2 Rollout
 
 1. **Build in the repo, beside `bin/hail`.** `test/run.sh` takes `HAIL_BIN`. The scenarios that survive (the mapping is in §12) pass against the Rust binary.
-2. **Shadow week on this machine.** `hail-next` is installed beside `hail`. Agents keep using 0.3. A parity script replays a copy of the state through both binaries' read-only verbs (`sent`, `show`, `brief`) and diffs the output.
-3. **Cutover.** Release 0.4.0, run `nx upgrade hail`, then `hail migrate`. The skill updates in the same release. Between the two commands, hooks stay silent and sends wait (§11.1).
+2. **Shadow week.** `hail-next` is installed beside `hail`. Agents keep using 0.3. A parity script replays a copy of the state through both binaries' read-only verbs (`sent`, `show`, `brief`) and diffs the output.
+3. **Cutover.** Release 0.4.0, upgrade the installed binary, then run `hail migrate`. The skill updates in the same release. Between the two commands, hooks stay silent and sends wait (§11.1).
 4. **Rollback.** `hail migrate --revert` restores `archive/0.3/`. Mail sent under 0.4 since the cutover is copied into `inbox/<seat>/` in the 0.3 format.
 5. **0.5.** Remove the shims and `migrate.rs`. Start S3.
 
@@ -437,7 +439,7 @@ Migration is a step of its own, not a side effect. The first command after an up
 **Docs:**
 - `README.md`: install, setup, and a 10-line tour.
 - `DESIGN.md`: updated for seats and the Maildir store.
-- `docs/` keeps the studies.
+- `docs/` keeps the design records.
 - `skills/hail/SKILL.md` rewritten for 0.4. It is shorter, because the identity section shrinks to `whoami` and the send example is the heredoc. The skill carries `version: 0.4.x` in its front matter, so `doctor` can flag a stale link.
 - `hail help <topic>` pages are generated from the same text the skill quotes, so there is one source.
 
@@ -453,12 +455,12 @@ Migration is a step of its own, not a side effect. The first command after an up
 
 ## 15. What is new evidence in this spec
 
-- **seat.sh has the same lookup bug.** murail's `scripts/seat.sh` resolves its pane with the same ancestor walk, so every Codex seat start renamed `%2` (herald-1b's pane). That is the "label on `%2` flips back to murail-2b" in herald-b6mzr. Under 0.4, seat.sh's `hail name` call becomes a no-op. Its `select-pane -T` (the pane title) still mislabels until seat.sh is fixed. That is a murail change: the fix is to drop the ancestor walk and use the single pane whose path is the workspace root.
-- **Environment variables are not identity.** A Codex launched from a Claude pane inherits `CLAUDE_*` (seat.sh documents this), and Codex commands inherit the daemon's `TMUX_PANE`. Only the working directory is reliable for both harnesses.
+- **Launchers have the same lookup bug.** A workspace launcher that labels its pane by walking the process tree finds the Codex daemon's pane, not its own, so every Codex session start relabelled one unrelated pane. Under 0.4, a launcher's `hail name` call is a no-op, but a `select-pane -T` title still mislabels. The fix belongs in the launcher: use the single pane whose path is the workspace root.
+- **Environment variables are not identity.** A Codex launched from a Claude pane inherits `CLAUDE_*`, and Codex commands inherit the daemon's `TMUX_PANE`. Only the working directory is reliable for both harnesses.
 
 ## 16. Review record
 
-Reviewed by the Claude session in `%28`, 2026-10-07 (message 1007T053740-630c). Its verdict: approve, with blockers on Q1, on stdin handling for send (B1) and on when migration runs (B2), plus unread pane-keyed mail (B3). It also raised six should-fixes: seat-name collisions, `seat_of` edge cases, where Codex runs hooks, exit 5 wording, control characters in headlines, and the legacy `--body` meaning. All of it is taken except one suggestion: closing an obligation on any `--re` reply (§6.6 says why).
+Reviewed 2026-10-07. The verdict: approve, with blockers on Q1, on stdin handling for send (B1) and on when migration runs (B2), plus unread pane-keyed mail (B3). It also raised six should-fixes: seat-name collisions, `seat_of` edge cases, where Codex runs hooks, exit 5 wording, control characters in headlines, and the legacy `--body` meaning. All of it is taken except one suggestion: closing an obligation on any `--re` reply (§6.6 says why).
 
 ## 17. Implementation notes (2026-10-07)
 
@@ -475,25 +477,25 @@ Where the code differs from the text above, and why:
   the message in its inbox, with exit 5. Typing an envelope into a shell
   runs it as a command.
 - **Holds in the brief.** The brief shows holds sent to or by this seat in
-  full; others are one count line. On the real state, all 45 holds were sent
-  to one seat each, and every brief carried five unrelated ones.
+  full; others are one count line. In practice every hold was sent to one
+  seat, so every brief carried several unrelated ones.
 - **Migration of pane-keyed state.** Unread mail keyed by a live pane id
   goes to that pane's seat (B3). Obligations and pending sends keyed by a pane
-  id go to `legacy-%N`. On the real state these were 376 obligations on `%1`
-  and 300 on `%2`, artefacts of the 0.3 identity bug that would otherwise have
-  landed on herald-1a and herald-1b. A dry run on a copy of the real state
-  migrated 11,329 messages in 6 s.
+  id go to `legacy-%N`. On a real store these were hundreds of obligations on one pane key
+  and hundreds on another, artefacts of the 0.3 identity bug that would
+  otherwise have landed on whichever seats sit in those panes today. A dry run
+  on a copy of a real store migrated about 11,000 messages in 6 s.
 - **Closed stdout.** Rust reopens a closed fd 1 as `/dev/null` and reports
   every write as successful. `deliver` therefore claims nothing when stdout
   is closed or is `/dev/null`; a broken pipe still unclaims.
 - **Two Claude config directories.** `setup` and `doctor` cover
   `~/.claude/settings.json` and `$CLAUDE_CONFIG_DIR/settings.json` when they
-  differ. On this machine, sessions run with `CLAUDE_CONFIG_DIR=~/.claude-work`,
-  whose settings had no hail hooks, so their bodies were never injected.
+  differ. Sessions run with a `CLAUDE_CONFIG_DIR` whose settings lacked the
+  hail hooks never had their bodies injected.
 - **A seat is known** once it has a mailbox directory, or while a pane sits
   in it. A migrated seat with mail and no live pane still takes sends.
 
-### Implementation review (2026-10-07, %28, message 1007T062241-1b86)
+### Implementation review (2026-10-07)
 
 Four blockers, all fixed, each with a test:
 
@@ -548,7 +550,7 @@ comment number goes to the sender's stdout (`bead=<id> comment=<n>`), and the
 comment is posted after the wake, by which time the message may already be
 claimed.
 
-### Code-quality review (2026-10-07, %28, message 1007T074815-0fda)
+### Code-quality review (2026-10-07)
 
 The verdict was "yes, I would maintain it". Its items, all done before the release:
 - **Typed domain:**
