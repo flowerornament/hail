@@ -143,7 +143,9 @@ addressed <seat>/<name> through the parent, signs with --as <name>, and runs
 no verb that reads mail (inbox, deliver, brief): those take the parent's mail.
 
   whoami          This directory's seat and where it came from
-  seats [seat]    Every seat: agent panes, unread, open obligations, root
+  seats [seat]    Every seat: agent panes, unread, open obligations, how long
+                  ago a prompt hook read it (HOOK; - means nothing delivers
+                  its mail), root
   list            Every tmux pane: target, session, size, process, seat, cwd
 ";
 

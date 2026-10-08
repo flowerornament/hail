@@ -173,7 +173,7 @@ Labels are gone: a seat is named by its directory, and `hail name` is a no-op.
 
 ```bash
 hail whoami                                   # this directory's seat
-hail seats                                    # every seat: agent panes, unread, obligations, root
+hail seats                                    # every seat: agent panes, unread, obligations, last hook read, root
 
 # Send. The first line is the headline (the ask and the why); the rest is the body.
 hail api-1b ask <<'EOF'

@@ -575,3 +575,30 @@ fn exit_5_says_whether_anything_will_deliver_it() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("it arrives on their next prompt"), "{err}");
 }
+
+#[test]
+fn doctor_and_seats_show_mail_no_hook_will_deliver() {
+    let w = World::new();
+    w.send("waiting for nobody");
+    let doctor = stdout(&w.run("boss", &["doctor"]));
+    assert!(
+        doctor.contains("worker has 1 unread and no hook has read it lately"),
+        "{doctor}"
+    );
+    let seats = stdout(&w.run("boss", &["seats", "worker"]));
+    assert!(seats.lines().next().unwrap().contains("HOOK"), "{seats}");
+    assert!(seats.lines().nth(1).unwrap().contains(" - "), "{seats}");
+
+    // Once the worker's prompt hook runs, its mail is delivered and both
+    // views say so.
+    w.send("now someone reads");
+    assert!(
+        w.run("worker", &["deliver", "--format", "claude"])
+            .status
+            .success()
+    );
+    let doctor = stdout(&w.run("boss", &["doctor"]));
+    assert!(!doctor.contains("worker has"), "{doctor}");
+    let seats = stdout(&w.run("boss", &["seats", "worker"]));
+    assert!(seats.lines().nth(1).unwrap().contains("s "), "{seats}");
+}

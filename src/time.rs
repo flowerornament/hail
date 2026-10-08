@@ -52,6 +52,17 @@ pub fn before(ts: Timestamp, d: std::time::Duration) -> Timestamp {
         .unwrap_or(Timestamp::MIN)
 }
 
+/// How long ago `t` was, coarsely: `40s`, `12m`, `3h`, `9d`.
+pub fn ago(now: Timestamp, t: Timestamp) -> String {
+    let s = (now.as_second() - t.as_second()).max(0);
+    match s {
+        0..60 => format!("{s}s"),
+        60..3600 => format!("{}m", s / 60),
+        3600..86_400 => format!("{}h", s / 3600),
+        _ => format!("{}d", s / 86_400),
+    }
+}
+
 pub fn parse_iso(s: &str) -> Option<Timestamp> {
     s.trim().parse().ok()
 }
@@ -66,6 +77,17 @@ mod tests {
         assert_eq!(iso(ts), "2026-10-06T19:00:46Z");
         assert_eq!(id_stamp(ts), "1006T190046");
         assert_eq!(parse_iso("2026-10-06T19:00:46Z"), Some(ts));
+    }
+
+    #[test]
+    fn ages() {
+        let now: Timestamp = "2026-10-08T12:00:00Z".parse().unwrap();
+        let back = |s: i64| now - jiff::SignedDuration::from_secs(s);
+        assert_eq!(ago(now, back(5)), "5s");
+        assert_eq!(ago(now, back(125)), "2m");
+        assert_eq!(ago(now, back(3 * 3600)), "3h");
+        assert_eq!(ago(now, back(9 * 86_400)), "9d");
+        assert_eq!(ago(now, now + jiff::SignedDuration::from_secs(5)), "0s");
     }
 
     #[test]

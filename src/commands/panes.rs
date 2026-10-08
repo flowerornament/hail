@@ -10,6 +10,7 @@ use crate::error::{Error, Result};
 use crate::out::Table;
 use crate::route;
 use crate::seat::Addr;
+use crate::time;
 use crate::transport::agent::Agent;
 use crate::transport::pane_map::PaneMap;
 use crate::transport::tmux::{Pane, Tmux};
@@ -87,7 +88,8 @@ pub fn seats(ctx: &Ctx, only: Option<&str>) -> Result<u8> {
         }
     }
     let label = |p: &Pane| format!("{}:{}", p.id, p.agent.as_ref().map_or("-", Agent::name));
-    let mut t = Table::new(&["SEAT", "AGENTS", "UNREAD", "OWED", "ROOT"]);
+    let now = time::now();
+    let mut t = Table::new(&["SEAT", "AGENTS", "UNREAD", "OWED", "HOOK", "ROOT"]);
     for addr in addrs {
         let agents = match (&pm, &addr) {
             (Some(pm), Addr::Seat(seat)) => pm
@@ -110,6 +112,12 @@ pub fn seats(ctx: &Ctx, only: Option<&str>) -> Result<u8> {
             },
             ctx.store.mailbox(&addr).unread().len().to_string(),
             ctx.store.owed(&addr).len().to_string(),
+            // How long ago a prompt hook last read this mailbox: "-" means
+            // nothing delivers its mail until someone runs hail inbox there.
+            ctx.store
+                .mailbox(&addr)
+                .hooked_at()
+                .map_or_else(|| "-".into(), |t| time::ago(now, t)),
             ctx.store
                 .seat_root(addr.seat())
                 .map(|r| tilde(ctx, &r))

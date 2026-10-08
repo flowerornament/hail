@@ -1,7 +1,7 @@
 //! `hail doctor`: one line per check, and every problem names its fix.
 
 use crate::ctx::Ctx;
-use crate::policy::GC_DUE;
+use crate::policy::{GC_DUE, QUIET_HOOKS_SEEN};
 use crate::seat::{Addr, Seat};
 use crate::store::list_names;
 use crate::transport::pane_map::PaneMap;
@@ -50,6 +50,7 @@ pub fn run(ctx: &Ctx) -> u8 {
     checks.extend(tmux_checks(ctx, seat.ok().flatten().as_ref()));
     checks.extend(hook_checks());
     checks.extend(size_checks(ctx));
+    checks.extend(unread_checks(ctx));
 
     let mut problems = 0;
     for c in &checks {
@@ -105,23 +106,17 @@ fn tmux_checks(ctx: &Ctx, seat: Option<&Seat>) -> Vec<Check> {
     }
     // A sub-seat whose pane is gone is stranded; a seat no pane sits in is
     // normal for an agent that is off, and listed so nothing waits unseen.
-    let mut waiting = Vec::new();
+    // Unread mail in seats nobody's hook reads is unread_checks' job.
     for addr in ctx.store.mailboxes() {
         let unread = ctx.store.mailbox(&addr).unread().len();
-        match &addr {
-            _ if unread == 0 => {}
-            Addr::Sub { pane, .. } if pm.find(pane).is_none() => checks.push(Check::Fix(format!(
+        if let Addr::Sub { pane, .. } = &addr
+            && unread > 0
+            && pm.find(pane).is_none()
+        {
+            checks.push(Check::Fix(format!(
                 "orphaned sub-seat {addr} holds {unread} unread (its pane is gone): hail show <id> reads them"
-            ))),
-            Addr::Seat(seat) if pm.in_seat(seat).is_empty() => waiting.push(format!("{addr} ({unread})")),
-            _ => {}
+            )));
         }
-    }
-    if !waiting.is_empty() {
-        checks.push(Check::Note(format!(
-            "unread mail waits in seats with no pane now: {}",
-            waiting.join(", ")
-        )));
     }
     checks
 }
@@ -152,4 +147,47 @@ fn size_checks(ctx: &Ctx) -> Vec<Check> {
                 .then(|| Check::Fix(format!("seat {addr} keeps {n} read messages: run hail gc")))
         })
         .collect()
+}
+
+/// Unread mail that nothing will deliver: no prompt hook has read the mailbox
+/// lately, so it waits until someone runs `hail inbox` there. The usual cause
+/// is an agent whose session runs in another directory than the seat it was
+/// written to.
+fn unread_checks(ctx: &Ctx) -> Vec<Check> {
+    const SHOWN: usize = 8;
+    let mut stranded: Vec<(usize, Addr)> = ctx
+        .store
+        .mailboxes()
+        .into_iter()
+        .filter_map(|addr| {
+            let mb = ctx.store.mailbox(&addr);
+            let n = mb.unread().len();
+            (n > 0 && !mb.hooked_within(QUIET_HOOKS_SEEN)).then_some((n, addr))
+        })
+        .collect();
+    stranded.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    let mut checks: Vec<Check> = stranded
+        .iter()
+        .take(SHOWN)
+        .map(|(n, addr)| {
+            let root = ctx
+                .store
+                .seat_root(addr.seat())
+                .filter(|r| r.is_dir())
+                .map_or_else(|| "its directory, which is gone".into(), |r| r.display().to_string());
+            // A note, not a fault of this install: doctor still exits 0.
+            Check::Note(format!(
+                "{addr} has {n} unread and no hook has read it lately: if its agent works elsewhere, tell senders its address; else run hail inbox in {root}"
+            ))
+        })
+        .collect();
+    if stranded.len() > SHOWN {
+        let rest = &stranded[SHOWN..];
+        checks.push(Check::Note(format!(
+            "… {} more mailboxes with {} unread that no hook reads (hail seats: UNREAD and HOOK)",
+            rest.len(),
+            rest.iter().map(|(n, _)| n).sum::<usize>()
+        )));
+    }
+    checks
 }

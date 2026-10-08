@@ -4,6 +4,11 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+- **Mail that nothing will deliver is visible.** `hail seats` has a HOOK
+  column: how long ago a prompt hook last read each mailbox, or `-` if none
+  has. `hail doctor` lists mailboxes holding unread mail that no hook has read
+  lately, largest first, with what to do.
+
 ## v0.5.1 - 2026-10-07
 
 Delivery fixes, and hail no longer integrates with bd.

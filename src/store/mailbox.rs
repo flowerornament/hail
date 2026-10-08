@@ -87,9 +87,14 @@ impl Mailbox {
         set_mtime(&p, time::now());
     }
 
+    /// When a prompt hook last read this mailbox, if ever.
+    pub fn hooked_at(&self) -> Option<Timestamp> {
+        mtime(&self.sub("hooked"))
+    }
+
     /// Whether the prompt hook ran within `within`.
     pub fn hooked_within(&self, within: std::time::Duration) -> bool {
-        mtime(&self.sub("hooked"))
+        self.hooked_at()
             .is_some_and(|t| time::now().duration_since(t).unsigned_abs() < within)
     }
 
