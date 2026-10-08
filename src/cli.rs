@@ -131,6 +131,9 @@ pub struct SendCli {
     pub force: bool,
     #[arg(long)]
     pub no_wake: bool,
+    /// Sign as a sub-agent of this seat: `<seat>/<name>`.
+    #[arg(long = "as", value_name = "NAME")]
+    pub as_name: Option<String>,
 }
 
 pub const VERBS: &[&str] = &[
@@ -259,6 +262,15 @@ impl SendCli {
             .re
             .map(|r| Id::parse(&r).ok_or_else(|| Error::Usage("--re must be a message id".into())))
             .transpose()?;
+        if let Some(n) = self
+            .as_name
+            .as_deref()
+            .filter(|n| !crate::seat::valid_name(n))
+        {
+            return Err(Error::Usage(format!(
+                "--as {n}: a sub-agent name is letters, digits, '.', '_' and '-'"
+            )));
+        }
         Ok(SendArgs {
             target: self.target,
             kind,
@@ -266,6 +278,7 @@ impl SendCli {
             re,
             bead: self.bead,
             scope: self.scope,
+            as_name: self.as_name,
             delivery: Delivery {
                 wake: !self.no_wake,
                 submit: !self.no_submit,

@@ -33,6 +33,9 @@ pub struct SendArgs {
     pub re: Option<Id>,
     pub bead: Option<String>,
     pub scope: Option<String>,
+    /// `--as <name>`: a sub-agent signs as `<mailbox>/<name>`, so replies
+    /// come back to its parent's mailbox marked for it.
+    pub as_name: Option<String>,
     pub delivery: Delivery,
 }
 
@@ -93,8 +96,13 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         .bead
         .clone()
         .or_else(|| envelope::detect_bead(&draft.headline));
-    let from = sender.from();
-    let reply = sender.boxes.primary.to_string();
+    let (from, reply) = match &a.as_name {
+        Some(name) => {
+            let me = format!("{}/{name}", sender.boxes.primary);
+            (me.clone(), me)
+        }
+        None => (sender.from(), sender.boxes.primary.to_string()),
+    };
     let re = a.re.as_ref().map(Id::as_str);
     let msg = Message::default()
         .header("from", &from)
@@ -102,6 +110,7 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         .header("kind", a.kind.as_str())
         .header("id", id.as_str())
         .header("time", time::iso(now))
+        .header_opt("for", mail.for_.as_deref())
         .header_opt("bead", bead.as_deref())
         .header_opt("re", re)
         .header_opt("scope", a.scope.as_deref())
@@ -117,6 +126,7 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         from: &from,
         reply: &reply,
         id: id.as_str(),
+        for_: mail.for_.as_deref(),
         bead: bead.as_deref(),
         re,
         scope: a.scope.as_deref(),

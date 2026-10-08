@@ -97,6 +97,8 @@ pub struct Head<'a> {
     pub from: &'a str,
     pub reply: &'a str,
     pub id: &'a str,
+    /// The sub-agent a message is for; its parent relays it.
+    pub for_: Option<&'a str>,
     pub bead: Option<&'a str>,
     pub re: Option<&'a str>,
     pub scope: Option<&'a str>,
@@ -139,13 +141,14 @@ impl Tag {
     }
 }
 
-/// `[hail kind:<k> from:<f> reply:<r> id:<id> [bead:] [re:] [scope:]] <headline>[ — hail inbox]`.
+/// `[hail kind:<k> from:<f> reply:<r> id:<id> [for:] [bead:] [re:] [scope:]] <headline>[ — hail inbox]`.
 /// The fetch hint appears only when there is a body to fetch.
 pub fn render(head: &Head<'_>, headline: &str, hint: bool) -> String {
     let line = Tag::envelope(head.kind)
         .field("from", head.from)
         .field("reply", head.reply)
         .field("id", head.id)
+        .opt("for", head.for_)
         .opt("bead", head.bead)
         .opt("re", head.re)
         .opt("scope", head.scope)
@@ -269,6 +272,7 @@ mod tests {
             from: "murail-1a/%5",
             reply: "murail-1a",
             id: "0905T171200-a3f1",
+            for_: None,
             bead: Some("murail-ke7is"),
             re: None,
             scope: Some("commit"),

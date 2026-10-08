@@ -877,6 +877,27 @@ scenario 42 "a headline argument never reads stdin; no headline anywhere is refu
 scenario 43 "setup installs hooks for both harnesses, replaces 0.3 lines, idempotent" s43
 scenario 44 "migrate imports 0.3 state; hooks wait; revert restores it" s44
 
+s49() { # sub-agents: seat/name reaches the parent, marked for: in the envelope; seat/%N is the pane, checked
+  local ok=0 id f
+  send "$SENDER" worker/scout ask "for the sub-agent"; id=$(last_id)
+  expect "rc=0 ($ERR)" eq "$RC" 0 || ok=1
+  f=$(unread_file "$id" worker)
+  expect "in the parent's inbox" exists "$f" || ok=1
+  expect "for: header" grep -qxF "for: scout" "$f" || ok=1
+  expect "envelope typed into the parent with for:" contains "$(envelope_line "id:$id")" "id:$id for:scout]" || ok=1
+  OUT=$(as "$RECV" boss fyi "answer from the sub-agent" --as scout 2>"$SCRATCH/err"); id=$(last_id)
+  expect "--as signs seat/name" grep -qxF "from: worker/scout" "$(msgfile "$id")" || ok=1
+  expect "--as replies to seat/name" grep -qxF "reply: worker/scout" "$(msgfile "$id")" || ok=1
+  send "$SENDER" "worker/$RECV" fyi "pasted from: value"; id=$(last_id)
+  expect "seat/%N rc=0 ($ERR)" eq "$RC" 0 || ok=1
+  expect "seat/%N goes to that pane's seat" exists "$(unread_file "$id" worker)" || ok=1
+  send "$SENDER" "boss/$RECV" fyi "wrong seat for the pane"
+  expect "seat/%N in another seat: rc=3 (got $RC)" eq "$RC" 3 || ok=1
+  expect "names the pane's seat" contains "$ERR" "is in seat worker, not boss" || ok=1
+  as "$RECV" inbox >/dev/null; as "$SENDER" inbox >/dev/null
+  reset_recv; reset_sender; return "$ok"
+}
+
 s45() { # real agent detection (no HAIL_AGENT_COMMANDS): an agent as a pane's root, as the root shell's child, and none
   local ok=0 bin="$SCRATCH/agents" d1="$SCRATCH/a-root" d2="$SCRATCH/a-child" d3="$SCRATCH/a-none" p
   mkdir -p "$bin" "$d1" "$d2" "$d3"
@@ -974,6 +995,7 @@ scenario 45 "real agent detection: root, child of the root shell, none" s45
 scenario 46 "sharing ends: sub-seat mail and obligations stay reachable; Codex never reads one" s46
 scenario 47 "a headline argument with a heredoc or a late pipe: that is the body" s47
 scenario 48 "migration of pane keys, old labels and a backlog; deliver caps per prompt" s48
+scenario 49 "sub-agents: seat/name via the parent with for:, --as signs; seat/%N is the pane, checked" s49
 
 echo "---"
 echo "passed $PASS, failed $FAIL"

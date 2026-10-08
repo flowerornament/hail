@@ -14,7 +14,7 @@ use crate::envelope::{Kind, Tag, clip};
 use crate::error::Result;
 use crate::hooks;
 use crate::policy::{BRIEF_SHOWN, PENDING_LAPSE, PENDING_LATE, secs};
-use crate::seat::Addr;
+use crate::seat::{Addr, Address};
 use crate::store::Status;
 use crate::store::message::Message;
 use crate::store::records::Entry;
@@ -92,15 +92,16 @@ fn unread(ctx: &Ctx, boxes: &Boxes) -> Section {
         })
         .map(|text| {
             let m = Message::parse(&text);
-            let from = m
-                .get("from")
-                .unwrap_or("?")
-                .split('/')
-                .next()
-                .unwrap_or("?");
+            // `seat/%N` shows as the seat; `seat/name` keeps the sub-agent.
+            let from = m.get("from").unwrap_or("?");
+            let from = match Address::parse(from) {
+                Some(Address::Pane { seat, .. }) => seat,
+                _ => from.to_string(),
+            };
             Tag::brief(m.get("kind").unwrap_or("?"))
                 .field("from", from)
                 .field("id", m.get("id").unwrap_or("?"))
+                .opt("for", m.get("for"))
                 .opt("bead", m.get("bead").and_then(|b| b.split(' ').next()))
                 .opt("re", m.get("re"))
                 .opt("scope", m.get("scope"))

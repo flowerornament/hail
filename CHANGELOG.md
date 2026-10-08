@@ -4,6 +4,17 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+- **Sub-agents have an address: `<seat>/<name>`.** Mail to
+  `murail-2b/scout` goes to murail-2b's mailbox with `for: scout`, the
+  envelope shows `for:scout`, and the parent relays it. `--as <name>` signs a
+  sub-agent's send as `<seat>/<name>`, so replies come back the same way. The
+  skill says a sub-agent runs no verb that reads mail (`inbox`, `deliver`,
+  `brief`), since those would take its parent's mail (hail-b28).
+- **A `from:` value works as a target.** `murail-1a/%5` is the pane `%5`,
+  checked to be in seat `murail-1a`.
+- **A seat-like name that isn't a seat is explained.** `murail-2b-scout`, when
+  `murail-2b` is a seat, suggests `murail-2b/scout`.
+
 ## v0.4.1 - 2026-10-07
 
 Two data fixes; nothing else changes.

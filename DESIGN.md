@@ -54,6 +54,8 @@ and triageable.
    resolved at send time from the panes sitting in the seat's directory.
    Several agents in one directory are told apart as `<seat>@<pane>`, a
    sub-seat accepted only for a Claude pane whose own directory is the seat.
+   A sub-agent, which has no pane and no hooks, is `<seat>/<name>`: its mail
+   goes to the parent's mailbox marked `for:`, and the parent relays it.
 7. **Transport is a backend.** Typing into a tmux pane is how the envelope is
    delivered today. The protocol (envelope, inbox, receipt) does not know that.
    A Claude in-process message or a Codex app-server turn can deliver the same

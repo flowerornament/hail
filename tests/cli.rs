@@ -373,7 +373,15 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 fn a_target_that_is_not_one_directory_name_is_refused() {
     let w = World::new();
     let before = files_under(&w.root.join("state"));
-    for target in ["..", "../..", ".", "worker/../worker", "worker@..", "a/b"] {
+    for target in [
+        "..",
+        "../..",
+        ".",
+        "worker/../worker",
+        "worker@..",
+        "worker/..",
+        "a/b/c",
+    ] {
         let out = w.run("boss", &[target, "fyi", "x", "--no-wake"]);
         assert_eq!(out.status.code(), Some(1), "{target}: {out:?}");
         assert!(
@@ -400,4 +408,82 @@ fn hail_seat_cannot_name_a_directory_outside_the_store() {
             .unwrap();
         assert_eq!(out.status.code(), Some(3), "HAIL_SEAT={name}: {out:?}");
     }
+}
+
+fn header(path: &Path, key: &str) -> Option<String> {
+    let text = fs::read_to_string(path).unwrap();
+    text.lines()
+        .take_while(|l| !l.is_empty())
+        .find_map(|l| l.strip_prefix(&format!("{key}: ")).map(str::to_string))
+}
+
+fn id_of(o: &Output) -> String {
+    let s = stdout(o);
+    s.lines()
+        .find_map(|l| l.strip_prefix("id="))
+        .unwrap_or_else(|| panic!("no id: {o:?}"))
+        .to_string()
+}
+
+#[test]
+fn a_sub_agent_is_reached_through_its_parent_and_answers_as_itself() {
+    let w = World::new();
+    // To worker/scout: worker's mailbox, marked for the sub-agent.
+    let out = w.run(
+        "boss",
+        &["worker/scout", "ask", "check the parser", "--no-wake"],
+    );
+    assert_eq!(out.status.code(), Some(5), "{out:?}");
+    let id = id_of(&out);
+    let msg = w.state().join(format!("seats/worker/new/{id}.md"));
+    assert_eq!(header(&msg, "for").as_deref(), Some("scout"));
+    // The obligation sits on the parent's mailbox, which relays and closes it.
+    assert!(w.state().join(format!("seats/worker/owed/{id}")).is_file());
+
+    // The sub-agent answers with --as: it signs as worker/scout.
+    let out = w.run(
+        "worker",
+        &[
+            "boss",
+            "fyi",
+            "parser checked",
+            "--as",
+            "scout",
+            "--no-wake",
+        ],
+    );
+    let answer = w.state().join(format!("seats/boss/new/{}.md", id_of(&out)));
+    assert_eq!(header(&answer, "from").as_deref(), Some("worker/scout"));
+    assert_eq!(header(&answer, "reply").as_deref(), Some("worker/scout"));
+
+    // Its reply: value is a target that comes back marked for it.
+    let out = w.run("boss", &["worker/scout", "fyi", "thanks", "--no-wake"]);
+    let back = w
+        .state()
+        .join(format!("seats/worker/new/{}.md", id_of(&out)));
+    assert_eq!(header(&back, "for").as_deref(), Some("scout"));
+
+    // The parent's brief shows who each message is for.
+    let brief = stdout(&w.run("worker", &["brief"]));
+    assert!(brief.contains("for:scout"), "{brief}");
+}
+
+#[test]
+fn sub_agent_names_and_near_misses_are_explained() {
+    let w = World::new();
+    let out = w.run("boss", &["worker-scout", "fyi", "x", "--no-wake"]);
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("if it is a sub-agent of worker, send to worker/scout (its parent relays)"),
+        "{err}"
+    );
+    let out = w.run(
+        "worker",
+        &["boss", "fyi", "x", "--as", "bad/name", "--no-wake"],
+    );
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    // seat/%N needs the pane, so tmux; without it the send is refused, not misrouted.
+    let out = w.run("boss", &["worker/%7", "fyi", "x", "--no-wake"]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
 }

@@ -83,7 +83,10 @@ EOF
 - A seat name, which is the normal case, or a sub-seat (`hail@%28`).
 - A pane id or tmux target (`%7`, `sess:1.2`), which resolves to the seat of that pane's directory, or to the pane's sub-seat when the directory is shared. Replies to 0.3 envelopes (`reply:%N`) keep working this way.
 - A bare shared seat is refused (exit 3): `seat hail has 2 agents: hail@%26 hail@%28; address one`.
-- An unknown seat is an error that lists the near names (exit 1).
+- `seat/%N`, the form `from:` prints: the pane `%N`, resolved as above and checked to be in that seat (exit 3 otherwise), so a `from:` value can be pasted as a target.
+- `seat/name` (also `seat@%N/name`): a sub-agent. The message goes to the parent's mailbox with a `for: name` header and `for:name` in the envelope, and the parent relays it. `--as <name>` signs a send as `<mailbox>/<name>` in `from:` and `reply:`. Sub-agents have no mailbox of their own (quiet-mail design §2).
+- The target is parsed at one boundary (`seat::Address`): `/` is split first, then `@`, and every part must name exactly one directory entry. An empty part, `.`, `..`, `/` or NUL is refused (exit 1).
+- An unknown seat is an error that lists the near names (exit 1). One whose prefix is a known seat plus `-`, `_` or `.` also suggests the sub-agent address: `send to murail-2b/recip-consumer (its parent relays)`.
 
 **Output:**
 - `id=<id>` on stdout, on exit 0 and on exit 5, plus `bead=<id> comment=<n>` when a bead comment was posted. This is unchanged.
@@ -93,7 +96,7 @@ EOF
 ### 4.3 The envelope (unchanged in form)
 
 ```
-[hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [bead:..] [re:..] [scope:..]] <headline>[ — hail inbox]
+[hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [for:..] [bead:..] [re:..] [scope:..]] <headline>[ — hail inbox]
 ```
 
 The only change: `reply:` names the seat, not a pane id, because seats are stable. `from:` keeps the `/<pane>` suffix for humans reading a pane, and the pane is omitted when unknown. The skill's rule "reply to the `reply:` value" keeps working.

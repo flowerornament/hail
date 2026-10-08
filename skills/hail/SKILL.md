@@ -24,6 +24,17 @@ in `tmux run-shell`.
 When several agents share one directory, each Claude pane is a sub-seat,
 `<seat>@<pane>` (`hail@%28`). `hail seats` lists every seat.
 
+**Sub-agents** (Claude Task agents, Codex sub-agents) run in their parent's
+directory, so they are the parent's seat. Each has an address,
+`<seat>/<name>` (`murail-2b/scout`). Mail to it goes to the parent's mailbox
+marked `for: scout`, and the parent relays it. A sub-agent signs its sends
+with `--as <name>`, so replies come back the same way:
+`hail murail-1a fyi 'parser checked' --as scout`.
+
+**A sub-agent runs no verb that reads mail** (`inbox`, `deliver`, `brief`).
+It shares its parent's directory and environment, so those would take the
+parent's mail and prune its pending sends. It only sends, with `--as`.
+
 ## Sending
 
 ```bash
@@ -40,7 +51,11 @@ EOF
 - **No body?** Pass the headline as an argument: `hail murail-1b fyi 'gate green'`.
 - **Options:** `--re <id>` answers, closes or lifts a message. `--bead <id>`
   also posts the body to the issue (an id in the headline is detected).
-  `--scope <s>` names what it applies to.
+  `--scope <s>` names what it applies to. `--as <name>` signs as your
+  sub-agent `<seat>/<name>`.
+- **Targets:** a seat (`murail-1b`), a sub-seat (`hail@%28`), a sub-agent
+  (`murail-2b/scout`, through its parent), or a `from:` value pasted as is
+  (`murail-1a/%5`, that pane, checked to be in that seat).
 - **Headline length:** over 400 characters, the headline is folded into the
   body. Never squeeze words together to fit.
 
@@ -65,7 +80,9 @@ An envelope is one line in your prompt:
 [hail kind:ruling from:murail-1a/%5 reply:murail-1a id:1006T171200-a3f1 bead:murail-ke7is] convert at the receipt — hail inbox
 ```
 
-- **Reply to the `reply:` value** (a seat).
+- **Reply to the `reply:` value** (a seat, or a sub-agent's `seat/name`).
+- **`for:<name>`** means the message is for your sub-agent `<name>`: relay it
+  to that sub-agent. You still answer or close it if it asks something of you.
 - **With the hooks installed** (`hail setup`), the body arrives as hook
   context on the same turn and the receipt is written. Do not run `hail inbox`
   as well.

@@ -158,6 +158,46 @@ impl Addr {
     }
 }
 
+/// What a target or a `reply:` value names. `/` is split first, then each
+/// side goes through [`Addr::parse`] or the name rules, so nothing here can
+/// name a directory outside the store.
+///
+/// - `murail-1b`, `hail@%28`: a mailbox.
+/// - `murail-1b/%7`: a pane in that seat, the form `from:` prints, so a
+///   `from:` value pasted as a target works.
+/// - `murail-1b/recip-consumer`, `hail@%28/scout`: a sub-agent. It has no
+///   mailbox of its own: mail goes to the parent's, marked `for: <name>`,
+///   and the parent relays it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Address {
+    Mailbox(Addr),
+    Pane { seat: String, pane: String },
+    Agent { parent: Addr, name: String },
+}
+
+impl Address {
+    pub fn parse(s: &str) -> Option<Self> {
+        let Some((left, right)) = s.split_once('/') else {
+            return Addr::parse(s).map(Self::Mailbox);
+        };
+        if let Some(digits) = right.strip_prefix('%') {
+            let pane_ok = !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit());
+            return match Addr::parse(left)? {
+                Addr::Seat(seat) if pane_ok => Some(Self::Pane {
+                    seat,
+                    pane: right.to_string(),
+                }),
+                _ => None,
+            };
+        }
+        let parent = Addr::parse(left)?;
+        valid_name(right).then(|| Self::Agent {
+            parent,
+            name: right.to_string(),
+        })
+    }
+}
+
 impl std::fmt::Display for Addr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -244,5 +284,48 @@ mod tests {
             assert!(Addr::parse(good).is_some(), "{good:?}");
         }
         assert!(!valid_name("..") && !valid_name(".") && valid_name(".nix-config"));
+    }
+
+    #[test]
+    fn addresses_split_on_slash_first() {
+        let agent = |p: &str, n: &str| Address::Agent {
+            parent: Addr::parse(p).unwrap(),
+            name: n.into(),
+        };
+        assert_eq!(
+            Address::parse("murail-2b/recip-consumer"),
+            Some(agent("murail-2b", "recip-consumer"))
+        );
+        assert_eq!(
+            Address::parse("hail@%28/scout"),
+            Some(agent("hail@%28", "scout"))
+        );
+        assert_eq!(
+            Address::parse("murail-1a/%5"),
+            Some(Address::Pane {
+                seat: "murail-1a".into(),
+                pane: "%5".into()
+            })
+        );
+        assert_eq!(
+            Address::parse("hail@%28"),
+            Some(Address::Mailbox(Addr::parse("hail@%28").unwrap()))
+        );
+        // '@' inside the name side never makes a sub-seat of the parent.
+        for bad in [
+            "a/b@c",
+            "a/b/c",
+            "../x",
+            "x/..",
+            "x/.",
+            "a/",
+            "/b",
+            "a/%",
+            "a/%x",
+            "hail@%28/%5",
+            "a/b c",
+        ] {
+            assert_eq!(Address::parse(bad), None, "{bad:?}");
+        }
     }
 }

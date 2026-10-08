@@ -53,7 +53,9 @@ hail send — deliver a message to a seat
   hail <seat> <kind> '<headline>' [options]
 
 <seat> is a workspace name (murail-1b), a sub-seat in a shared directory
-(hail@%28), or a pane (%7). 'hail seats' lists them. With a headline argument
+(hail@%28), a pane (%7, or murail-1a/%5 as from: prints it), or a sub-agent
+(murail-2b/scout), whose mail goes to its parent marked for: and is relayed.
+'hail seats' lists them. With a headline argument
 stdin is never read. In a heredoc, quote the delimiter (<<'EOF') so nothing
 in the body is expanded.
 
@@ -64,6 +66,7 @@ Options:
   --scope <s>     What it applies to: a bead, ref, path or action (one line)
   --no-submit     Type the envelope but do not press Enter
   --force         Skip the dialog guard. Only after 'hail read <seat> 10'.
+  --as <name>     Sign as your sub-agent <seat>/<name>; replies come back for it.
 
 The headline is capped at HAIL_ENVELOPE_MAX characters (400). A longer one is
 folded at a sentence boundary and the full text rides in the body; a control
@@ -71,8 +74,8 @@ kind (stop hold block release announce) is refused instead (exit 2). Write
 plain sentences.
 
 Envelope typed into the recipient's pane:
-  [hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [bead:] [re:] [scope:]] <headline>[ — hail inbox]
-Reply to the reply: value.
+  [hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [for:] [bead:] [re:] [scope:]] <headline>[ — hail inbox]
+Reply to the reply: value. for:<name> marks mail for your sub-agent: relay it.
 
 Exit: 0 typed and submitted; 5 written to the inbox but not typed (no agent
 pane, or typing not confirmed): do NOT resend, it arrives on their next
@@ -124,6 +127,10 @@ your workspace.
 
 When several agents share one directory, each Claude pane is a sub-seat,
 <seat>@<pane> (hail@%28); a Codex agent needs its own jj workspace.
+
+A sub-agent (a Task agent, a Codex sub-agent) shares its parent's seat. It is
+addressed <seat>/<name> through the parent, signs with --as <name>, and runs
+no verb that reads mail (inbox, deliver, brief): those take the parent's mail.
 
   whoami          This directory's seat and where it came from
   seats [seat]    Every seat: agent panes, unread, open obligations, root

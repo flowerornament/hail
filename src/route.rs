@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ctx::{Boxes, Ctx};
 use crate::error::{Error, Result};
-use crate::seat::{self, Addr, Seat};
+use crate::seat::{self, Addr, Address, Seat};
 use crate::transport::pane_map::PaneMap;
 use crate::transport::tmux::{Pane, Tmux};
 
@@ -37,6 +37,8 @@ enum Named<'a> {
 /// Where mail goes, and the pane to wake if there is one.
 pub struct Mail {
     pub to: Addr,
+    /// The sub-agent this is for (`seat/name`): the parent relays it.
+    pub for_: Option<String>,
     pub wake: Option<Pane>,
     /// Why nothing will be typed, when `wake` is `None`.
     pub no_wake: Option<String>,
@@ -85,9 +87,7 @@ fn name<'a>(
         ))
     };
     let Some(addr) = Addr::parse(arg) else {
-        return Err(Error::Usage(format!(
-            "'{arg}' is not a seat, sub-seat or pane: a name has no '/' and is not '.' or '..' (hail seats lists seats)"
-        )));
+        return Err(not_an_address(arg));
     };
     if let Addr::Sub { seat, pane } = &addr {
         let pm = pm.ok_or_else(no_tmux)?;
@@ -121,14 +121,43 @@ fn name<'a>(
     Err(Error::Usage(unknown_seat(ctx, arg, pm)))
 }
 
-/// Where a message to `arg` goes.
+fn not_an_address(arg: &str) -> Error {
+    Error::Usage(format!(
+        "'{arg}' is not a seat, sub-seat or pane: write seat, seat@%N, seat/%N or seat/<sub-agent>; no part is empty, '.' or '..' (hail seats lists seats)"
+    ))
+}
+
+/// Where a message to `arg` goes. `seat/%N` is the pane `%N`, checked to be
+/// in that seat; `seat/name` is the parent's mail, marked for the sub-agent.
 pub fn mail(ctx: &Ctx, arg: &str, pm: Option<&PaneMap>, tmux: Option<&Tmux>) -> Result<Mail> {
+    match Address::parse(arg).ok_or_else(|| not_an_address(arg))? {
+        Address::Mailbox(_) => mailbox_mail(ctx, arg, pm, tmux),
+        Address::Pane { seat, pane } => {
+            let m = mailbox_mail(ctx, &pane, pm, tmux)?;
+            if m.to.seat() != seat {
+                return Err(Error::Seat(format!(
+                    "{arg}: pane {pane} is in seat {}, not {seat}; hail seats lists seats",
+                    m.to.seat()
+                )));
+            }
+            Ok(m)
+        }
+        Address::Agent { parent, name } => {
+            let mut m = mailbox_mail(ctx, &parent.to_string(), pm, tmux)?;
+            m.for_ = Some(name);
+            Ok(m)
+        }
+    }
+}
+
+fn mailbox_mail(ctx: &Ctx, arg: &str, pm: Option<&PaneMap>, tmux: Option<&Tmux>) -> Result<Mail> {
     match name(ctx, arg, pm, tmux)? {
         Named::Sub(to, p) => Ok(sub_seat_mail(ctx, to, p)),
         Named::Seat(seat) => match pm {
             Some(pm) => seat_mail(ctx, pm, seat, None),
             None => Ok(Mail {
                 to: Addr::Seat(seat.to_string()),
+                for_: None,
                 wake: None,
                 no_wake: Some("no tmux server".into()),
             }),
@@ -150,6 +179,24 @@ pub fn mail(ctx: &Ctx, arg: &str, pm: Option<&PaneMap>, tmux: Option<&Tmux>) -> 
 
 /// The pane to read from or type into for `arg`.
 pub fn drive(ctx: &Ctx, arg: &str, pm: &PaneMap, tmux: &Tmux) -> Result<Pane> {
+    match Address::parse(arg).ok_or_else(|| not_an_address(arg))? {
+        Address::Mailbox(_) => {}
+        Address::Pane { seat, pane } => {
+            let p = drive(ctx, &pane, pm, tmux)?;
+            return if pm.seat_of(&p) == Some(seat.as_str()) {
+                Ok(p)
+            } else {
+                Err(Error::Seat(format!(
+                    "{arg}: pane {pane} is not in seat {seat}"
+                )))
+            };
+        }
+        Address::Agent { parent, .. } => {
+            return Err(Error::Usage(format!(
+                "{arg} is a sub-agent: it has no pane; its parent {parent} relays to it"
+            )));
+        }
+    }
     match name(ctx, arg, Some(pm), Some(tmux))? {
         Named::Sub(_, p) => Ok(p.clone()),
         Named::Pane(p) => Ok(p),
@@ -189,6 +236,7 @@ fn seat_mail(ctx: &Ctx, pm: &PaneMap, seat: &str, via: Option<&Pane>) -> Result<
         .then(|| format!("no agent runs in seat {seat}"));
     Ok(Mail {
         to: Addr::Seat(seat.to_string()),
+        for_: None,
         wake,
         no_wake,
     })
@@ -198,6 +246,7 @@ fn sub_seat_mail(ctx: &Ctx, to: Addr, pane: &Pane) -> Mail {
     let _ = std::fs::create_dir_all(ctx.store.seat_dir(&to));
     Mail {
         to,
+        for_: None,
         wake: Some(pane.clone()),
         no_wake: None,
     }
@@ -275,15 +324,31 @@ fn unknown_seat(ctx: &Ctx, arg: &str, pm: Option<&PaneMap>) -> String {
     names.dedup();
     let stem: String = arg.chars().take(3).collect();
     let near: Vec<String> = names
-        .into_iter()
+        .iter()
         .filter(|n| n.starts_with(&stem))
         .take(8)
+        .cloned()
         .collect();
     let near = if near.is_empty() {
         String::new()
     } else {
         format!("; did you mean: {}", near.join(" "))
     };
+    // `murail-2b-recip-consumer`: a seat's name plus a separator is most
+    // likely a sub-agent of that seat.
+    let parent = names
+        .iter()
+        .filter(|n| {
+            arg.strip_prefix(n.as_str())
+                .is_some_and(|rest| rest.len() > 1 && rest.starts_with(['-', '_', '.']))
+        })
+        .max_by_key(|n| n.len());
+    if let Some(p) = parent {
+        let child = &arg[p.len() + 1..];
+        return format!(
+            "'{arg}' is not a seat{near}; if it is a sub-agent of {p}, send to {p}/{child} (its parent relays)"
+        );
+    }
     format!("unknown seat '{arg}'{near} (hail seats lists them)")
 }
 
