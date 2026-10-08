@@ -1,7 +1,7 @@
 ---
 title: "Quiet mail: progress off the pane, sub-agent addresses, holds that lapse"
 date: 2026-10-08
-status: shipped in 0.5.0 (§0 in 0.4.1)
+status: shipped in 0.5.0 (§0 in 0.4.1); §1b (hail note) and all bd use removed in 0.5.1 by the user's decision
 asked_by: murail-2a, with the user's direction (hail id 1008T015425-0c48)
 reviews:
   - murail-2a, no nogo, three notes (1008T015735-8195)
@@ -59,7 +59,7 @@ next prompt, so it costs them no turn.
 - **The skill says it plainly:** a seat parked on a scheduled wakeup sees an
   `fyi` only at its next prompt, so a time-critical fact is never an `fyi`.
 
-**1b. `hail note <bead> '<headline>' [<<body]` puts progress on the bead.** It
+**1b. (Removed in 0.5.1: hail no longer talks to bd. Progress goes to the tracker, posted by the agent.)** `hail note <bead> '<headline>' [<<body]` put progress on the bead. It
 posts a bd comment signed with the seat (`[murail-2b] headline`, then the
 body), and nothing else: no mailbox, no pane, no receipt. It costs nobody
 anything until someone reads the bead.
