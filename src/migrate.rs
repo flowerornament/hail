@@ -114,7 +114,7 @@ impl Keys {
     /// sub-seat), where the agent there reads it.
     fn live(&self, key: &str) -> Addr {
         if !key.starts_with('%') {
-            return Addr::parse(key);
+            return Self::parked(key);
         }
         let seat_of_pane = self.panes.as_ref().and_then(|pm| {
             let p = pm.find(key)?;
@@ -122,7 +122,7 @@ impl Keys {
             Some(if pm.agents_in(seat).len() > 1 && can_hold_sub_seat(p) {
                 Addr::sub(seat, key)
             } else {
-                Addr::parse(seat)
+                Addr::Seat(seat.to_string())
             })
         });
         seat_of_pane.unwrap_or_else(|| Self::parked(key))
@@ -135,7 +135,8 @@ impl Keys {
         if key.starts_with('%') {
             Addr::Seat(format!("legacy-{key}"))
         } else {
-            Addr::parse(key)
+            // A 0.3 key is a directory name it listed, so it is one entry.
+            Addr::parse(key).unwrap_or_else(|| Addr::Seat(format!("legacy-{key}")))
         }
     }
 }

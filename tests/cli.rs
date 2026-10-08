@@ -354,3 +354,50 @@ mod snapshots {
         });
     }
 }
+
+/// Every file under `dir`, recursively.
+fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for e in fs::read_dir(dir).into_iter().flatten().flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            out.extend(files_under(&p));
+        } else {
+            out.push(p);
+        }
+    }
+    out
+}
+
+#[test]
+fn a_target_that_is_not_one_directory_name_is_refused() {
+    let w = World::new();
+    let before = files_under(&w.root.join("state"));
+    for target in ["..", "../..", ".", "worker/../worker", "worker@..", "a/b"] {
+        let out = w.run("boss", &[target, "fyi", "x", "--no-wake"]);
+        assert_eq!(out.status.code(), Some(1), "{target}: {out:?}");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("is not a seat, sub-seat or pane"),
+            "{target}: {out:?}"
+        );
+    }
+    // Nothing was written anywhere: no message, no id, no new directory.
+    assert_eq!(files_under(&w.root.join("state")), before);
+    assert!(!w.root.join("state/new").exists());
+    assert!(!w.state().join("new").exists());
+}
+
+#[test]
+fn hail_seat_cannot_name_a_directory_outside_the_store() {
+    let w = World::new();
+    fs::create_dir_all(w.root.join("nowhere")).unwrap();
+    for name in ["..", "."] {
+        let out = w
+            .hail("nowhere")
+            .env("HAIL_SEAT", name)
+            .args(["whoami"])
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(3), "HAIL_SEAT={name}: {out:?}");
+    }
+}

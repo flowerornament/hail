@@ -82,7 +82,7 @@ pub fn index(store: &Store, id: &Id, to: &Addr) -> Result<()> {
 /// The mailbox a message id was sent to.
 pub fn lookup(store: &Store, id: &Id) -> Option<Addr> {
     let target = fs::read_link(store.ids_dir().join(id.as_str())).ok()?;
-    Some(Addr::parse(&target.to_string_lossy()))
+    Addr::parse(&target.to_string_lossy())
 }
 
 pub fn forget(store: &Store, id: &Id) {
@@ -108,7 +108,7 @@ mod tests {
         let t = tempfile::tempdir().unwrap();
         let store = Arc::new(Store::at(t.path()));
         let at = time::now();
-        let to = Addr::parse("w");
+        let to = Addr::parse("w").unwrap();
         let handles: Vec<_> = (0..8)
             .map(|_| {
                 let (store, to) = (store.clone(), to.clone());

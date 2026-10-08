@@ -45,6 +45,7 @@ impl Store {
 
     /// A mailbox's directory: `seats/<seat>` or `seats/<seat>@<pane>`.
     pub fn seat_dir(&self, addr: &Addr) -> PathBuf {
+        debug_assert!(addr.is_path_safe(), "unchecked address {addr}");
         self.seats_dir().join(addr.to_string())
     }
 
@@ -73,7 +74,7 @@ impl Store {
     pub fn mailboxes(&self) -> Vec<Addr> {
         list_names(&self.seats_dir())
             .iter()
-            .map(|n| Addr::parse(n))
+            .filter_map(|n| Addr::parse(n))
             .collect()
     }
 

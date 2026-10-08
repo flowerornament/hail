@@ -84,9 +84,14 @@ fn name<'a>(
             "{arg}: no tmux server answers; hail doctor says why"
         ))
     };
-    if let Addr::Sub { seat, pane } = Addr::parse(arg) {
+    let Some(addr) = Addr::parse(arg) else {
+        return Err(Error::Usage(format!(
+            "'{arg}' is not a seat, sub-seat or pane: a name has no '/' and is not '.' or '..' (hail seats lists seats)"
+        )));
+    };
+    if let Addr::Sub { seat, pane } = &addr {
         let pm = pm.ok_or_else(no_tmux)?;
-        let p = pm.find(&pane).ok_or_else(|| {
+        let p = pm.find(pane).ok_or_else(|| {
             Error::Seat(format!(
                 "{arg}: pane {pane} is gone; hail seats lists live seats"
             ))
@@ -96,12 +101,12 @@ fn name<'a>(
                 "{arg}: {pane} is not a Claude pane in seat {seat}; hail seats lists seats"
             )));
         }
-        return Ok(Named::Sub(Addr::sub(&seat, &pane), p));
+        return Ok(Named::Sub(addr.clone(), p));
     }
     // A seat is known once it has a mailbox (an agent ran hail there, or mail
     // was migrated to it), or while a pane sits in it.
-    let known = ctx.store.seat_dir(&Addr::parse(arg)).is_dir()
-        || pm.is_some_and(|pm| !pm.in_seat(arg).is_empty());
+    let known =
+        ctx.store.seat_dir(&addr).is_dir() || pm.is_some_and(|pm| !pm.in_seat(arg).is_empty());
     if known {
         return Ok(Named::Seat(arg));
     }
@@ -123,7 +128,7 @@ pub fn mail(ctx: &Ctx, arg: &str, pm: Option<&PaneMap>, tmux: Option<&Tmux>) -> 
         Named::Seat(seat) => match pm {
             Some(pm) => seat_mail(ctx, pm, seat, None),
             None => Ok(Mail {
-                to: Addr::parse(seat),
+                to: Addr::Seat(seat.to_string()),
                 wake: None,
                 no_wake: Some("no tmux server".into()),
             }),
@@ -183,7 +188,7 @@ fn seat_mail(ctx: &Ctx, pm: &PaneMap, seat: &str, via: Option<&Pane>) -> Result<
         .is_none()
         .then(|| format!("no agent runs in seat {seat}"));
     Ok(Mail {
-        to: Addr::parse(seat),
+        to: Addr::Seat(seat.to_string()),
         wake,
         no_wake,
     })

@@ -59,8 +59,8 @@ impl Entry {
         Self {
             id,
             kind: m.get("kind").and_then(Kind::parse),
-            issuer: Addr::parse(m.get("issuer").unwrap_or("?")),
-            to: Addr::parse(m.get("to").unwrap_or("?")),
+            issuer: header_addr(m, "issuer"),
+            to: header_addr(m, "to"),
             scope: m.get("scope").filter(|s| !s.is_empty()).map(str::to_string),
             time: m.get("time").and_then(time::parse_iso),
             re: m.get("re").and_then(Id::parse),
@@ -88,7 +88,7 @@ impl Pending {
         Self {
             id,
             kind: m.get("kind").and_then(Kind::parse),
-            to: Addr::parse(m.get("to").unwrap_or("?")),
+            to: header_addr(m, "to"),
             sent: m
                 .get("epoch")
                 .and_then(|e| e.parse().ok())
@@ -186,6 +186,13 @@ fn remove(path: &Path) -> Result<()> {
     }
 }
 
+/// An address header for display; `?` when absent or not a valid address.
+fn header_addr(m: &Message, key: &str) -> Addr {
+    m.get(key)
+        .and_then(Addr::parse)
+        .unwrap_or_else(|| Addr::Seat("?".into()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,8 +204,8 @@ mod tests {
         let e = Entry {
             id: Id::parse("1007T000000-aaaa").unwrap(),
             kind: Some(Kind::Go),
-            issuer: Addr::parse("boss"),
-            to: Addr::parse("hail@%28"),
+            issuer: Addr::parse("boss").unwrap(),
+            to: Addr::parse("hail@%28").unwrap(),
             scope: Some("commit".into()),
             time: Some(time::now().round(jiff::Unit::Second).unwrap()),
             re: None,

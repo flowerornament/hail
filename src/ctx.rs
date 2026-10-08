@@ -120,7 +120,7 @@ impl Ctx {
         let sub = self
             .tmux_pane
             .as_deref()
-            .filter(|_| !self.codex)
+            .filter(|p| !self.codex && seat::path_safe(p))
             .map(|p| Addr::sub(&seat.name, p))
             .filter(|a| self.store.seat_dir(a).is_dir());
         match sub {

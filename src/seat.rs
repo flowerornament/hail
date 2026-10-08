@@ -47,10 +47,17 @@ pub const RESERVED: &[&str] = &[
 ];
 
 pub fn valid_name(name: &str) -> bool {
-    !name.is_empty()
+    path_safe(name)
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+/// A part of an address becomes one directory name under `seats/`, so it
+/// must name exactly one entry there: not empty, `.` or `..`, and without
+/// `/` or NUL. A target of `..` once wrote mail outside the store.
+pub fn path_safe(part: &str) -> bool {
+    !part.is_empty() && part != "." && part != ".." && !part.contains(['/', '\0'])
 }
 
 /// The seat of a directory: walk up, stopping before `home` (never a seat
@@ -112,17 +119,30 @@ pub enum Addr {
 }
 
 impl Addr {
-    /// `hail` or `hail@%28`.
-    pub fn parse(s: &str) -> Self {
-        match s.split_once('@') {
+    /// `hail` or `hail@%28`. The one place a string from outside (argv, the
+    /// environment, a file) becomes an address: `None` unless every part is
+    /// [`path_safe`].
+    pub fn parse(s: &str) -> Option<Self> {
+        let addr = match s.split_once('@') {
             Some((seat, pane)) => Self::Sub {
                 seat: seat.to_string(),
                 pane: pane.to_string(),
             },
             None => Self::Seat(s.to_string()),
+        };
+        addr.is_path_safe().then_some(addr)
+    }
+
+    /// Every part names one directory entry; see [`path_safe`].
+    pub fn is_path_safe(&self) -> bool {
+        match self {
+            Self::Seat(s) => path_safe(s),
+            Self::Sub { seat, pane } => path_safe(seat) && path_safe(pane),
         }
     }
 
+    /// From parts already checked: a seat name from [`seat_of`] and a pane
+    /// id from tmux.
     pub fn sub(seat: &str, pane: &str) -> Self {
         Self::Sub {
             seat: seat.to_string(),
@@ -173,9 +193,9 @@ mod tests {
     #[test]
     fn addresses_round_trip() {
         for s in ["hail", "hail@%28", "legacy-%14"] {
-            assert_eq!(Addr::parse(s).to_string(), s);
+            assert_eq!(Addr::parse(s).unwrap().to_string(), s);
         }
-        assert_eq!(Addr::parse("hail@%28").seat(), "hail");
+        assert_eq!(Addr::parse("hail@%28").unwrap().seat(), "hail");
     }
 
     #[test]
@@ -211,5 +231,18 @@ mod tests {
             seat_of(&t.path().join("my repo"), None),
             Err(Error::Seat(_))
         ));
+    }
+
+    #[test]
+    fn an_address_part_names_exactly_one_directory_entry() {
+        for bad in [
+            "", ".", "..", "a/b", "../x", "a\0b", "hail@..", "@%1", "hail@",
+        ] {
+            assert_eq!(Addr::parse(bad), None, "{bad:?}");
+        }
+        for good in ["hail", ".nix-config", "legacy-%1", "hail@%28", "..."] {
+            assert!(Addr::parse(good).is_some(), "{good:?}");
+        }
+        assert!(!valid_name("..") && !valid_name(".") && valid_name(".nix-config"));
     }
 }

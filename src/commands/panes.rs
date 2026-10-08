@@ -76,7 +76,7 @@ pub fn seats(ctx: &Ctx, only: Option<&str>) -> Result<u8> {
             .map(PaneMap::seat_names)
             .unwrap_or_default()
             .iter()
-            .map(|s| Addr::parse(s)),
+            .filter_map(|s| Addr::parse(s)),
     );
     addrs.sort();
     addrs.dedup();
