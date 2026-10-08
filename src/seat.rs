@@ -1,8 +1,8 @@
 //! Identity is the seat: the workspace an agent works in, derived from a
 //! directory and nothing else. Process trees and an inherited `TMUX_PANE`
-//! each named the wrong pane, and so misrouted mail (murail-4vc8v,
-//! murail-m65jq, and Codex's shared app-server, a child of whichever pane
-//! started it); the working directory survives all of them.
+//! each named the wrong pane, and so misrouted mail (Codex's shared
+//! app-server, for one, is a child of whichever pane started it); the
+//! working directory survives all of them.
 //!
 //! Identity has three steps: this module names a directory's seat;
 //! `ctx.rs` picks the mailboxes this process reads and signs as; `route.rs`

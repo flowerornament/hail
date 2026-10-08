@@ -1,6 +1,6 @@
 //! A permission dialog is recognised by its own question and option lines,
 //! never by a bare word: Codex prints "Approved" in its history and status, and
-//! matching it refused idle panes until agents learned to --force (herald-b6mzr).
+//! matching it refused idle panes until agents learned to --force.
 
 /// Each entry is a literal that appears only while a dialog is open.
 pub const PATTERNS: &[(&str, &str)] = &[

@@ -257,7 +257,7 @@ fn sub_seat_mail(ctx: &Ctx, to: Addr, pane: &Pane) -> Mail {
 /// seat (and the process is not Codex).
 /// A Claude pane running hail from a directory that is not its own seat: the
 /// send signs as `me`, but the pane's hooks read its own seat, so replies to
-/// `me` would never reach it (ferry, 2026-10-08). A warning, never an
+/// `me` would never reach it. A warning, never an
 /// identity: the working directory still decides who sends. Codex is left
 /// out, because its commands carry the shared daemon's `TMUX_PANE`.
 pub fn identity_split(ctx: &Ctx, me: &Seat, pm: Option<&PaneMap>) -> Option<String> {
@@ -358,7 +358,7 @@ fn unknown_seat(ctx: &Ctx, arg: &str, pm: Option<&PaneMap>) -> String {
     } else {
         format!("; did you mean: {}", near.join(" "))
     };
-    // `murail-2b-recip-consumer`: a seat's name plus a separator is most
+    // `api-scout`: a seat's name plus a separator is most
     // likely a sub-agent of that seat.
     let parent = names
         .iter()

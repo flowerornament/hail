@@ -1,6 +1,6 @@
 //! A seat's Maildir: `tmp/` while writing, `new/` unread, `cur/` claimed.
 //! The claim is `rename(new/<id>.md, cur/<id>.<how>.md)`: exactly one claimer
-//! wins, so a body is never injected twice (murail-m65jq), and the receipt
+//! wins, so a body is never injected twice, and the receipt
 //! cannot exist before the claim. The claimed file's mtime is the receipt time.
 
 use std::fs::{self, File};
