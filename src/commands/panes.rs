@@ -177,7 +177,7 @@ pub fn type_text(ctx: &Ctx, arg: &str, text: &str) -> Result<u8> {
     mark.require(&p.id)?;
     if type_verified(&t, &p, text)? == Woken::NotConfirmed {
         return Err(Error::State(format!(
-            "could not see the text in {0} after 2 s; it was typed once. hail read {0} to check",
+            "could not see the text in {0} after 10 s; it was typed once. hail read {0} to check",
             p.id
         )));
     }

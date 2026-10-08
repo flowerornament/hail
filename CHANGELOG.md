@@ -4,6 +4,16 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+- **Fixed: Codex was left with envelopes typed but not submitted.** A send
+  waits until the typed text shows in the pane before it presses Enter, to
+  be sure the agent has read it. It looked for the envelope's opening
+  characters, which are the same in every envelope from one seat, so an
+  earlier envelope still on screen satisfied it at once. When Codex was
+  busy and read the text and the Enter together, it took the Enter for a
+  newline in a paste. hail now looks for the envelope's `id:`, and waits up
+  to 10 s instead of 2 s. In a trial against Codex 0.161 with a frozen TUI,
+  sends went from 1 in 5 submitted to 5 in 5 (hail-lha).
+
 - **hail no longer talks to bd.** Posting message bodies to beads, bead-id
   detection, the `bead:` envelope field and `hail note` (new in 0.5.0) are
   gone: hail was coupled to another moving target for little gain. Post to

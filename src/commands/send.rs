@@ -398,7 +398,7 @@ fn wake(
     match (TypedEnvelope { tmux: t }).wake(p, envelope, d.submit) {
         Ok(Woken::Typed) => None,
         Ok(Woken::NotConfirmed) => Some(format!(
-            "typed into {0} but not seen there after 2 s, so not submitted; hail read {0} 10 to check, then hail keys {0} Enter",
+            "typed into {0} but not seen there after 10 s, so not submitted; hail read {0} 10 to check, then hail keys {0} Enter",
             p.id
         )),
         Err(e) => Some(format!("typing into {} failed: {e}", p.id)),

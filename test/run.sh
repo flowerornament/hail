@@ -909,6 +909,21 @@ s49() { # sub-agents: seat/name reaches the parent, marked for: in the envelope;
   reset_recv; reset_sender; return "$ok"
 }
 
+s52() { # hail-lha: Enter only after the agent has read the text, though an earlier envelope's prefix is on screen
+  local ok=0 id stale
+  local -x HAIL_AGENT_COMMANDS="$HAIL_AGENT_COMMANDS,python3,Python"
+  # An earlier envelope from boss, with the same kind, still on screen: its
+  # opening characters equal the new one's, so only the id tells them apart.
+  stale="[hail kind:ask from:boss/$SENDER reply:boss id:1001T000000-0000] an older ask"
+  "${T[@]}" respawn-pane -k -c "$WORKER_DIR" -t "$RECV" python3 "$HERE/burst-agent.py" "$stale" 1.5; sleep 0.3
+  send "$SENDER" worker "after a stall" --kind ask; id=$(last_id)
+  expect "rc=0 ($ERR)" eq "$RC" 0 || ok=1
+  sleep 0.5
+  expect "submitted, not left in the composer" contains "$(pane_text "$RECV")" "SUBMITTED [hail kind:ask from:boss/$SENDER reply:boss id:$id" || ok=1
+  as "$RECV" inbox >/dev/null
+  reset_recv; return "$ok"
+}
+
 s45() { # real agent detection (no HAIL_AGENT_COMMANDS): an agent as a pane's root, as the root shell's child, and none
   local ok=0 bin="$SCRATCH/agents" d1="$SCRATCH/a-root" d2="$SCRATCH/a-child" d3="$SCRATCH/a-none" p
   mkdir -p "$bin" "$d1" "$d2" "$d3"
@@ -1009,6 +1024,7 @@ scenario 48 "migration of pane keys, old labels and a backlog; deliver caps per 
 scenario 49 "sub-agents: seat/name via the parent with for:, --as signs; seat/%N is the pane, checked" s49
 scenario 50 "quiet fyi once hooks run; typed where they have not" s50
 scenario 51 "a pane sending from another seat's directory is warned" s51
+scenario 52 "Enter waits until the agent has read this envelope, not an older one on screen (hail-lha)" s52
 
 echo "---"
 echo "passed $PASS, failed $FAIL"

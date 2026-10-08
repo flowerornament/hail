@@ -239,7 +239,7 @@ Start with `hail doctor`. It checks:
 
 | symptom | cause and fix |
 |---|---|
-| A send exits 5 | Written to the inbox, not typed: no agent runs in that seat, or the text did not show in 2 s. It arrives on the recipient's next prompt (or its next session's brief). Do not resend. |
+| A send exits 5 | Written to the inbox, not typed: no agent runs in that seat, or the text did not show in 10 s. It arrives on the recipient's next prompt (or its next session's brief). Do not resend. |
 | `sent` stays `delivered` | The recipient's hook has not run since. Either it has not had a prompt yet, or its hooks are not installed or trusted (`hail doctor`; in Codex, `/hooks`). |
 | A send exits 3 "has N agents" | Several agents share that directory. Address one sub-seat, as listed, or give each agent its own jj workspace. |
 | A send exits 3 "no seat here" | You are outside a workspace. `cd` to it, or add a `.hail-seat` file naming it. |

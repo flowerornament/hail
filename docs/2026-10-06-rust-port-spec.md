@@ -241,7 +241,7 @@ Closing stays explicit (`done --re`). A reply of another kind with `--re` does n
 1. `list-panes` (one call) resolves the wake pane and its mode.
 2. **Dialog guard:** `capture-pane`, last 8 non-blank lines, matched against the structural patterns of 0.3.9. These are a const table in `transport/dialog.rs`, with each harness's strings and the version they were taken from. `--force` skips it.
 3. **Leave copy mode and type, in one tmux call:** `send-keys -X cancel ; send-keys -l -- <envelope>`, with the cancel only if the pane is in a mode.
-4. **Verify:** poll `capture-pane` every 25 ms for up to 2 s for the envelope's first 40 non-space characters (chars, not bytes, so a multibyte headline still matches after the TUI wraps it). 0.3 polled every 100 ms. It never retypes.
+4. **Verify:** poll `capture-pane` every 25 ms for up to 10 s for the envelope's `id:<id>` token, whitespace removed so a wrapped line still matches. Seeing it proves the agent has read the text, so Enter is read in a later batch; Codex treats an Enter read together with typed text as a pasted newline and leaves the envelope in the composer. The probe must be unique to this send: the opening characters repeat in every envelope from one seat, and an earlier one on screen matched before the new text was read (hail-lha). It never retypes.
 5. **Submit:** wait, then `send-keys Enter`. The wait exists for paste-burst detection after the text has rendered, so a faster verify does not shorten it. It is 300 ms in 0.4, one named constant per harness in `transport/` (`SUBMIT_DELAY`).
 
    **Trial before lowering:** 100, 150 and 200 ms, in Claude and Codex panes, idle and loaded, 200 sends each, counting envelopes left unsubmitted. Lower it only at zero misses.
