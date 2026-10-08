@@ -123,10 +123,15 @@ runs it; run it yourself after a compaction.
 |---|---|
 | `ruling` `go` `ask` | Leaves an obligation on the recipient until it sends `done --re <id>`. |
 | `done` | Closes one obligation: `hail <issuer> done --re <id> '<what was done>'`. Only the obligated seat can. |
-| `hold` `block` | In effect, in every brief, until anyone sends `release --re <id>`. |
+| `hold` `block` | In effect, in every brief, until `release --re <id>` or it lapses: a hold after 8h, a block after 7d, or `--for 30m`/`3d` (at most 7d). Its envelope says `until:`. |
 | `release` | Lifts one hold: `--re <id>`. |
 | `nogo` `stop` `announce` | No state. |
 | `fyi` | No state, and quiet: arrives with the next prompt. For outcomes the reader acts on later; progress goes to `hail note`. |
+
+**A hold is a person's decision** ("don't touch the parser while I redesign
+it"), not a lock. To serialize landing, installs or timing runs, use the
+tool's lock (`just land`, `ferry hold`, the host lease). When your hold lapses,
+your brief says so once; send a new one if it still applies.
 
 `stop hold block release announce` are control kinds: typed in full, no body,
 act on them at once.

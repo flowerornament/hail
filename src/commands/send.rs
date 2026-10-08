@@ -20,7 +20,7 @@ use crate::route::{self, Mail, Sender};
 use crate::seat::Addr;
 use crate::store::ids::{self, Id};
 use crate::store::message::Message;
-use crate::store::records::{Entry, Pending};
+use crate::store::records::{Entry, Pending, hold_default};
 use crate::time;
 use crate::transport::pane_map::PaneMap;
 use crate::transport::tmux::{Pane, Tmux};
@@ -38,6 +38,8 @@ pub struct SendArgs {
     /// `--as <name>`: a sub-agent signs as `<mailbox>/<name>`, so replies
     /// come back to its parent's mailbox marked for it.
     pub as_name: Option<String>,
+    /// `--for`: when a hold or block lapses; its kind's default otherwise.
+    pub hold_for: Option<std::time::Duration>,
     pub delivery: Delivery,
 }
 
@@ -110,6 +112,7 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         None => (sender.from(), sender.boxes.primary.to_string()),
     };
     let re = a.re.as_ref().map(Id::as_str);
+    let until = a.kind.is_hold().then(|| time::iso(expires_at(a, now)));
     let msg = Message::default()
         .header("from", &from)
         .header("reply", &reply)
@@ -120,6 +123,7 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         .header_opt("bead", bead.as_deref())
         .header_opt("re", re)
         .header_opt("scope", a.scope.as_deref())
+        .header_opt("until", until.as_deref())
         .header("ask", &draft.headline)
         .with_body(&draft.body);
     ctx.store
@@ -148,6 +152,7 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         bead: bead.as_deref(),
         re,
         scope: a.scope.as_deref(),
+        until: until.as_deref(),
     };
     let envelope = envelope::render(
         &head,
@@ -319,9 +324,21 @@ fn legacy_body(src: &str) -> Result<String> {
 /// written or typed.
 fn check_state(ctx: &Ctx, a: &SendArgs, sender: &Sender) -> Result<()> {
     match (a.kind, &a.re) {
-        (Kind::Release, Some(re)) if !ctx.store.has_hold(re) => Err(Error::State(format!(
-            "no hold or block in effect with id {re}; hail brief lists holds"
-        ))),
+        (Kind::Release, Some(re)) => match ctx.store.hold(re) {
+            None => Err(Error::State(format!(
+                "no hold or block with id {re}; hail brief lists holds in effect"
+            ))),
+            Some(h) => {
+                let at = h.lapses_at();
+                if at <= time::now() {
+                    eprintln!(
+                        "hail: {re} had already lapsed at {}; releasing it anyway tells its recipient",
+                        time::iso(at)
+                    );
+                }
+                Ok(())
+            }
+        },
         (Kind::Done, Some(re)) if !sender.boxes.iter().any(|b| ctx.store.has_owed(b, re)) => {
             Err(Error::State(format!(
                 "no open obligation {re} on {}; hail brief lists yours",
@@ -330,6 +347,11 @@ fn check_state(ctx: &Ctx, a: &SendArgs, sender: &Sender) -> Result<()> {
         }
         _ => Ok(()),
     }
+}
+
+/// When a hold or block sent now lapses.
+fn expires_at(a: &SendArgs, now: Timestamp) -> Timestamp {
+    time::after(now, a.hold_for.unwrap_or_else(|| hold_default(a.kind)))
 }
 
 fn record_state(
@@ -349,6 +371,7 @@ fn record_state(
         scope: a.scope.clone(),
         time: Some(now),
         re: a.re.clone(),
+        expires: a.kind.is_hold().then(|| expires_at(a, now)),
         headline: headline.to_string(),
     };
     match (a.kind, &a.re) {

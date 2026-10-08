@@ -102,6 +102,7 @@ fn envelope_line(m: &Message) -> Option<String> {
         reply: m.get("reply")?,
         id: m.get("id")?,
         for_: m.get("for"),
+        until: m.get("until"),
         bead: m.get("bead"),
         re: m.get("re"),
         scope: m.get("scope"),

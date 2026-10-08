@@ -12,6 +12,13 @@ All notable changes to `hail` are documented in this file.
 - **`hail note <bead> '<headline>'` puts progress on the bead.** A bd comment
   signed with your seat (body on stdin); no mailbox, no pane, no receipt. A
   bd failure is an error that quotes bd (quiet mail §1b).
+- **Holds lapse.** A `hold` lapses after 8h and a `block` after 7d, unless
+  `--for 30m|8h|3d` (at most 7d) says otherwise; the envelope shows `until:`.
+  Tools now serialize landing, installs and timing runs, so a hold is a
+  person's decision, not a lock. A lapsed hold leaves every brief at once;
+  its issuer's brief says so once, `release` still works on it, and `gc`
+  deletes old and orphaned ones. The 33 holds recorded before 0.5 lapse 8h
+  (7d for blocks) after they were sent (quiet mail §3).
 - **Sub-agents have an address: `<seat>/<name>`.** Mail to
   `murail-2b/scout` goes to murail-2b's mailbox with `for: scout`, the
   envelope shows `for:scout`, and the parent relays it. `--as <name>` signs a

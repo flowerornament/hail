@@ -157,6 +157,11 @@ inbox, except `fyi`: it is quiet wherever the recipient's hooks run, and
 arrives with their next prompt. A typed message costs its reader a turn;
 progress costs nobody anything on the bead (`hail note`).
 
+Holds and blocks lapse (8h and 7d by default, `--for` up to 7d): a hold is a
+person's decision, and tools serialize landing, installs and timing runs. An
+obligation never lapses, because hiding a live ruling by age would change
+what it means.
+
 ## What is deliberately not here
 
 - No polling helper for agents. `await` checks the id index every 100 ms (a few

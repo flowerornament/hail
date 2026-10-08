@@ -67,6 +67,26 @@ fn brief(ctx: &Ctx, all: bool, hook: bool) -> Result<()> {
             "{lapsed} send(s) lapsed after 7 days without a receipt"
         );
     }
+    // Only the issuer hears that a hold ended on its own, and only once.
+    let mine: Vec<&Addr> = boxes.iter().collect();
+    let lapsed = Section {
+        title: "my holds that lapsed (send a new one if it still applies)",
+        unit: "",
+        lines: ctx
+            .store
+            .retire_lapsed(&mine, now, cap)
+            .iter()
+            .map(|e| {
+                let line = Tag::brief(e.kind.map_or("hold", Kind::as_str))
+                    .field("to", &e.to)
+                    .field("id", &e.id)
+                    .text(&e.headline);
+                format!("{line} (lapsed {})", time::iso(e.lapses_at()))
+            })
+            .collect(),
+        oldest_days: None,
+    };
+    write_section(&mut out, &lapsed, cap, width);
     let (holds, others) = holds(ctx, &boxes.primary, all, now);
     write_section(&mut out, &holds, cap, width);
     if others > 0 {
@@ -156,8 +176,11 @@ fn holds(ctx: &Ctx, me: &Addr, all: bool, now: Timestamp) -> (Section, usize) {
             .iter()
             .any(|a| *a == me || a.seat() == me.seat())
     };
-    let (shown, others): (Vec<_>, Vec<_>) =
-        ctx.store.holds().into_iter().partition(|e| all || mine(e));
+    let (shown, others): (Vec<_>, Vec<_>) = ctx
+        .store
+        .holds(now)
+        .into_iter()
+        .partition(|e| all || mine(e));
     let oldest_days = shown.last().map(|e| age_days(e, now));
     let lines = shown
         .iter()
@@ -169,8 +192,9 @@ fn holds(ctx: &Ctx, me: &Addr, all: bool, now: Timestamp) -> (Section, usize) {
                 .opt("scope", e.scope.as_deref())
                 .text(&e.headline);
             format!(
-                "{line} (since {})",
-                e.time.map_or_else(|| "?".into(), time::iso)
+                "{line} (since {}, until {})",
+                e.time.map_or_else(|| "?".into(), time::iso),
+                time::iso(e.lapses_at())
             )
         })
         .collect();

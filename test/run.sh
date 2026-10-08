@@ -475,7 +475,7 @@ s25() { # hold -> release by issuer / refused by another; block; envelope carrie
   expect "hold file" exists "$STATE/holds/$h" || ok=1
   expect "hold issuer" grep -qx "issuer: boss" "$STATE/holds/$h" || ok=1
   line=$(envelope_line "id:$h")
-  expect "scope in envelope" contains "$line" "id:$h scope:murail-ke7is]" || ok=1
+  expect "scope in envelope" contains "$line" "id:$h scope:murail-ke7is until:" || ok=1
   expect "hold typed in full, no hint" not_contains "$line" "hail inbox" || ok=1
   send "$SENDER" worker "BLOCK: anchor dirty" --kind block; b=$(last_id)
   expect "block file" exists "$STATE/holds/$b" || ok=1
@@ -494,6 +494,21 @@ s25() { # hold -> release by issuer / refused by another; block; envelope carrie
   send "$SENDER" worker "unblocked" --kind release --re "$b"
   expect "block released" missing "$STATE/holds/$b" || ok=1
   expect "no holds section" not_contains "$(as "$RECV" brief)" "holds" || ok=1
+  # Lapse: --for sets until:; past it, the hold is gone for every reader, the
+  # issuer's brief says so once, and release still finds it.
+  send "$SENDER" worker "HOLD briefly" --kind hold --for 30m; h=$(last_id)
+  expect "--for in the record" grep -q "^expires: " "$STATE/holds/$h" || ok=1
+  send "$SENDER" worker "too long" --kind hold --for 8d
+  expect "--for over 7d refused" eq "$RC" 1 || ok=1
+  sed -i.bak "s/^expires: .*/expires: 2020-01-01T00:00:00Z/" "$STATE/holds/$h" && rm -f "$STATE/holds/$h.bak"
+  expect "lapsed hold not in recipient brief" not_contains "$(as "$RECV" brief)" "$h" || ok=1
+  out=$(as "$SENDER" brief)
+  expect "issuer told once" contains "$out" "[hail hold to:worker id:$h] HOLD briefly (lapsed 2020-01-01T00:00:00Z)" || ok=1
+  expect "only once" not_contains "$(as "$SENDER" brief)" "$h" || ok=1
+  send "$SENDER" worker "lifted late" --kind release --re "$h"
+  expect "release of a lapsed hold rc=0" eq "$RC" 0 || ok=1
+  expect "says it had lapsed" contains "$ERR" "had already lapsed" || ok=1
+  expect "retired record gone" missing "$STATE/holds/lapsed/$h" || ok=1
   reset_recv; return "$ok"
 }
 

@@ -96,7 +96,10 @@ hail kinds — what each kind means and does
   ruling  go  ask     Leave an obligation on the recipient until it sends
                       'done --re <id>'. 'hail brief' lists them.
   done                Close one obligation: --re <id> required.
-  hold  block         A hold in effect until anyone sends 'release --re <id>'.
+  hold  block         In effect until 'release --re <id>', or until it lapses:
+                      a hold after 8h, a block after 7d, or --for 30m|8h|3d
+                      (at most 7d). For a person's decision, not a lock:
+                      landing and installs have their own locks.
   release             Lift a hold: --re <id> required.
   nogo  announce  stop
                       No state.
@@ -177,7 +180,8 @@ State ($XDG_STATE_HOME/hail, default ~/.local/state/hail):
   seats/<seat>/cur/<id>.<how>.md    claimed (how: injected, read, inline; mtime = when)
   seats/<seat>/owed/<id>            obligations on the seat
   seats/<seat>/pending/<id>         sends with no receipt yet
-  holds/<id>                        holds in effect; delete one to lift it silently
+  holds/<id>                        holds and blocks (expires: says when each lapses)
+  holds/lapsed/<id>                 lapsed ones, after their issuer's brief said so
   ids/<id> -> <seat>                the id index
   archive/                          gc'd mail and the 0.3 tree
 

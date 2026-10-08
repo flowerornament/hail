@@ -23,6 +23,16 @@ pub const PENDING_LAPSE: Duration = Duration::from_hours(168);
 /// envelope is the only way it would ever be seen.
 pub const QUIET_HOOKS_SEEN: Duration = Duration::from_hours(168);
 
+/// A hold lapses this long after it is sent, and a block this long, unless
+/// `--for` says otherwise; `--for` may not exceed the maximum. A hold is a
+/// person's decision ("don't touch X while I redesign it"), not a lock: tools
+/// serialize landing, installs and timing runs. A block reports an external
+/// blocker, which tends to outlive a session. Records with no `expires:` lapse
+/// at their `time:` plus the default for their kind.
+pub const HOLD_DEFAULT: Duration = Duration::from_hours(8);
+pub const BLOCK_DEFAULT: Duration = Duration::from_hours(168);
+pub const HOLD_MAX: Duration = Duration::from_hours(168);
+
 /// At migration, unread mail keyed by a live pane id goes to that pane's
 /// seat only when it is this recent: older mail may have been meant for an
 /// agent that has since left the pane.

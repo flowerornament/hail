@@ -141,6 +141,24 @@ pub struct SendCli {
     /// Sign as a sub-agent of this seat: `<seat>/<name>`.
     #[arg(long = "as", value_name = "NAME")]
     pub as_name: Option<String>,
+    /// How long a hold or block lasts: `30m`, `8h`, `3d`.
+    #[arg(long = "for", value_name = "SPAN")]
+    pub hold_for: Option<String>,
+}
+
+/// `--for`: a span no longer than [`HOLD_MAX`](crate::policy::HOLD_MAX).
+fn parse_hold_for(s: &str) -> Result<std::time::Duration> {
+    let max = crate::policy::HOLD_MAX;
+    match crate::time::parse_span(s) {
+        Some(d) if d <= max => Ok(d),
+        Some(_) => Err(Error::Usage(format!(
+            "--for {s}: at most {}d; a hold is a person's decision, not a standing lock",
+            max.as_secs() / 86_400
+        ))),
+        None => Err(Error::Usage(format!(
+            "--for {s}: a span such as 30m, 8h or 3d"
+        ))),
+    }
 }
 
 pub const VERBS: &[&str] = &[
@@ -278,6 +296,12 @@ impl SendCli {
                 "--as {n}: a sub-agent name is letters, digits, '.', '_' and '-'"
             )));
         }
+        let hold_for = self.hold_for.as_deref().map(parse_hold_for).transpose()?;
+        if hold_for.is_some() && !kind.is_hold() {
+            return Err(Error::Usage(format!(
+                "--for applies to hold and block, not {kind}"
+            )));
+        }
         Ok(SendArgs {
             target: self.target,
             kind,
@@ -286,6 +310,7 @@ impl SendCli {
             bead: self.bead,
             scope: self.scope,
             as_name: self.as_name,
+            hold_for,
             delivery: Delivery {
                 wake: !self.no_wake,
                 submit: !self.no_submit,

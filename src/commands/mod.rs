@@ -58,6 +58,13 @@ fn gc(ctx: &Ctx, days: u64) -> Result<u8> {
         "archived {moved} read messages older than {days} days into {}",
         ctx.store.archive_dir().display()
     );
+    let now = crate::time::now();
+    let cutoff = crate::time::before(
+        now,
+        std::time::Duration::from_secs(days.saturating_mul(86_400)),
+    );
+    let swept = ctx.store.sweep_holds(now, cutoff);
+    outln!("removed {swept} lapsed holds (older than {days} days, or from a seat that is gone)");
     Ok(0)
 }
 

@@ -217,7 +217,9 @@ That is at most 5 syscalls, and there is no directory scan. `await` polls this e
 
 The semantics are unchanged: `ruling`, `go` and `ask` create `owed/<id>`; `done --re` removes it; `hold` and `block` create `holds/<id>`; `release --re` removes it.
 
-New bounds, in `brief` only. Nothing expires: hiding a live ruling by age would change what the protocol means.
+New bounds, in `brief` only. Obligations never expire: hiding a live ruling by age would change what the protocol means.
+
+*(Amended for 0.5, docs/2026-10-08-quiet-mail-design.md §3.)* Holds and blocks do lapse, because tools now serialize what holds were used for (landing, installs, timing). `hold` and `block` take `--for <span>` (default 8h for a hold, 7d for a block, at most 7d); the record carries `expires:` and the envelope `until:`. A record without `expires:` lapses at `time:` plus its kind's default. Lapse is a read-time filter: every reader agrees and none deletes. The issuer's own `brief` moves its lapsed holds to `holds/lapsed/` and says so once; `release` finds a hold there and says it had lapsed. `gc` deletes holds that lapsed more than `--days` ago, and lapsed ones whose issuer has no mailbox.
 - `brief` shows at most 5 obligations and 5 holds, newest first, then `… N more, oldest Nd (hail brief --all)`.
 - The 376 obligations on `%1` are an artefact of pane keys. Migration moves them out of every live seat (§11.1).
 

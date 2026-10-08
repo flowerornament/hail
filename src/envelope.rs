@@ -102,6 +102,8 @@ pub struct Head<'a> {
     pub bead: Option<&'a str>,
     pub re: Option<&'a str>,
     pub scope: Option<&'a str>,
+    /// When a hold or block lapses.
+    pub until: Option<&'a str>,
 }
 
 /// `[hail <kind> key:value …] text`: the head of an envelope (fields named,
@@ -152,6 +154,7 @@ pub fn render(head: &Head<'_>, headline: &str, hint: bool) -> String {
         .opt("bead", head.bead)
         .opt("re", head.re)
         .opt("scope", head.scope)
+        .opt("until", head.until)
         .text(headline);
     if hint {
         format!("{line} — hail inbox")
@@ -273,6 +276,7 @@ mod tests {
             reply: "murail-1a",
             id: "0905T171200-a3f1",
             for_: None,
+            until: None,
             bead: Some("murail-ke7is"),
             re: None,
             scope: Some("commit"),

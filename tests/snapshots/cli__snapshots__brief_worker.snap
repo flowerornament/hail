@@ -6,6 +6,6 @@ inbox (2 unread)
   [hail ask from:boss id:[id] scope:auth] review the auth change
   [hail fyi from:boss id:[id]] status with a body
 holds / blocks on me (1)
-  [hail hold from:boss to:worker id:[id]] hold the merge (since [time])
+  [hail hold from:boss to:worker id:[id]] hold the merge (since [time], until [time])
 open obligations on me (1)
   [hail ask from:boss id:[id] scope:auth] review the auth change — hail boss done --re [id] '<what was done>'
