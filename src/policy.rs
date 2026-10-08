@@ -18,6 +18,11 @@ pub const BRIEF_SHOWN: usize = 5;
 pub const PENDING_LATE: Duration = Duration::from_mins(2);
 pub const PENDING_LAPSE: Duration = Duration::from_hours(168);
 
+/// An `fyi` is quiet (not typed; it arrives with the next prompt) only when
+/// the recipient's prompt hook has run this recently. Otherwise the typed
+/// envelope is the only way it would ever be seen.
+pub const QUIET_HOOKS_SEEN: Duration = Duration::from_hours(168);
+
 /// At migration, unread mail keyed by a live pane id goes to that pane's
 /// seat only when it is this recent: older mail may have been meant for an
 /// agent that has since left the pane.

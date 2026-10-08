@@ -44,6 +44,7 @@ These are the conditions the design has to survive:
 
 ```
 hail <seat> <kind> [--re ID] [--bead ID] [--scope S] [--no-submit] [--force]   # body on stdin
+hail note <bead> [headline]       # progress as a bd comment signed with the seat; no message (0.5)
 hail sent <id>                    # delivered | injected <t> | read <t> | inline <t> | unknown
 hail await <id>... [--timeout S] [--any]
 hail inbox [--peek] [--all]       # unread bodies; claims them (read)
@@ -87,6 +88,8 @@ EOF
 - `seat/name` (also `seat@%N/name`): a sub-agent. The message goes to the parent's mailbox with a `for: name` header and `for:name` in the envelope, and the parent relays it. `--as <name>` signs a send as `<mailbox>/<name>` in `from:` and `reply:`. Sub-agents have no mailbox of their own (quiet-mail design §2).
 - The target is parsed at one boundary (`seat::Address`): `/` is split first, then `@`, and every part must name exactly one directory entry. An empty part, `.`, `..`, `/` or NUL is refused (exit 1).
 - An unknown seat is an error that lists the near names (exit 1). One whose prefix is a known seat plus `-`, `_` or `.` also suggests the sub-agent address: `send to murail-2b/recip-consumer (its parent relays)`.
+
+**Quiet `fyi` (0.5, docs/2026-10-08-quiet-mail-design.md §1):** an `fyi` is not typed when the recipient mailbox's `hooked` file (touched by every `deliver`) is under 7 days old. It arrives with the recipient's next prompt, exits 0, prints `quiet: arrives with <seat>'s next prompt` on stderr, and writes no pending record. Every other kind types as before, and so does an `fyi` to a mailbox whose hooks have not run.
 
 **Output:**
 - `id=<id>` on stdout, on exit 0 and on exit 5, plus `bead=<id> comment=<n>` when a bead comment was posted. This is unchanged.
@@ -206,7 +209,7 @@ That is at most 5 syscalls, and there is no directory scan. `await` polls this e
 
 ### 6.5 Pending (my sends without receipt)
 
-- `pending/<id>` is written at send.
+- `pending/<id>` is written at send, except for a quiet `fyi` (§4.2).
 - `brief` checks each pending id's receipt (§6.4) and deletes the entry once a receipt exists, or once it is older than 7 days, when it is reported once as expired.
 - The directory holds only the open set. Today's `sent/` grows forever.
 
@@ -254,6 +257,7 @@ Closing stays explicit (`done --re`). A reply of another kind with `--re` does n
 **Behaviour shared by every hook command:**
 - Each one reads and ignores stdin JSON without blocking: it reads to EOF only when stdin is a pipe, with a 50 ms cap.
 - **PostToolUse delivery waits for S3 (0.5).** While the envelope is still typed, a second delivery path would claim a body mid-turn and then deliver its envelope late.
+- `deliver` touches `seats/<mailbox>/hooked` for each mailbox it reads, every run: the evidence a send uses to make an `fyi` quiet (§4.2).
 - When the directory is not a seat, it is silent and exits 0. No `[ -n "$TMUX_PANE" ]` wrapper is needed, since identity no longer depends on tmux, so the hook lines become `hail deliver --format claude`.
 - Exit 0 always. A hook never blocks a session, and errors go to `~/.local/state/hail/hook-errors.log`, capped at 1 MB.
 

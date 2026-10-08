@@ -4,6 +4,14 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+- **An `fyi` never interrupts.** It is no longer typed into the recipient's
+  pane; it arrives with their next prompt. Where the recipient's hooks have
+  never run (no `hooked` mark from `deliver` in the last 7 days), it is typed
+  as before, so it cannot strand. A quiet `fyi` exits 0 and leaves no pending
+  record. Every other kind still types (quiet mail §1a).
+- **`hail note <bead> '<headline>'` puts progress on the bead.** A bd comment
+  signed with your seat (body on stdin); no mailbox, no pane, no receipt. A
+  bd failure is an error that quotes bd (quiet mail §1b).
 - **Sub-agents have an address: `<seat>/<name>`.** Mail to
   `murail-2b/scout` goes to murail-2b's mailbox with `for: scout`, the
   envelope shows `for:scout`, and the parent relays it. `--as <name>` signs a

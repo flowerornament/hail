@@ -76,6 +76,23 @@ impl Mailbox {
         self.sub("cur").join(format!("{id}.{}.md", how.as_str()))
     }
 
+    /// Note that this mailbox's prompt hook ran: `deliver` calls it every
+    /// time, so a send can tell a seat with working hooks from a quiet one.
+    pub fn touch_hooked(&self) {
+        let p = self.sub("hooked");
+        if File::options().write(true).open(&p).is_err() {
+            let _ = fs::create_dir_all(&self.dir);
+            let _ = File::create(&p);
+        }
+        set_mtime(&p, time::now());
+    }
+
+    /// Whether the prompt hook ran within `within`.
+    pub fn hooked_within(&self, within: std::time::Duration) -> bool {
+        mtime(&self.sub("hooked"))
+            .is_some_and(|t| time::now().duration_since(t).unsigned_abs() < within)
+    }
+
     /// Write a message durably, then make it visible: `new/` for mail,
     /// `cur/<id>.inline.md` for a control kind.
     pub fn post(&self, id: &Id, text: &str, control: bool) -> Result<PathBuf> {

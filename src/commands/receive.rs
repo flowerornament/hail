@@ -36,13 +36,17 @@ fn deliver_inner(ctx: &Ctx, format: Option<&str>) -> Result<()> {
         return Ok(());
     };
     ctx.bind(&seat)?;
+    let boxes = ctx.mailboxes(&seat);
+    for addr in boxes.iter() {
+        ctx.store.mailbox(addr).touch_hooked();
+    }
     let mut claims = Claims {
         store: &ctx.store,
         made: Vec::new(),
     };
     let mut parts = Vec::new();
     let (mut bytes, mut more) = (0, 0);
-    for addr in ctx.mailboxes(&seat).iter() {
+    for addr in boxes.iter() {
         for id in ctx.store.mailbox(addr).unread() {
             if parts.len() >= DELIVER_BODIES || bytes >= DELIVER_BYTES {
                 more += 1;

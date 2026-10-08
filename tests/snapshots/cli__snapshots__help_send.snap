@@ -35,8 +35,13 @@ Envelope typed into the recipient's pane:
   [hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [for:] [bead:] [re:] [scope:]] <headline>[ — hail inbox]
 Reply to the reply: value. for:<name> marks mail for your sub-agent: relay it.
 
-Exit: 0 typed and submitted; 5 written to the inbox but not typed (no agent
-pane, or typing not confirmed): do NOT resend, it arrives on their next
-prompt; 3 seat problem; 4 the target shows a permission dialog.
+An fyi is quiet: it is not typed, and arrives with the recipient's next prompt
+(typed as before where their hooks have never run). Progress belongs on the
+bead instead: hail note <bead> '<headline>' (body on stdin) posts a bd comment
+signed with your seat and messages nobody.
+
+Exit: 0 typed and submitted, or a quiet fyi; 5 written to the inbox but not
+typed (no agent pane, or typing not confirmed): do NOT resend, it arrives on
+their next prompt; 3 seat problem; 4 the target shows a permission dialog.
 
 The 0.3 form still works: hail <target> '<headline>' --kind <k> [--body text|file|-]

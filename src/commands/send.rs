@@ -15,7 +15,9 @@ use crate::ctx::Ctx;
 use crate::envelope::{self, Head, Kind};
 use crate::error::{EXIT_NOT_WOKEN, Error, Result};
 use crate::input;
+use crate::policy::QUIET_HOOKS_SEEN;
 use crate::route::{self, Mail, Sender};
+use crate::seat::Addr;
 use crate::store::ids::{self, Id};
 use crate::store::message::Message;
 use crate::store::records::{Entry, Pending};
@@ -84,7 +86,11 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
     let sender = route::sender(ctx, &me, panes.as_ref());
     let mail = route::mail(ctx, &a.target, panes.as_ref(), tmux.as_ref())?;
     check_state(ctx, a, &sender)?;
-    let wake_pane = mail.wake.as_ref().filter(|_| a.delivery.wake);
+    // An fyi never interrupts a seat whose hooks run: it rides in with the
+    // recipient's next prompt. Where hooks have not run, typing is the only
+    // way it would be seen, so it is typed as before.
+    let quiet = a.kind == Kind::Fyi && ctx.store.mailbox(&mail.to).hooked_within(QUIET_HOOKS_SEEN);
+    let wake_pane = mail.wake.as_ref().filter(|_| a.delivery.wake && !quiet);
     if let (Some(t), Some(p), false) = (&tmux, wake_pane, a.delivery.force) {
         transport::guard_dialog(t, p)?;
     }
@@ -120,6 +126,18 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         .mailbox(&mail.to)
         .post(&id, &msg.render(), a.kind.is_control())?;
     record_state(ctx, a, &id, &sender, &mail, &draft.headline, now)?;
+    // A quiet fyi is received whenever its reader next works: a missing
+    // receipt after two minutes would be noise in the sender's brief.
+    if !a.kind.is_control() && !quiet {
+        let pending = Pending {
+            id: id.clone(),
+            kind: Some(a.kind),
+            to: mail.to.clone(),
+            sent: Some(now),
+            headline: draft.headline.clone(),
+        };
+        ctx.store.put_pending(&sender.boxes.primary, &pending)?;
+    }
 
     let head = Head {
         kind: a.kind,
@@ -136,11 +154,33 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         &draft.headline,
         draft.has_body && !a.kind.is_control(),
     );
-    let not_woken = wake(tmux.as_ref(), wake_pane, &envelope, a.delivery, &mail);
+    let not_woken = (!quiet)
+        .then(|| wake(tmux.as_ref(), wake_pane, &envelope, a.delivery, &mail))
+        .flatten();
 
+    Ok(report(
+        &id,
+        bead.as_deref(),
+        &draft.body,
+        quiet,
+        &mail.to,
+        not_woken,
+    ))
+}
+
+/// Tell the sender what happened: the id, the bead comment, and how the
+/// recipient will see it.
+fn report(
+    id: &Id,
+    bead: Option<&str>,
+    body: &str,
+    quiet: bool,
+    to: &Addr,
+    not_woken: Option<String>,
+) -> u8 {
     outln!("id={id}");
-    if let Some(b) = &bead {
-        match bd::comment(b, &draft.body) {
+    if let Some(b) = bead {
+        match bd::comment(b, body) {
             Posted::Comment(n) => outln!("bead={b} comment={n}"),
             Posted::Unnumbered => {}
             Posted::Failed(_) => {
@@ -150,14 +190,23 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
             }
         }
     }
+    if quiet {
+        eprintln!(
+            "hail: quiet: arrives with {to}'s next prompt (an fyi never interrupts; an ask or announce does)"
+        );
+        if let Some(b) = bead {
+            eprintln!(
+                "hail: progress on {b}? hail note {b} '<headline>' posts it with no message at all"
+            );
+        }
+    }
     let Some(reason) = not_woken else {
-        return Ok(0);
+        return 0;
     };
     eprintln!(
-        "hail: delivered to {}'s inbox; not typed ({reason}); do not resend: it arrives on their next prompt",
-        mail.to
+        "hail: delivered to {to}'s inbox; not typed ({reason}); do not resend: it arrives on their next prompt"
     );
-    Ok(EXIT_NOT_WOKEN)
+    EXIT_NOT_WOKEN
 }
 
 fn validate(a: &SendArgs) -> Result<()> {
@@ -312,16 +361,6 @@ fn record_state(
             }
         }
         _ => {}
-    }
-    if !a.kind.is_control() {
-        let pending = Pending {
-            id: id.clone(),
-            kind: Some(a.kind),
-            to: mail.to.clone(),
-            sent: Some(now),
-            headline: headline.to_string(),
-        };
-        ctx.store.put_pending(&sender.boxes.primary, &pending)?;
     }
     Ok(())
 }

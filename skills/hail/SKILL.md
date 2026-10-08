@@ -1,8 +1,8 @@
 ---
 name: hail
-description: "Messages between coding agents on one machine with hail. Use this skill whenever the user mentions sending a message to another agent, seat or pane, a `[hail ...]` (or `[tb ...]`/`[tmux-bridge ...]`) envelope appears in your prompt, you need to know whether another agent has read something, you must answer or close a ruling, go, ask, hold or block, or you must drive a non-agent tmux pane (a shell, a running process). Covers the hail CLI: send, sent, await, brief, inbox, show, whoami, seats, kinds with state, and pane driving."
+description: "Messages between coding agents on one machine with hail. Use this skill whenever the user mentions sending a message to another agent, seat or pane, a `[hail ...]` (or `[tb ...]`/`[tmux-bridge ...]`) envelope appears in your prompt, you need to know whether another agent has read something, you must answer or close a ruling, go, ask, hold or block, or you must drive a non-agent tmux pane (a shell, a running process). Covers the hail CLI: send, note, sent, await, brief, inbox, show, whoami, seats, kinds with state, and pane driving."
 metadata:
-  { "version": "0.4.0", "openclaw": { "emoji": "📯", "os": ["darwin", "linux"], "requires": { "bins": ["tmux", "hail"] } } }
+  { "version": "0.5.0", "openclaw": { "emoji": "📯", "os": ["darwin", "linux"], "requires": { "bins": ["tmux", "hail"] } } }
 ---
 
 # hail
@@ -59,8 +59,25 @@ EOF
 - **Headline length:** over 400 characters, the headline is folded into the
   body. Never squeeze words together to fit.
 
+**Progress goes on the bead, not to a seat.** Every message lands in someone's
+context, and every typed one costs them a turn. Test results, checkpoints and
+"still working" belong on the issue:
+
+```bash
+hail note murail-ke7is 'gate green: 48/48'   # a bd comment signed with your seat; nobody is messaged
+```
+
+Send a message only for a decision, a blocker, a review request or an outcome
+someone must act on.
+
+**An `fyi` never interrupts.** It is not typed into the recipient's pane: it
+arrives with their next prompt (where their hooks run; otherwise it is typed
+as before). An agent idle until a scheduled wakeup sees it only then, so a
+time-critical fact is never an `fyi`. Use `ask` when you need the answer, and
+`announce` when everyone must know now.
+
 One send is one action. There is no read step and no polling. **Exit codes:**
-- `0`: typed and submitted.
+- `0`: typed and submitted, or a quiet `fyi` (it says so).
 - `5`: written to the inbox but not typed (no agent pane, or typing not
   confirmed). **Do not resend**: it arrives on their next prompt.
 - `3`: seat problem; the message says the fix.
@@ -108,7 +125,8 @@ runs it; run it yourself after a compaction.
 | `done` | Closes one obligation: `hail <issuer> done --re <id> '<what was done>'`. Only the obligated seat can. |
 | `hold` `block` | In effect, in every brief, until anyone sends `release --re <id>`. |
 | `release` | Lifts one hold: `--re <id>`. |
-| `nogo` `fyi` `stop` `announce` | No state. `fyi` for status; `ask` only when you expect a reply. |
+| `nogo` `stop` `announce` | No state. |
+| `fyi` | No state, and quiet: arrives with the next prompt. For outcomes the reader acts on later; progress goes to `hail note`. |
 
 `stop hold block release announce` are control kinds: typed in full, no body,
 act on them at once.

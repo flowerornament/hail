@@ -11,6 +11,7 @@ Send (the body is everything after the first line):
   EOF
   hail <seat> <kind> '<headline>'
                                   Headline only; no body.
+  hail note <bead> '<headline>'   Progress on the bead (bd comment); messages nobody
   sent <id>                       Receipt: delivered | injected <t> | read <t> | inline <t> | unknown
   await <id>... [--timeout S]     Block until every id (--any: any id) has a receipt
 
@@ -77,9 +78,14 @@ Envelope typed into the recipient's pane:
   [hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [for:] [bead:] [re:] [scope:]] <headline>[ — hail inbox]
 Reply to the reply: value. for:<name> marks mail for your sub-agent: relay it.
 
-Exit: 0 typed and submitted; 5 written to the inbox but not typed (no agent
-pane, or typing not confirmed): do NOT resend, it arrives on their next
-prompt; 3 seat problem; 4 the target shows a permission dialog.
+An fyi is quiet: it is not typed, and arrives with the recipient's next prompt
+(typed as before where their hooks have never run). Progress belongs on the
+bead instead: hail note <bead> '<headline>' (body on stdin) posts a bd comment
+signed with your seat and messages nobody.
+
+Exit: 0 typed and submitted, or a quiet fyi; 5 written to the inbox but not
+typed (no agent pane, or typing not confirmed): do NOT resend, it arrives on
+their next prompt; 3 seat problem; 4 the target shows a permission dialog.
 
 The 0.3 form still works: hail <target> '<headline>' --kind <k> [--body text|file|-]
 ";
@@ -92,8 +98,11 @@ hail kinds — what each kind means and does
   done                Close one obligation: --re <id> required.
   hold  block         A hold in effect until anyone sends 'release --re <id>'.
   release             Lift a hold: --re <id> required.
-  nogo  fyi  announce  stop
-                      No state. fyi for status; ask only when you expect a reply.
+  nogo  announce  stop
+                      No state.
+  fyi                 No state, and quiet: not typed; it arrives with the
+                      recipient's next prompt. For outcomes read later;
+                      progress goes to 'hail note <bead>'.
 
 stop hold block release announce are control kinds: typed in full, no body,
 act on them at once. A message with no body is complete in its envelope.
@@ -186,7 +195,7 @@ Exit codes: 0 ok · 1 usage or state · 2 control headline over cap ·
 /// The page for a topic or verb, or None.
 pub fn page(topic: &str) -> Option<&'static str> {
     Some(match topic {
-        "send" | "message" | "msg" | "sent" | "await" => SEND,
+        "send" | "message" | "msg" | "sent" | "await" | "note" => SEND,
         "kinds" | "kind" => KINDS,
         "receive" | "deliver" | "brief" | "inbox" | "show" => RECEIVE,
         "seats" | "seat" | "whoami" | "list" | "identity" | "name" | "hello" | "who"

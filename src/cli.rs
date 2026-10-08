@@ -304,6 +304,7 @@ mod tests {
         ("<seat>", "murail-1b"),
         ("<issuer>", "murail-1a"),
         ("<kind>", "ask"),
+        ("<bead>", "murail-ke7is"),
         ("<id>...", "1006T171200-a3f1"),
         ("<id>", "1006T171200-a3f1"),
         ("[options]", ""),

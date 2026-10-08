@@ -143,6 +143,7 @@ bd.rs              the optional bead comment (a subprocess, after the wake)     
 
 ```
 hail <seat> <kind> [--re id] [--bead id] [--scope s] <<'EOF' … EOF   → id=…, bead=… comment=…
+hail note <bead> '<headline>'                                         progress, on the bead only
 hail sent <id> · await <id>... [--timeout s] [--any]                  receipts
 hail brief · inbox [--peek] [--all] · show <id> · deliver --format h  receiving
 hail whoami · seats · list                                            seats and panes
@@ -152,7 +153,9 @@ hail setup · doctor · migrate · gc · help · version                   the t
 
 `stop hold block release announce` type the full headline inline, with no body
 and no fetch hint. The other kinds type the envelope and keep the body in the
-inbox.
+inbox, except `fyi`: it is quiet wherever the recipient's hooks run, and
+arrives with their next prompt. A typed message costs its reader a turn;
+progress costs nobody anything on the bead (`hail note`).
 
 ## What is deliberately not here
 

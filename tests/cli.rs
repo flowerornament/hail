@@ -489,6 +489,39 @@ fn a_note_that_bd_cannot_post_fails() {
     assert_eq!(out.status.code(), Some(1), "a non-bead is a usage error");
 }
 
+#[test]
+fn an_fyi_is_quiet_once_the_recipients_hooks_have_run() {
+    let w = World::new();
+    // Hooks never ran in worker: the fyi is typed as before (exit 5 here,
+    // with no tmux), and the send is pending.
+    let id = w.send("before hooks");
+    assert!(w.state().join(format!("seats/boss/pending/{id}")).exists());
+    assert!(w.run("worker", &["deliver"]).status.success());
+
+    // Now they have: an fyi is quiet, exits 0, and leaves no pending record.
+    // No bd on PATH: a test never posts to a real tracker.
+    let out = w
+        .hail("boss")
+        .args(["worker", "fyi", "build green", "--bead", "hail-abc1"])
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let id = stdout(&out).trim().strip_prefix("id=").unwrap().to_string();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("quiet: arrives with worker's next prompt"),
+        "{err}"
+    );
+    assert!(err.contains("hail note hail-abc1"), "{err}");
+    assert!(!w.state().join(format!("seats/boss/pending/{id}")).exists());
+    assert!(stdout(&w.run("worker", &["deliver"])).contains("build green"));
+
+    // Every other kind still tries to type (exit 5: no tmux here).
+    let out = w.run("boss", &["worker", "ask", "review this"]);
+    assert_eq!(out.status.code(), Some(5), "{out:?}");
+}
+
 fn header(path: &Path, key: &str) -> Option<String> {
     let text = fs::read_to_string(path).unwrap();
     text.lines()

@@ -11,6 +11,7 @@ Send (the body is everything after the first line):
   EOF
   hail <seat> <kind> '<headline>'
                                   Headline only; no body.
+  hail note <bead> '<headline>'   Progress on the bead (bd comment); messages nobody
   sent <id>                       Receipt: delivered | injected <t> | read <t> | inline <t> | unknown
   await <id>... [--timeout S]     Block until every id (--any: any id) has a receipt
 
