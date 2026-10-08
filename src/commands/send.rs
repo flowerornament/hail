@@ -10,7 +10,6 @@ use std::path::Path;
 
 use jiff::Timestamp;
 
-use crate::bd::{self, Posted};
 use crate::ctx::Ctx;
 use crate::envelope::{self, Head, Kind};
 use crate::error::{EXIT_NOT_WOKEN, Error, Result};
@@ -33,7 +32,6 @@ pub struct SendArgs {
     pub form: Form,
     /// The message this answers, closes (`done`) or lifts (`release`).
     pub re: Option<Id>,
-    pub bead: Option<String>,
     pub scope: Option<String>,
     /// `--as <name>`: a sub-agent signs as `<mailbox>/<name>`, so replies
     /// come back to its parent's mailbox marked for it.
@@ -100,10 +98,6 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
     // The message is durable before anything is typed.
     let now = time::now();
     let id = ids::reserve(&ctx.store, &mail.to, now)?;
-    let bead = a
-        .bead
-        .clone()
-        .or_else(|| envelope::detect_bead(&draft.headline));
     let (from, reply) = match &a.as_name {
         Some(name) => {
             let me = format!("{}/{name}", sender.boxes.primary);
@@ -120,7 +114,6 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         .header("id", id.as_str())
         .header("time", time::iso(now))
         .header_opt("for", mail.for_.as_deref())
-        .header_opt("bead", bead.as_deref())
         .header_opt("re", re)
         .header_opt("scope", a.scope.as_deref())
         .header_opt("until", until.as_deref())
@@ -149,7 +142,6 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         reply: &reply,
         id: id.as_str(),
         for_: mail.for_.as_deref(),
-        bead: bead.as_deref(),
         re,
         scope: a.scope.as_deref(),
         until: until.as_deref(),
@@ -163,47 +155,16 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         .then(|| wake(tmux.as_ref(), wake_pane, &envelope, a.delivery, &mail))
         .flatten();
 
-    Ok(report(
-        &id,
-        bead.as_deref(),
-        &draft.body,
-        quiet,
-        &mail.to,
-        not_woken,
-    ))
+    Ok(report(&id, quiet, &mail.to, not_woken))
 }
 
-/// Tell the sender what happened: the id, the bead comment, and how the
-/// recipient will see it.
-fn report(
-    id: &Id,
-    bead: Option<&str>,
-    body: &str,
-    quiet: bool,
-    to: &Addr,
-    not_woken: Option<String>,
-) -> u8 {
+/// Tell the sender what happened: the id, and how the recipient will see it.
+fn report(id: &Id, quiet: bool, to: &Addr, not_woken: Option<String>) -> u8 {
     outln!("id={id}");
-    if let Some(b) = bead {
-        match bd::comment(b, body) {
-            Posted::Comment(n) => outln!("bead={b} comment={n}"),
-            Posted::Unnumbered => {}
-            Posted::Failed(_) => {
-                eprintln!(
-                    "hail: warning: could not post to bead {b} with bd; the message is file-only"
-                );
-            }
-        }
-    }
     if quiet {
         eprintln!(
             "hail: quiet: arrives with {to}'s next prompt (an fyi never interrupts; an ask or announce does)"
         );
-        if let Some(b) = bead {
-            eprintln!(
-                "hail: progress on {b}? hail note {b} '<headline>' posts it with no message at all"
-            );
-        }
     }
     let Some(reason) = not_woken else {
         return 0;

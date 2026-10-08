@@ -24,12 +24,11 @@ pub struct Cli {
 pub enum Cmd {
     #[command(alias = "message", alias = "msg")]
     Send(SendCli),
+    /// Removed in 0.5.1; says what to use instead. Drop it in 0.6.
+    #[command(hide = true)]
     Note {
-        bead: String,
-        headline: Option<String>,
-        /// Sign as a sub-agent of this seat: `[<seat>/<name>]`.
-        #[arg(long = "as", value_name = "NAME")]
-        as_name: Option<String>,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
     Sent {
         id: String,
@@ -128,7 +127,9 @@ pub struct SendCli {
     pub body: Option<String>,
     #[arg(long)]
     pub re: Option<String>,
-    #[arg(long)]
+    /// Accepted and ignored: hail no longer talks to bd. Kept so sends from
+    /// sessions taught the flag still go through; drop it in 0.6.
+    #[arg(long, hide = true)]
     pub bead: Option<String>,
     #[arg(long, allow_hyphen_values = true)]
     pub scope: Option<String>,
@@ -302,12 +303,16 @@ impl SendCli {
                 "--for applies to hold and block, not {kind}"
             )));
         }
+        if let Some(b) = &self.bead {
+            eprintln!(
+                "hail: --bead is ignored now (hail no longer posts to bd); name {b} in the headline if it matters"
+            );
+        }
         Ok(SendArgs {
             target: self.target,
             kind,
             form,
             re,
-            bead: self.bead,
             scope: self.scope,
             as_name: self.as_name,
             hold_for,
@@ -332,7 +337,6 @@ mod tests {
         ("<seat>", "murail-1b"),
         ("<issuer>", "murail-1a"),
         ("<kind>", "ask"),
-        ("<bead>", "murail-ke7is"),
         ("<id>...", "1006T171200-a3f1"),
         ("<id>", "1006T171200-a3f1"),
         ("[options]", ""),

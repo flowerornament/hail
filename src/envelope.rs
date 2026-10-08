@@ -1,5 +1,5 @@
-//! Kinds, the one-line envelope and its `[hail …]` head, headline folding
-//! and bead detection. Pure.
+//! Kinds, the one-line envelope and its `[hail …]` head, and headline
+//! folding. Pure.
 
 use std::fmt::Display;
 
@@ -99,7 +99,6 @@ pub struct Head<'a> {
     pub id: &'a str,
     /// The sub-agent a message is for; its parent relays it.
     pub for_: Option<&'a str>,
-    pub bead: Option<&'a str>,
     pub re: Option<&'a str>,
     pub scope: Option<&'a str>,
     /// When a hold or block lapses.
@@ -143,7 +142,7 @@ impl Tag {
     }
 }
 
-/// `[hail kind:<k> from:<f> reply:<r> id:<id> [for:] [bead:] [re:] [scope:]] <headline>[ — hail inbox]`.
+/// `[hail kind:<k> from:<f> reply:<r> id:<id> [for:] [re:] [scope:] [until:]] <headline>[ — hail inbox]`.
 /// The fetch hint appears only when there is a body to fetch.
 pub fn render(head: &Head<'_>, headline: &str, hint: bool) -> String {
     let line = Tag::envelope(head.kind)
@@ -151,7 +150,6 @@ pub fn render(head: &Head<'_>, headline: &str, hint: bool) -> String {
         .field("reply", head.reply)
         .field("id", head.id)
         .opt("for", head.for_)
-        .opt("bead", head.bead)
         .opt("re", head.re)
         .opt("scope", head.scope)
         .opt("until", head.until)
@@ -196,46 +194,6 @@ pub fn fold_headline(text: &str, max: usize) -> String {
     format!("{} …", cut.trim_end())
 }
 
-/// First token that looks like a beads issue id (`prefix-hash[.n]`). The hash
-/// must contain a digit so ordinary hyphenated words (tmux-bridge, read-only)
-/// are not mistaken for an issue.
-pub fn detect_bead(text: &str) -> Option<String> {
-    let cleaned: String = text
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
-                c
-            } else {
-                ' '
-            }
-        })
-        .collect();
-    cleaned.split_whitespace().find_map(|tok| {
-        let tok = tok.strip_suffix('.').unwrap_or(tok);
-        is_bead_id(tok).then(|| tok.to_string())
-    })
-}
-
-pub fn is_bead_id(tok: &str) -> bool {
-    let Some((prefix, rest)) = tok.split_once('-') else {
-        return false;
-    };
-    if prefix.is_empty() || !prefix.chars().all(|c| c.is_ascii_lowercase()) {
-        return false;
-    }
-    let (hash, child) = match rest.split_once('.') {
-        Some((h, n)) => (h, Some(n)),
-        None => (rest, None),
-    };
-    let hash_ok = (4..=6).contains(&hash.len())
-        && hash
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
-        && hash.chars().any(|c| c.is_ascii_digit());
-    let child_ok = child.is_none_or(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
-    hash_ok && child_ok
-}
-
 /// One brief line, at most `max` characters, with an ellipsis when cut.
 pub fn clip(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
@@ -254,7 +212,7 @@ mod tests {
     fn tags() {
         let t = Tag::envelope("ask")
             .field("from", "boss/%0")
-            .opt("bead", None)
+            .opt("scope", None)
             .opt("re", Some("x"))
             .text("hi");
         assert_eq!(t, "[hail kind:ask from:boss/%0 re:x] hi");
@@ -277,29 +235,13 @@ mod tests {
             id: "0905T171200-a3f1",
             for_: None,
             until: None,
-            bead: Some("murail-ke7is"),
             re: None,
             scope: Some("commit"),
         };
         assert_eq!(
             render(&head, "convert at the receipt", true),
-            "[hail kind:ruling from:murail-1a/%5 reply:murail-1a id:0905T171200-a3f1 bead:murail-ke7is scope:commit] convert at the receipt — hail inbox"
+            "[hail kind:ruling from:murail-1a/%5 reply:murail-1a id:0905T171200-a3f1 scope:commit] convert at the receipt — hail inbox"
         );
-    }
-
-    #[test]
-    fn beads_need_a_digit() {
-        assert_eq!(
-            detect_bead("see murail-ke7is now"),
-            Some("murail-ke7is".into())
-        );
-        assert_eq!(detect_bead("ends herald-abc.2."), None);
-        assert_eq!(
-            detect_bead("x herald-ab12.2."),
-            Some("herald-ab12.2".into())
-        );
-        assert_eq!(detect_bead("tmux-bridge read-only"), None);
-        assert_eq!(detect_bead("(murail-9sg8y)"), Some("murail-9sg8y".into()));
     }
 
     #[test]

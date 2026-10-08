@@ -11,7 +11,6 @@ Send (the body is everything after the first line):
   EOF
   hail <seat> <kind> '<headline>'
                                   Headline only; no body.
-  hail note <bead> '<headline>'   Progress on the bead (bd comment); messages nobody
   sent <id>                       Receipt: delivered | injected <t> | read <t> | inline <t> | unknown
   await <id>... [--timeout S]     Block until every id (--any: any id) has a receipt
 
@@ -36,8 +35,8 @@ Tool:
   help [topic] · version          Topics: send kinds receive seats panes setup state
 
 Examples:
-  hail murail-1b ask --bead murail-ke7is <<'EOF'
-  Review src/auth.ts against murail-ke7is; verdict on the bead
+  hail murail-1b ask <<'EOF'
+  Review src/auth.ts before the merge; reply done with your verdict
   The refresh path is auth/refresh.rs:40-120.
   EOF
   hail murail-1a done --re 1006T171200-a3f1 'committed on abc123'

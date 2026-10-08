@@ -111,7 +111,7 @@ needs its own review. A layer carrying both `.codex/hooks.json` and
 milliseconds with nothing unread; it runs on
 every prompt-like event (on Claude Code, task notifications too). The
 injected body is not retained through compaction; the file under
-`~/.local/state/hail/inbox/` and the bead comment are.
+`~/.local/state/hail/seats/<seat>/` is.
 
 Both harnesses read hooks at session start; installing or changing them needs
 a new session.

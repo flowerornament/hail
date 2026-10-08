@@ -21,15 +21,12 @@
 //!   `release`.
 //! - **harness**: the agent program, Claude Code or Codex. Its **hooks** run
 //!   `hail deliver` and `hail brief` (`hooks/`).
-//! - **bd**: the beads issue tracker. A message naming a bead is also posted
-//!   there as a comment (`bd.rs`).
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 #[macro_use]
 mod out;
 
-mod bd;
 mod cli;
 mod commands;
 mod ctx;

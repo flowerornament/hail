@@ -11,7 +11,6 @@ Send (the body is everything after the first line):
   EOF
   hail <seat> <kind> '<headline>'
                                   Headline only; no body.
-  hail note <bead> '<headline>'   Progress on the bead (bd comment); messages nobody
   sent <id>                       Receipt: delivered | injected <t> | read <t> | inline <t> | unknown
   await <id>... [--timeout S]     Block until every id (--any: any id) has a receipt
 
@@ -36,8 +35,8 @@ Tool:
   help [topic] · version          Topics: send kinds receive seats panes setup state
 
 Examples:
-  hail murail-1b ask --bead murail-ke7is <<'EOF'
-  Review src/auth.ts against murail-ke7is; verdict on the bead
+  hail murail-1b ask <<'EOF'
+  Review src/auth.ts before the merge; reply done with your verdict
   The refresh path is auth/refresh.rs:40-120.
   EOF
   hail murail-1a done --re 1006T171200-a3f1 'committed on abc123'
@@ -62,9 +61,7 @@ in the body is expanded.
 
 Options:
   --re <id>       The message this answers, closes (done) or lifts (release)
-  --bead <id>     Cite a beads issue; the body is also posted with 'bd comment'.
-                  An issue id in the headline is detected.
-  --scope <s>     What it applies to: a bead, ref, path or action (one line)
+  --scope <s>     What it applies to: an issue, ref, path or action (one line)
   --no-submit     Type the envelope but do not press Enter
   --force         Skip the dialog guard. Only after 'hail read <seat> 10'.
   --as <name>     Sign as your sub-agent <seat>/<name>; replies come back for it.
@@ -75,13 +72,12 @@ kind (stop hold block release announce) is refused instead (exit 2). Write
 plain sentences.
 
 Envelope typed into the recipient's pane:
-  [hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [for:] [bead:] [re:] [scope:]] <headline>[ — hail inbox]
+  [hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [for:] [re:] [scope:] [until:]] <headline>[ — hail inbox]
 Reply to the reply: value. for:<name> marks mail for your sub-agent: relay it.
 
 An fyi is quiet: it is not typed, and arrives with the recipient's next prompt
-(typed as before where their hooks have never run). Progress belongs on the
-bead instead: hail note <bead> '<headline>' (body on stdin) posts a bd comment
-signed with your seat (--as <name>: a sub-agent's) and messages nobody.
+(typed as before where their hooks have never run). Progress belongs in your
+issue tracker, not in someone's prompt.
 
 Exit: 0 typed and submitted, or a quiet fyi; 5 written to the inbox but not
 typed (no agent pane, or typing not confirmed): do NOT resend, it arrives on
@@ -105,7 +101,7 @@ hail kinds — what each kind means and does
                       No state.
   fyi                 No state, and quiet: not typed; it arrives with the
                       recipient's next prompt. For outcomes read later;
-                      progress goes to 'hail note <bead>'.
+                      progress belongs in the issue tracker.
 
 stop hold block release announce are control kinds: typed in full, no body,
 act on them at once. A message with no body is complete in its envelope.
@@ -199,14 +195,14 @@ Exit codes: 0 ok · 1 usage or state · 2 control headline over cap ·
 /// The page for a topic or verb, or None.
 pub fn page(topic: &str) -> Option<&'static str> {
     Some(match topic {
-        "send" | "message" | "msg" | "sent" | "await" | "note" => SEND,
+        "send" | "message" | "msg" | "sent" | "await" => SEND,
         "kinds" | "kind" => KINDS,
         "receive" | "deliver" | "brief" | "inbox" | "show" => RECEIVE,
         "seats" | "seat" | "whoami" | "list" | "identity" | "name" | "hello" | "who"
         | "resolve" | "id" => SEATS,
         "panes" | "pane" | "read" | "type" | "keys" => PANES,
         "setup" | "doctor" | "hooks" => SETUP,
-        "state" | "env" | "environment" | "exit" | "migrate" | "gc" | "beads" => STATE,
+        "state" | "env" | "environment" | "exit" | "migrate" | "gc" => STATE,
         "" | "help" | "version" => MAP,
         _ => return None,
     })

@@ -4,6 +4,12 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+- **hail no longer talks to bd.** Posting message bodies to beads, bead-id
+  detection, the `bead:` envelope field and `hail note` (new in 0.5.0) are
+  gone: hail was coupled to another moving target for little gain. Post to
+  your tracker yourself. `--bead` is accepted and ignored with a notice, and
+  `hail note` says what to use instead, until 0.6.
+
 ## v0.5.0 - 2026-10-07
 
 Quiet mail: the tool makes the cheap path the default. Measured on Murail

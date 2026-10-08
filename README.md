@@ -10,7 +10,7 @@ and that writes a receipt the sender can check or wait on. No daemon, no
 database, no pane-reading.
 
 ```
-[hail kind:ask from:murail-1a/%5 reply:murail-1a id:1006T171200-a3f1 bead:murail-ke7is] Review src/auth.ts against murail-ke7is; verdict on the bead — hail inbox
+[hail kind:ask from:murail-1a/%5 reply:murail-1a id:1006T171200-a3f1] Review src/auth.ts before the merge; reply done with your verdict — hail inbox
 ```
 
 ## Why
@@ -120,8 +120,7 @@ than compiled; accept the flake config, or add the substituter yourself.
 - `cargo install --path .` from a checkout. The pinned toolchain is in
   `rust-toolchain.toml`.
 
-Requires tmux. `bd` (beads) is optional: a message that names an issue also
-posts its body there as a comment.
+Requires tmux, and nothing else: hail talks to no issue tracker.
 
 ### Hooks
 
@@ -177,12 +176,11 @@ hail whoami                                   # this directory's seat
 hail seats                                    # every seat: agent panes, unread, obligations, root
 
 # Send. The first line is the headline (the ask and the why); the rest is the body.
-hail murail-1b ask --bead murail-ke7is <<'EOF'
-Review src/auth.ts against murail-ke7is; verdict on the bead
+hail murail-1b ask <<'EOF'
+Review src/auth.ts before the merge; reply done with your verdict
 The refresh path is auth/refresh.rs:40-120. Coverage: /tmp/cov.txt
 EOF
 #   id=1006T171200-a3f1
-#   bead=murail-ke7is comment=7
 
 hail murail-1b fyi 'gate green'               # headline only, no body
 hail sent 1006T171200-a3f1                    # delivered | injected <t> | read <t> | inline <t> | unknown

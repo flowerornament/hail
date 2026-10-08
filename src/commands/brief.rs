@@ -122,7 +122,6 @@ fn unread(ctx: &Ctx, boxes: &Boxes) -> Section {
                 .field("from", from)
                 .field("id", m.get("id").unwrap_or("?"))
                 .opt("for", m.get("for"))
-                .opt("bead", m.get("bead").and_then(|b| b.split(' ').next()))
                 .opt("re", m.get("re"))
                 .opt("scope", m.get("scope"))
                 .text(m.get("ask").unwrap_or(""))

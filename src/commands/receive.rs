@@ -1,6 +1,6 @@
 //! Receiving: `deliver` (hooks), `inbox`, `show`; receipts: `sent`, `await`.
 //! None of these runs a subprocess, because hooks run them on every prompt
-//! and one fork costs more than the whole budget; keep bd and tmux out.
+//! and one fork costs more than the whole budget; keep tmux out.
 
 use std::fs;
 use std::io::Write;
@@ -103,7 +103,6 @@ fn envelope_line(m: &Message) -> Option<String> {
         id: m.get("id")?,
         for_: m.get("for"),
         until: m.get("until"),
-        bead: m.get("bead"),
         re: m.get("re"),
         scope: m.get("scope"),
     };

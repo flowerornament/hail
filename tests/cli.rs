@@ -410,95 +410,31 @@ fn hail_seat_cannot_name_a_directory_outside_the_store() {
     }
 }
 
-/// A `bd` that records its directory, arguments and comment file, and prints
-/// a comment id; or, with `fail`, an error. Nothing reaches a real tracker.
-/// Shell builtins only: the Nix build sandbox has no `/usr/bin`.
-fn fake_bd(w: &World, fail: bool) -> PathBuf {
-    let bin = w.root.join("fakebin");
-    fs::create_dir_all(&bin).unwrap();
-    let log = w.root.join("bd.log");
-    let script = if fail {
-        "#!/bin/sh\necho 'Error: issue not found' >&2\nexit 1\n".to_string()
-    } else {
-        format!(
-            "#!/bin/sh\n{{ pwd; echo \"$@\"; while IFS= read -r l; do echo \"$l\"; done < \"$4\"; }} > '{}'\necho '{{\"id\": 7}}'\n",
-            log.display()
-        )
-    };
-    let bd = bin.join("bd");
-    fs::write(&bd, script).unwrap();
-    let mut perms = fs::metadata(&bd).unwrap().permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
-    fs::set_permissions(&bd, perms).unwrap();
-    bin
-}
-
 #[test]
-fn note_posts_to_the_bead_and_nowhere_else() {
+fn bd_is_gone_but_its_flags_say_so() {
     let w = World::new();
-    let bin = fake_bd(&w, false);
-    let mut child = w
-        .hail("worker")
-        .args(["note", "murail-ke7is", "gate green"])
-        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child.stdin.take().unwrap().write_all(b"48/48\n").unwrap();
-    let out = child.wait_with_output().unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
+    // --bead is accepted and ignored, with a notice, so older sessions' sends
+    // still go through.
+    let out = w.run(
+        "boss",
+        &[
+            "worker",
+            "ask",
+            "check x",
+            "--bead",
+            "hail-abc1",
+            "--no-wake",
+        ],
     );
-    assert_eq!(stdout(&out).trim(), "bead=murail-ke7is comment=7");
-    let log = fs::read_to_string(w.root.join("bd.log")).unwrap();
-    let mut lines = log.lines();
-    assert_eq!(lines.next(), Some(w.root.join("worker").to_str().unwrap()));
-    assert!(
-        lines
-            .next()
-            .unwrap()
-            .starts_with("comment murail-ke7is --file")
-    );
-    assert_eq!(
-        lines.collect::<Vec<_>>(),
-        ["[worker] gate green", "", "48/48"]
-    );
-    // No mail anywhere.
-    assert_eq!(stdout(&w.run("boss", &["inbox"])).trim(), "(inbox empty)");
-
-    // A sub-agent signs as itself (hail-thv).
-    let out = w
-        .hail("worker")
-        .args(["note", "murail-ke7is", "parser checked", "--as", "scout"])
-        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
-        .output()
-        .unwrap();
-    assert!(out.status.success(), "{out:?}");
-    let log = fs::read_to_string(w.root.join("bd.log")).unwrap();
-    assert!(log.contains("[worker/scout] parser checked"), "{log}");
-}
-
-#[test]
-fn a_note_that_bd_cannot_post_fails() {
-    let w = World::new();
-    let bin = fake_bd(&w, true);
-    let out = w
-        .hail("worker")
-        .args(["note", "murail-ke7is", "gate green"])
-        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
-        .output()
-        .unwrap();
+    assert_eq!(out.status.code(), Some(5), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--bead is ignored"));
+    let id = stdout(&out).trim().strip_prefix("id=").unwrap().to_string();
+    let msg = fs::read_to_string(w.state().join(format!("seats/worker/new/{id}.md"))).unwrap();
+    assert!(!msg.contains("bead:"), "{msg}");
+    // note says what to use instead.
+    let out = w.run("worker", &["note", "hail-abc1", "progress"]);
     assert_eq!(out.status.code(), Some(1));
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        err.contains("not saved") && err.contains("issue not found"),
-        "{err}"
-    );
-    let out = w.run("worker", &["note", "not a bead", "x"]);
-    assert_eq!(out.status.code(), Some(1), "a non-bead is a usage error");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("bd comments add"));
 }
 
 #[test]
@@ -518,13 +454,7 @@ fn an_fyi_is_quiet_once_the_recipients_hooks_have_run() {
     );
 
     // Now they have: an fyi is quiet, exits 0, and leaves no pending record.
-    // No bd on PATH: a test never posts to a real tracker.
-    let out = w
-        .hail("boss")
-        .args(["worker", "fyi", "build green", "--bead", "hail-abc1"])
-        .env("PATH", "/usr/bin:/bin")
-        .output()
-        .unwrap();
+    let out = w.run("boss", &["worker", "fyi", "build green"]);
     assert_eq!(out.status.code(), Some(0), "{out:?}");
     let id = stdout(&out).trim().strip_prefix("id=").unwrap().to_string();
     let err = String::from_utf8_lossy(&out.stderr);
@@ -532,7 +462,6 @@ fn an_fyi_is_quiet_once_the_recipients_hooks_have_run() {
         err.contains("quiet: arrives with worker's next prompt"),
         "{err}"
     );
-    assert!(err.contains("hail note hail-abc1"), "{err}");
     assert!(!w.state().join(format!("seats/boss/pending/{id}")).exists());
     assert!(stdout(&w.run("worker", &["deliver"])).contains("build green"));
 

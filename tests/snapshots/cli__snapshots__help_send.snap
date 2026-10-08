@@ -19,9 +19,7 @@ in the body is expanded.
 
 Options:
   --re <id>       The message this answers, closes (done) or lifts (release)
-  --bead <id>     Cite a beads issue; the body is also posted with 'bd comment'.
-                  An issue id in the headline is detected.
-  --scope <s>     What it applies to: a bead, ref, path or action (one line)
+  --scope <s>     What it applies to: an issue, ref, path or action (one line)
   --no-submit     Type the envelope but do not press Enter
   --force         Skip the dialog guard. Only after 'hail read <seat> 10'.
   --as <name>     Sign as your sub-agent <seat>/<name>; replies come back for it.
@@ -32,13 +30,12 @@ kind (stop hold block release announce) is refused instead (exit 2). Write
 plain sentences.
 
 Envelope typed into the recipient's pane:
-  [hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [for:] [bead:] [re:] [scope:]] <headline>[ — hail inbox]
+  [hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [for:] [re:] [scope:] [until:]] <headline>[ — hail inbox]
 Reply to the reply: value. for:<name> marks mail for your sub-agent: relay it.
 
 An fyi is quiet: it is not typed, and arrives with the recipient's next prompt
-(typed as before where their hooks have never run). Progress belongs on the
-bead instead: hail note <bead> '<headline>' (body on stdin) posts a bd comment
-signed with your seat (--as <name>: a sub-agent's) and messages nobody.
+(typed as before where their hooks have never run). Progress belongs in your
+issue tracker, not in someone's prompt.
 
 Exit: 0 typed and submitted, or a quiet fyi; 5 written to the inbox but not
 typed (no agent pane, or typing not confirmed): do NOT resend, it arrives on

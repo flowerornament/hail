@@ -43,20 +43,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- fake bd shims -----------------------------------------------------------
-# bd-fail: present but every comment fails (scenario 2). bd-ok: returns a
-# comment id (scenario 12). The failing shim is on PATH for the whole run so
-# the real bd (and the user's beads db) is never touched.
-mkdir -p "$SCRATCH/bd-fail" "$SCRATCH/bd-ok" "$SCRATCH/nobd" "$SCRATCH/bin"
-printf '#!/bin/sh\nexit 1\n' > "$SCRATCH/bd-fail/bd"
-printf '#!/bin/sh\necho "{\\"id\\": 7}"\n' > "$SCRATCH/bd-ok/bd"
-chmod +x "$SCRATCH/bd-fail/bd" "$SCRATCH/bd-ok/bd"
-p=$(command -v tmux 2>/dev/null) && ln -s "$p" "$SCRATCH/nobd/tmux"
+# --- bd tripwire ---------------------------------------------------------------
+# hail never runs bd. A bd first on PATH records any call (scenario 2 checks
+# for none), and keeps the real bd and the user's beads db out of reach.
+mkdir -p "$SCRATCH/bd-trap" "$SCRATCH/bin"
+printf '#!/bin/sh\necho "$@" >> "%s/bd-called"\nexit 1\n' "$SCRATCH" > "$SCRATCH/bd-trap/bd"
+chmod +x "$SCRATCH/bd-trap/bd"
 ln -s "$HAIL" "$SCRATCH/bin/tmux-bridge"
 ln -s "$HAIL" "$SCRATCH/bin/hail"
 BASE_PATH="$PATH"
-export PATH="$SCRATCH/bd-fail:$BASE_PATH"
-NOBD_PATH="$SCRATCH/nobd:/usr/bin:/bin"
+export PATH="$SCRATCH/bd-trap:$BASE_PATH"
 
 # --- scratch server ----------------------------------------------------------
 "${T[@]}" kill-server 2>/dev/null || true
@@ -140,7 +136,7 @@ EOS
   line=$(envelope_line "id:$id")
   expect "rc=0 (got $RC)" eq "$RC" 0 || ok=1
   expect "stdout is id=<id>" re "$OUT" '^id=[0-9]{4}T[0-9]{6}-[0-9a-f]{4}$' || ok=1
-  expect "envelope head" contains "$line" "[hail kind:ruling from:boss/$SENDER reply:boss id:$id bead:herald-ke7is]" || ok=1
+  expect "envelope head" contains "$line" "[hail kind:ruling from:boss/$SENDER reply:boss id:$id]" || ok=1
   expect "fetch hint" contains "$line" "— hail inbox" || ok=1
   expect "headline typed in full" contains "$line" "] $ASK1 — hail inbox" || ok=1
   expect "not truncated" not_contains "$line" "…" || ok=1
@@ -155,14 +151,16 @@ EOS
   return "$ok"
 }
 
-s2() { # bd present, comment fails
-  local ok=0
-  send "$SENDER" worker "please look at herald-ke7is again" --kind ask
-  local id; id=$(last_id)
+s2() { # hail never runs bd: --bead is ignored with a notice, no bead: anywhere
+  local ok=0 id
+  rm -f "$SCRATCH/bd-called"
+  send "$SENDER" worker "please look at herald-ke7is again" --kind ask --bead herald-ke7is
+  id=$(last_id)
   expect "rc=0" eq "$RC" 0 || ok=1
-  expect "one warning line" eq "$(printf '%s\n' "$ERR" | grep -c 'hail: warning: could not post to bead herald-ke7is')" 1 || ok=1
-  expect "file cites the bead" grep -qxF "bead: herald-ke7is" "$(msgfile "$id")" || ok=1
-  expect "delivered" contains "$(envelope_line "id:$id")" "bead:herald-ke7is]" || ok=1
+  expect "--bead noticed as ignored" contains "$ERR" "--bead is ignored" || ok=1
+  expect "no bead: in the file" not_contains "$(cat "$(msgfile "$id")")" "bead:" || ok=1
+  expect "no bead: in the envelope" not_contains "$(envelope_line "id:$id")" "bead:" || ok=1
+  expect "bd never ran" missing "$SCRATCH/bd-called" || ok=1
   reset_recv; return "$ok"
 }
 
@@ -211,25 +209,14 @@ s7() { # --kind stop, 120 chars typed inline
   reset_recv; return "$ok"
 }
 
-s8() { # hyphenated words are not beads
-  local ok=0 id line
-  send "$SENDER" worker "herald-abc.2 and tmux-bridge and read-only are not beads" --kind ask
-  id=$(last_id); line=$(envelope_line "id:$id")
-  expect "rc=0" eq "$RC" 0 || ok=1
-  expect "no bead: in envelope" not_contains "$line" "bead:" || ok=1
-  expect "no warning" empty "$ERR" || ok=1
-  reset_recv; return "$ok"
-}
-
-s9() { # --bead + --body file
+s9() { # --body file
   local ok=0 id line
   printf 'body from a file\n' > "$SCRATCH/body9"
-  send "$SENDER" worker "ruling attached" --kind ruling --bead murail-zz9zz --body "$SCRATCH/body9"
+  send "$SENDER" worker "ruling attached" --kind ruling --body "$SCRATCH/body9"
   id=$(last_id); line=$(envelope_line "id:$id")
   expect "rc=0" eq "$RC" 0 || ok=1
   expect "body from file" grep -qF "body from a file" "$(msgfile "$id")" || ok=1
-  expect "warning on bd failure" contains "$ERR" "could not post to bead murail-zz9zz" || ok=1
-  expect "bead: in envelope" contains "$line" "bead:murail-zz9zz]" || ok=1
+  expect "fetch hint" contains "$line" "] ruling attached — hail inbox" || ok=1
   reset_recv; return "$ok"
 }
 
@@ -253,26 +240,6 @@ s11() { # a pane id as target resolves to the seat in that pane's directory
   expect "inbox as boss reads it" contains "$(as "$SENDER" inbox)" "id: $id" || ok=1
   reset_sender
   return "$ok"
-}
-
-s12() { # fake bd returning a comment id
-  local ok=0 id
-  PATH="$SCRATCH/bd-ok:$BASE_PATH" send "$SENDER" worker "RULED on murail-ke7is: convert at the receipt" --kind ruling
-  id=$(last_id)
-  expect "rc=0" eq "$RC" 0 || ok=1
-  expect "stdout bead=... comment=7" contains "$OUT" "bead=murail-ke7is comment=7" || ok=1
-  expect "file cites the bead" grep -qxF "bead: murail-ke7is" "$(msgfile "$id")" || ok=1
-  reset_recv; return "$ok"
-}
-
-s13() { # no bd on PATH, --kind hold
-  local ok=0 id
-  PATH="$NOBD_PATH" send "$SENDER" worker "HOLD murail-ke7is until the gate is green" --kind hold
-  id=$(last_id)
-  expect "rc=0" eq "$RC" 0 || ok=1
-  expect "warning" contains "$ERR" "could not post to bead murail-ke7is" || ok=1
-  expect "file-only, bead cited" grep -qxF "bead: murail-ke7is" "$(msgfile "$id")" || ok=1
-  reset_recv; return "$ok"
 }
 
 s14() { # version resolve id list doctor help
@@ -706,19 +673,16 @@ s50() { # quiet fyi: nothing typed once the recipient's hook has run; it arrives
   reset_recv; return "$ok"
 }
 
-scenario 1  "send from inside the pane: ruling, --body -, bead detected, submitted" s1
-scenario 2  "bd present but failing: one warning, file-only, delivered" s2
+scenario 1  "send from inside the pane: ruling, --body -, submitted" s1
+scenario 2  "hail never runs bd: --bead ignored with a notice" s2
 scenario 3  "sent before read -> delivered" s3
 scenario 4  "inbox --peek leaves no receipt" s4
 scenario 5  "inbox writes receipt; sent -> read; --all" s5
 scenario 6  "sent unknown id -> unknown" s6
 scenario 7  "--kind stop typed inline in full; receipt pre-written as inline" s7
-scenario 8  "hyphenated words are not beads" s8
-scenario 9  "--bead with --body file" s9
+scenario 9  "--body file" s9
 scenario 10 "--kind bogus rejected" s10
 scenario 11 "a pane id target resolves to its seat; from:/reply:" s11
-scenario 12 "fake bd comment id reported" s12
-scenario 13 "no bd on PATH, --kind hold" s13
 scenario 14 "version resolve id list doctor help" s14
 scenario 15 "the seat is the directory; no seat exits 3; HAIL_SEAT only where none" s15
 scenario 16 "await success" s16

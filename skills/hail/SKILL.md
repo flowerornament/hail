@@ -1,6 +1,6 @@
 ---
 name: hail
-description: "Messages between coding agents on one machine with hail. Use this skill whenever the user mentions sending a message to another agent, seat or pane, a `[hail ...]` (or `[tb ...]`/`[tmux-bridge ...]`) envelope appears in your prompt, you need to know whether another agent has read something, you must answer or close a ruling, go, ask, hold or block, or you must drive a non-agent tmux pane (a shell, a running process). Covers the hail CLI: send, note, sent, await, brief, inbox, show, whoami, seats, kinds with state, and pane driving."
+description: "Messages between coding agents on one machine with hail. Use this skill whenever the user mentions sending a message to another agent, seat or pane, a `[hail ...]` (or `[tb ...]`/`[tmux-bridge ...]`) envelope appears in your prompt, you need to know whether another agent has read something, you must answer or close a ruling, go, ask, hold or block, or you must drive a non-agent tmux pane (a shell, a running process). Covers the hail CLI: send, sent, await, brief, inbox, show, whoami, seats, kinds with state, and pane driving."
 metadata:
   { "version": "0.5.0", "openclaw": { "emoji": "📯", "os": ["darwin", "linux"], "requires": { "bins": ["tmux", "hail"] } } }
 ---
@@ -38,8 +38,8 @@ parent's mail and prune its pending sends. It only sends, with `--as`.
 ## Sending
 
 ```bash
-hail murail-1b ask --bead murail-ke7is <<'EOF'
-Review src/auth.ts against murail-ke7is; verdict on the bead
+hail murail-1b ask <<'EOF'
+Review src/auth.ts before the merge; reply done with your verdict
 The refresh path is auth/refresh.rs:40-120. Coverage report: /tmp/cov.txt
 EOF
 #   → id=1006T171200-a3f1
@@ -49,9 +49,8 @@ EOF
   sentences. Everything after it is the body, of any length.
 - **Quote the heredoc delimiter** (`<<'EOF'`) so nothing in it is expanded.
 - **No body?** Pass the headline as an argument: `hail murail-1b fyi 'gate green'`.
-- **Options:** `--re <id>` answers, closes or lifts a message. `--bead <id>`
-  also posts the body to the issue (an id in the headline is detected).
-  `--scope <s>` names what it applies to. `--as <name>` signs as your
+- **Options:** `--re <id>` answers, closes or lifts a message. `--scope <s>`
+  names what it applies to. `--as <name>` signs as your
   sub-agent `<seat>/<name>`.
 - **Targets:** a seat (`murail-1b`), a sub-seat (`hail@%28`), a sub-agent
   (`murail-2b/scout`, through its parent), or a `from:` value pasted as is
@@ -59,13 +58,10 @@ EOF
 - **Headline length:** over 400 characters, the headline is folded into the
   body. Never squeeze words together to fit.
 
-**Progress goes on the bead, not to a seat.** Every message lands in someone's
-context, and every typed one costs them a turn. Test results, checkpoints and
-"still working" belong on the issue:
-
-```bash
-hail note murail-ke7is 'gate green: 48/48'   # a bd comment signed with your seat (--as <name> for a sub-agent); nobody is messaged
-```
+**Progress does not go to a seat.** Every message lands in someone's context,
+and every typed one costs them a turn. Test results, checkpoints and "still
+working" belong in your issue tracker, where nobody pays for them until they
+look. hail does not talk to the tracker: post there yourself.
 
 Send a message only for a decision, a blocker, a review request or an outcome
 someone must act on.
@@ -94,7 +90,7 @@ hail await <id>... --timeout 900       # blocks until each id has a receipt; --a
 An envelope is one line in your prompt:
 
 ```
-[hail kind:ruling from:murail-1a/%5 reply:murail-1a id:1006T171200-a3f1 bead:murail-ke7is] convert at the receipt — hail inbox
+[hail kind:ruling from:murail-1a/%5 reply:murail-1a id:1006T171200-a3f1] convert at the receipt — hail inbox
 ```
 
 - **Reply to the `reply:` value** (a seat, or a sub-agent's `seat/name`).
@@ -126,7 +122,7 @@ runs it; run it yourself after a compaction.
 | `hold` `block` | In effect, in every brief, until `release --re <id>` or it lapses: a hold after 8h, a block after 7d, or `--for 30m`/`3d` (at most 7d). Its envelope says `until:`. |
 | `release` | Lifts one hold: `--re <id>`. |
 | `nogo` `stop` `announce` | No state. |
-| `fyi` | No state, and quiet: arrives with the next prompt. For outcomes the reader acts on later; progress goes to `hail note`. |
+| `fyi` | No state, and quiet: arrives with the next prompt. For outcomes the reader acts on later; progress belongs in the issue tracker. |
 
 **A hold is a person's decision** ("don't touch the parser while I redesign
 it"), not a lock. To serialize landing, installs or timing runs, use the

@@ -43,8 +43,7 @@ These are the conditions the design has to survive:
 ### 4.1 Verbs
 
 ```
-hail <seat> <kind> [--re ID] [--bead ID] [--scope S] [--no-submit] [--force]   # body on stdin
-hail note <bead> [headline]       # progress as a bd comment signed with the seat; no message (0.5)
+hail <seat> <kind> [--re ID] [--scope S] [--for SPAN] [--as NAME] [--no-submit] [--force]   # body on stdin
 hail sent <id>                    # delivered | injected <t> | read <t> | inline <t> | unknown
 hail await <id>... [--timeout S] [--any]
 hail inbox [--peek] [--all]       # unread bodies; claims them (read)
@@ -65,8 +64,8 @@ hail help [topic]  ·  hail --version
 The canonical form:
 
 ```bash
-hail murail-1b ask --bead murail-ke7is <<'EOF'
-Review src/auth.ts against murail-ke7is; verdict on the bead
+hail murail-1b ask <<'EOF'
+Review src/auth.ts before the merge; reply done with your verdict
 The refresh path is in auth/refresh.rs:40-120. Coverage report: /tmp/cov.txt
 EOF
 ```
@@ -92,14 +91,14 @@ EOF
 **Quiet `fyi` (0.5, docs/2026-10-08-quiet-mail-design.md §1):** an `fyi` is not typed when the recipient mailbox's `hooked` file (touched by every `deliver`) is under 7 days old. It arrives with the recipient's next prompt, exits 0, prints `quiet: arrives with <seat>'s next prompt` on stderr, and writes no pending record. Every other kind types as before, and so does an `fyi` to a mailbox whose hooks have not run.
 
 **Output:**
-- `id=<id>` on stdout, on exit 0 and on exit 5, plus `bead=<id> comment=<n>` when a bead comment was posted. This is unchanged.
+- `id=<id>` on stdout, on exit 0 and on exit 5.
 - On exit 5, stderr says `delivered to <seat>'s inbox; not typed (<reason>); do not resend; it arrives on their next prompt`.
 - Warnings go to stderr, one line each, and say what to do.
 
 ### 4.3 The envelope (unchanged in form)
 
 ```
-[hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [for:..] [bead:..] [re:..] [scope:..]] <headline>[ — hail inbox]
+[hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [for:..] [re:..] [scope:..] [until:..]] <headline>[ — hail inbox]
 ```
 
 The only change: `reply:` names the seat, not a pane id, because seats are stable. `from:` keeps the `/<pane>` suffix for humans reading a pane, and the pane is omitted when unknown. The skill's rule "reply to the `reply:` value" keeps working.
@@ -245,7 +244,7 @@ Closing stays explicit (`done --re`). A reply of another kind with `--re` does n
 5. **Submit:** wait, then `send-keys Enter`. The wait exists for paste-burst detection after the text has rendered, so a faster verify does not shorten it. It is 300 ms in 0.4, one named constant per harness in `transport/` (`SUBMIT_DELAY`).
 
    **Trial before lowering:** 100, 150 and 200 ms, in Claude and Codex panes, idle and loaded, 200 sends each, counting envelopes left unsubmitted. Lower it only at zero misses.
-6. **bd comment:** `bd comment <bead> --file - --json`, after the envelope is submitted, so a slow Dolt-backed bd never delays the wake.
+6. *(Removed in 0.5.1: hail no longer posts to bd; see §17's amendment.)*
 
 **The seam:** `trait Wake { fn wake(&self, pane, envelope) -> Result<Woken, WakeError> }`, with one implementation, `TypedEnvelope`. S3 adds `TypedToken` and later a harness-native channel. Nothing outside `transport/` calls tmux except `seats`, `read`, `type`, `keys` and `doctor`, through the same `Tmux` client.
 
@@ -298,7 +297,6 @@ How these are reached:
 - one `list-panes` per send;
 - the cancel and the typing chained into one tmux call;
 - 25 ms verify polling;
-- bd after the wake;
 - `seat_of` from a few `stat`s;
 - release profile: `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, `strip = true`.
 
@@ -319,7 +317,7 @@ src/
     mailbox.rs         deliver_new(), claim(), unclaim(), receipt()
     state.rs           owed, holds, pending; bounded listing
     gc.rs
-  envelope.rs          render(), fold_headline(), detect_bead()  (pure)
+  envelope.rs          render(), fold_headline()  (pure)
   transport/
     mod.rs             trait Wake; TypedEnvelope
     tmux.rs            Tmux { socket }: run(), list_panes(), capture(), send_keys()
@@ -330,7 +328,6 @@ src/
   commands/            one file per verb: send, receive (deliver, inbox, show), receipts
                        (sent, await), brief, seats, panes (read, type, keys), setup, doctor, gc
   migrate.rs           0.3 → 0.4 state import (§11)
-  bd.rs                post a comment (subprocess, opportunistic)
 ```
 
 ### 10.2 Rules
@@ -401,7 +398,7 @@ Migration is a step of its own, not a side effect. The first command after an up
 **Unit tests** (in `src/`):
 - the message parse/render round-trip (proptest, any bytes in the body);
 - `fold_headline` (proptest: the result ≤ cap, a prefix of the input up to the ellipsis, sentence-preferring);
-- `detect_bead`, the dialog table, the hook JSON (insta);
+- the dialog table, the hook JSON (insta);
 - the setup merges (fixtures: an empty file, an existing hail line in the old form, comments, unrelated hooks);
 - `seat_of` over a fake fs.
 
@@ -542,7 +539,9 @@ Also fixed:
   for the `ps` table is unit-tested, and scenario 45 runs real detection with
   no stand-in agent list.
 
-**Format change, amending §6:** the message file cites `bead: <id>`. The
+**Amended 2026-10-08 (0.5.1): hail no longer talks to bd.** Posting bodies to beads, bead-id detection, the `bead:` header and `hail note` are gone: the coupling tied hail to another moving target (bd's versions, its Dolt server, its timeouts) for little gain, since an agent posts to its tracker itself. `--bead` is accepted and ignored with a notice, and `hail note` says what to use, until 0.6. Old files keep their `bead:` header; nothing reads it.
+
+**Format change, amending §6 (superseded by the amendment above):** the message file cites `bead: <id>`. The
 comment number goes to the sender's stdout (`bead=<id> comment=<n>`), and the
 `(comment n)` / `(not posted)` annotations and the `see:` line are gone. The
 comment is posted after the wake, by which time the message may already be
