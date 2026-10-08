@@ -81,7 +81,7 @@ Reply to the reply: value. for:<name> marks mail for your sub-agent: relay it.
 An fyi is quiet: it is not typed, and arrives with the recipient's next prompt
 (typed as before where their hooks have never run). Progress belongs on the
 bead instead: hail note <bead> '<headline>' (body on stdin) posts a bd comment
-signed with your seat and messages nobody.
+signed with your seat (--as <name>: a sub-agent's) and messages nobody.
 
 Exit: 0 typed and submitted, or a quiet fyi; 5 written to the inbox but not
 typed (no agent pane, or typing not confirmed): do NOT resend, it arrives on

@@ -74,10 +74,12 @@ PASS=0; FAIL=0; FAILED=()
 dir_of() { case "$1" in "$SENDER") echo "$BOSS_DIR" ;; "$RECV") echo "$WORKER_DIR" ;; *) echo "$SCRATCH" ;; esac; }
 as() { local pane="$1"; shift; (cd "$(dir_of "$pane")" && TMUX_PANE="$pane" "$HAIL" "$@" </dev/null); }
 pane_text() { "${T[@]}" capture-pane -t "$1" -p -J; }
-reset_recv() { "${T[@]}" respawn-pane -k -c "$WORKER_DIR" -t "$RECV" cat; sleep 0.2; }
+# Each scenario starts with no hooked mark, so whether an fyi is typed never
+# depends on which scenarios ran before it.
+reset_recv() { "${T[@]}" respawn-pane -k -c "$WORKER_DIR" -t "$RECV" cat; rm -f "$SEATS"/*/hooked; sleep 0.2; }
 # respawn with a command that prints something first, then behaves like cat
 recv_showing() { "${T[@]}" respawn-pane -k -c "$WORKER_DIR" -t "$RECV" bash -c "printf '%s\n' \"\$@\"; exec cat" _ "$@"; sleep 0.3; }
-reset_sender() { "${T[@]}" send-keys -t "$SENDER" C-c; sleep 0.1; }
+reset_sender() { "${T[@]}" send-keys -t "$SENDER" C-c; rm -f "$SEATS"/*/hooked; sleep 0.1; }
 # send FROM TARGET args... : stdout/stderr/rc land in $OUT/$ERR/$RC. No read
 # first: 0.4 sends need none.
 OUT=""; ERR=""; RC=0
@@ -672,7 +674,7 @@ s34() { # no --body: envelope complete (no hint), file unread, deliver repeats t
 
 s50() { # quiet fyi: nothing typed once the recipient's hook has run; it arrives with the next prompt
   local ok=0 id out
-  as "$RECV" deliver >/dev/null   # the worker's prompt hook has run
+  as "$RECV" deliver --format claude >"$SCRATCH/out50"   # the worker's prompt hook has run
   send "$SENDER" worker "quiet progress" --kind fyi; id=$(last_id)
   expect "rc=0" eq "$RC" 0 || ok=1
   expect "says it is quiet" contains "$ERR" "quiet: arrives with worker's next prompt" || ok=1
@@ -682,6 +684,8 @@ s50() { # quiet fyi: nothing typed once the recipient's hook has run; it arrives
   out=$(as "$RECV" deliver)
   expect "next prompt carries it" contains "$out" "] quiet progress" || ok=1
   rm -f "$SEATS/worker/hooked"    # hooks never ran: typed as before
+  as "$RECV" deliver >/dev/null   # a hand-run deliver does not count as a hook (hail-zb5)
+  expect "hand-run deliver leaves no mark" missing "$SEATS/worker/hooked" || ok=1
   send "$SENDER" worker "typed progress" --kind fyi; id=$(last_id)
   expect "typed when hooks have not run" contains "$(envelope_line "id:$id")" "] typed progress" || ok=1
   reset_recv; return "$ok"

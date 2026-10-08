@@ -9,14 +9,24 @@ use crate::commands::send::{Form, headline_and_body};
 use crate::ctx::Ctx;
 use crate::envelope;
 use crate::error::{Error, Result};
+use crate::seat;
 
-pub fn run(ctx: &Ctx, bead: &str, headline: Option<String>) -> Result<u8> {
+pub fn run(ctx: &Ctx, bead: &str, headline: Option<String>, as_name: Option<&str>) -> Result<u8> {
     if !envelope::is_bead_id(bead) {
         return Err(Error::Usage(format!(
             "{bead} is not a bead id; hail note <bead> '<headline>', e.g. hail note murail-ke7is 'gate green'"
         )));
     }
+    if let Some(n) = as_name.filter(|n| !seat::valid_name(n)) {
+        return Err(Error::Usage(format!(
+            "--as {n}: a sub-agent name is letters, digits, '.', '_' and '-'"
+        )));
+    }
     let me = ctx.require_seat()?;
+    let signer = match as_name {
+        Some(n) => format!("{}/{n}", me.name),
+        None => me.name,
+    };
     let (raw, body) = headline_and_body(&Form::Current { headline })?;
     let headline = envelope::sanitize_headline(&raw);
     if headline.is_empty() {
@@ -25,8 +35,8 @@ pub fn run(ctx: &Ctx, bead: &str, headline: Option<String>) -> Result<u8> {
         ));
     }
     let text = match body {
-        Some(b) => format!("[{}] {headline}\n\n{b}", me.name),
-        None => format!("[{}] {headline}", me.name),
+        Some(b) => format!("[{signer}] {headline}\n\n{b}"),
+        None => format!("[{signer}] {headline}"),
     };
     match bd::comment(bead, &text) {
         Posted::Comment(n) => outln!("bead={bead} comment={n}"),

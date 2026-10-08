@@ -16,7 +16,11 @@ use crate::{help, migrate, store};
 pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<u8> {
     match cmd {
         Cmd::Send(s) => send::run(ctx, &s.into_args()?),
-        Cmd::Note { bead, headline } => note::run(ctx, &bead, headline),
+        Cmd::Note {
+            bead,
+            headline,
+            as_name,
+        } => note::run(ctx, &bead, headline, as_name.as_deref()),
         Cmd::Sent { id } => Ok(receive::sent(ctx, &id)),
         Cmd::Await { ids, timeout, any } => Ok(receive::await_ids(ctx, &ids, timeout, any)),
         Cmd::Deliver { format } => Ok(receive::deliver(ctx, format.as_deref())),

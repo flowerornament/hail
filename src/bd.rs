@@ -35,14 +35,31 @@ pub fn comment(bead: &str, body: &str) -> Posted {
                 id.as_u64().or_else(|| id.as_str()?.parse().ok())
             })
             .map_or(Posted::Unnumbered, Posted::Comment),
-        Ok(o) => Posted::Failed(
-            String::from_utf8_lossy(&o.stderr)
-                .lines()
-                .rfind(|l| !l.trim().is_empty())
-                .unwrap_or("bd failed")
-                .trim()
-                .to_string(),
-        ),
+        Ok(o) => Posted::Failed(reason(&String::from_utf8_lossy(&o.stderr))),
         Err(e) => Posted::Failed(format!("bd: {e}")),
+    }
+}
+
+/// The line of bd's stderr that says what went wrong: its `Error:` line, else
+/// its first line. bd wraps long errors, so the last line is often a fragment.
+fn reason(stderr: &str) -> String {
+    let lines = || stderr.lines().map(str::trim).filter(|l| !l.is_empty());
+    lines()
+        .find(|l| l.starts_with("Error"))
+        .or_else(|| lines().next())
+        .unwrap_or("bd failed")
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reason;
+
+    #[test]
+    fn the_reason_is_the_error_line_not_the_wrapped_tail() {
+        let wrapped = "Error: no beads database found\nHint: run 'bd where' to inspect\n      or set BEADS_DIR to point to your .beads directory\n";
+        assert_eq!(reason(wrapped), "Error: no beads database found");
+        assert_eq!(reason("\nsomething broke\nmore\n"), "something broke");
+        assert_eq!(reason(""), "bd failed");
     }
 }

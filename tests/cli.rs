@@ -467,6 +467,17 @@ fn note_posts_to_the_bead_and_nowhere_else() {
     );
     // No mail anywhere.
     assert_eq!(stdout(&w.run("boss", &["inbox"])).trim(), "(inbox empty)");
+
+    // A sub-agent signs as itself (hail-thv).
+    let out = w
+        .hail("worker")
+        .args(["note", "murail-ke7is", "parser checked", "--as", "scout"])
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let log = fs::read_to_string(w.root.join("bd.log")).unwrap();
+    assert!(log.contains("[worker/scout] parser checked"), "{log}");
 }
 
 #[test]
@@ -496,7 +507,14 @@ fn an_fyi_is_quiet_once_the_recipients_hooks_have_run() {
     // with no tmux), and the send is pending.
     let id = w.send("before hooks");
     assert!(w.state().join(format!("seats/boss/pending/{id}")).exists());
+    // A deliver run by hand is not a hook (hail-zb5).
     assert!(w.run("worker", &["deliver"]).status.success());
+    assert!(!w.state().join("seats/worker/hooked").exists());
+    assert!(
+        w.run("worker", &["deliver", "--format", "claude"])
+            .status
+            .success()
+    );
 
     // Now they have: an fyi is quiet, exits 0, and leaves no pending record.
     // No bd on PATH: a test never posts to a real tracker.

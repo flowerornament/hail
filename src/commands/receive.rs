@@ -37,8 +37,12 @@ fn deliver_inner(ctx: &Ctx, format: Option<&str>) -> Result<()> {
     };
     ctx.bind(&seat)?;
     let boxes = ctx.mailboxes(&seat);
-    for addr in boxes.iter() {
-        ctx.store.mailbox(addr).touch_hooked();
+    // Only an installed hook passes --format: a `hail deliver` typed by hand
+    // must not convince senders that this seat's hooks run.
+    if format.is_some() {
+        for addr in boxes.iter() {
+            ctx.store.mailbox(addr).touch_hooked();
+        }
     }
     let mut claims = Claims {
         store: &ctx.store,

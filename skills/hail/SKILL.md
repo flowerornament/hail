@@ -64,7 +64,7 @@ context, and every typed one costs them a turn. Test results, checkpoints and
 "still working" belong on the issue:
 
 ```bash
-hail note murail-ke7is 'gate green: 48/48'   # a bd comment signed with your seat; nobody is messaged
+hail note murail-ke7is 'gate green: 48/48'   # a bd comment signed with your seat (--as <name> for a sub-agent); nobody is messaged
 ```
 
 Send a message only for a decision, a blocker, a review request or an outcome

@@ -27,6 +27,9 @@ pub enum Cmd {
     Note {
         bead: String,
         headline: Option<String>,
+        /// Sign as a sub-agent of this seat: `[<seat>/<name>]`.
+        #[arg(long = "as", value_name = "NAME")]
+        as_name: Option<String>,
     },
     Sent {
         id: String,
