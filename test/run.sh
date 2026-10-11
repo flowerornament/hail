@@ -924,6 +924,25 @@ s52() { # hail-lha: Enter only after the agent has read the text, though an earl
   reset_recv; return "$ok"
 }
 
+s53() { # hail-qx4: after Enter, a Codex pane is read for where the envelope went; one Enter retry; held input is reported
+  local ok=0 bin="$SCRATCH/codexbin" mode want note
+  local -x HAIL_AGENT_COMMANDS=codex   # the stand-in is bash run as codex: only its process name may count
+  mkdir -p "$bin"; [ -e "$bin/codex" ] || ln -s /bin/bash "$bin/codex"
+  for c in "submit 0 -" "ignore-once 0 -" "ignore 5 still in the composer after Enter, twice" \
+           "steer 0 took it as a steer" "end-of-turn 5 holds it until its turn ends" \
+           "queued 5 holds it until no turn is running"; do
+    read -r mode want note <<<"$c"
+    "${T[@]}" respawn-pane -k -c "$WORKER_DIR" -t "$RECV" "$bin/codex" "$HERE/codex-standin.sh" "$mode" goal; sleep 0.4
+    send "$SENDER" worker "to a $mode stand-in" --kind ask
+    expect "$mode: rc=$want (got $RC: $ERR)" eq "$RC" "$want" || ok=1
+    [ "$note" = - ] || expect "$mode: says why" contains "$ERR" "$note" || ok=1
+    case "$mode" in end-of-turn|queued) expect "$mode: names the goal" contains "$ERR" "pursues a goal" || ok=1 ;; esac
+    expect "$mode: never Escape" not_contains "$(pane_text "$RECV")" "ESC RECEIVED" || ok=1
+  done
+  as "$RECV" inbox >/dev/null
+  reset_recv; return "$ok"
+}
+
 s45() { # real agent detection (no HAIL_AGENT_COMMANDS): an agent as a pane's root, as the root shell's child, and none
   local ok=0 bin="$SCRATCH/agents" d1="$SCRATCH/a-root" d2="$SCRATCH/a-child" d3="$SCRATCH/a-none" p
   mkdir -p "$bin" "$d1" "$d2" "$d3"
@@ -1025,6 +1044,7 @@ scenario 49 "sub-agents: seat/name via the parent with for:, --as signs; seat/%N
 scenario 50 "quiet fyi once hooks run; typed where they have not" s50
 scenario 51 "a pane sending from another seat's directory is warned" s51
 scenario 52 "Enter waits until the agent has read this envelope, not an older one on screen (hail-lha)" s52
+scenario 53 "Codex: after Enter, where the envelope went; one retry; held input reported (hail-qx4)" s53
 
 echo "---"
 echo "passed $PASS, failed $FAIL"

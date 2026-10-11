@@ -194,10 +194,10 @@ fn report(
     };
     match unread_where {
         None => eprintln!(
-            "hail: delivered to {to}'s inbox; not typed ({reason}); do not resend: it arrives on their next prompt"
+            "hail: delivered to {to}'s inbox; not submitted ({reason}); do not resend: it arrives on their next prompt"
         ),
         Some(root) => eprintln!(
-            "hail: delivered to {to}'s inbox; not typed ({reason}). No hook has read {to} lately, so it waits until someone runs hail inbox in {root}. If its agent works from another directory, hail seats shows where; do not resend."
+            "hail: delivered to {to}'s inbox; not submitted ({reason}). No hook has read {to} lately, so it waits until someone runs hail inbox in {root}. If its agent works from another directory, hail seats shows where; do not resend."
         ),
     }
     EXIT_NOT_WOKEN
@@ -397,6 +397,31 @@ fn wake(
     };
     match (TypedEnvelope { tmux: t }).wake(p, envelope, d.submit) {
         Ok(Woken::Typed) => None,
+        Ok(Woken::Steer) => {
+            eprintln!(
+                "hail: Codex in {} took it as a steer: the agent gets it at its next tool call",
+                p.id
+            );
+            None
+        }
+        Ok(Woken::Held { queued, goal }) => Some(format!(
+            "typed into {0}, but Codex holds it {1}{2}. The agent has not seen it; to send it now, press Esc in {0}, which interrupts its turn",
+            p.id,
+            if queued {
+                "until no turn is running"
+            } else {
+                "until its turn ends"
+            },
+            if goal {
+                ", and while it pursues a goal turns follow each other, so that may be long"
+            } else {
+                ""
+            }
+        )),
+        Ok(Woken::NotSubmitted) => Some(format!(
+            "typed into {0}, but it is still in the composer after Enter, twice: press Enter in {0}",
+            p.id
+        )),
         Ok(Woken::NotConfirmed) => Some(format!(
             "typed into {0} but not seen there after 10 s, so not submitted; hail read {0} 10 to check, then hail keys {0} Enter",
             p.id

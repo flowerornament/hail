@@ -214,7 +214,7 @@ hail show 1006T171200-a3f1                    # one message by id, from any seat
 | 2 | control-kind headline over the cap |
 | 3 | seat problem: no seat here, a shared seat addressed bare, or a name bound elsewhere |
 | 4 | the target shows a permission dialog |
-| 5 | in the inbox but not typed (no agent running, or typing not confirmed). Do not resend: it arrives on their next prompt |
+| 5 | in the inbox but not submitted (no agent running, typing not confirmed, or Codex is holding it). Do not resend: it arrives on their next prompt |
 
 `read`, `type` and `keys` drive panes that are not agents: a shell, a gate
 run, a prompt waiting for `y`. Read before typing; the guard enforces it.
@@ -239,7 +239,7 @@ Start with `hail doctor`. It checks:
 
 | symptom | cause and fix |
 |---|---|
-| A send exits 5 | Written to the inbox, not typed: no agent runs in that seat, or the text did not show in 10 s. It arrives on the recipient's next prompt (or its next session's brief). Do not resend. |
+| A send exits 5 | Written to the inbox, not submitted: no agent runs in that seat, the text did not show in 10 s, or Codex is holding it (the message says where). It arrives on the recipient's next prompt (or its next session's brief). Do not resend. |
 | `sent` stays `delivered` | The recipient's hook has not run since. Either it has not had a prompt yet, or its hooks are not installed or trusted (`hail doctor`; in Codex, `/hooks`). |
 | A send exits 3 "has N agents" | Several agents share that directory. Address one sub-seat, as listed, or give each agent its own jj workspace. |
 | A send exits 3 "no seat here" | You are outside a workspace. `cd` to it, or add a `.hail-seat` file naming it. |

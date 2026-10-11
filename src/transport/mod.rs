@@ -3,6 +3,7 @@
 //! Nothing outside this module types into a pane for a send.
 
 pub mod agent;
+pub mod codex_screen;
 pub mod dialog;
 pub mod pane_map;
 pub mod tmux;
@@ -25,12 +26,25 @@ const VERIFY_EVERY: Duration = Duration::from_millis(25);
 /// so the wait is long, and costs time only while the pane is not reading.
 const VERIFY_FOR: Duration = Duration::from_secs(10);
 
+/// How long to watch where the envelope went after Enter, and how often.
+/// Long enough for a busy Codex to redraw; a held section is reported as it
+/// stands at the end.
+const LANDED_FOR: Duration = Duration::from_secs(3);
+const LANDED_EVERY: Duration = Duration::from_millis(100);
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Woken {
     /// Typed, seen in the pane, and submitted unless the caller said not to.
     Typed,
     /// Typed once but not seen within the verify window; not submitted.
     NotConfirmed,
+    /// Codex took it as a steer: the agent gets it at its next tool call.
+    Steer,
+    /// Codex holds it until the turn ends (`queued: false`) or until no turn
+    /// runs (`queued: true`); with a goal running, that can be long.
+    Held { queued: bool, goal: bool },
+    /// Still in the composer after Enter, and after one more Enter.
+    NotSubmitted,
 }
 
 pub trait Wake {
@@ -55,8 +69,59 @@ impl Wake for TypedEnvelope<'_> {
                 .run(&["display-message", "-t", &pane.id, "-p", "#{pane_in_mode}"])
                 .is_ok_and(|s| s.trim() == "1");
             self.tmux.send_key(&pane.id, "Enter", in_mode)?;
+            if matches!(pane.agent, Some(agent::Agent::Codex)) && envelope.starts_with("[hail ") {
+                return self.after_enter(pane, &probe(envelope));
+            }
         }
         Ok(Woken::Typed)
+    }
+}
+
+impl TypedEnvelope<'_> {
+    /// Codex does not always submit on Enter (`codex_screen`). Find where the
+    /// envelope went. Still in the composer: one more Enter, which cannot be
+    /// read as part of a paste now that the text has long been read. Never
+    /// Escape: in Codex it interrupts the agent's turn.
+    fn after_enter(&self, pane: &Pane, id: &str) -> Result<Woken> {
+        use codex_screen::Landed;
+        let mut retried = false;
+        loop {
+            let (landed, goal) = self.landed(pane, id);
+            match landed {
+                Landed::Submitted => return Ok(Woken::Typed),
+                Landed::Steer => return Ok(Woken::Steer),
+                Landed::EndOfTurn => {
+                    return Ok(Woken::Held {
+                        queued: false,
+                        goal,
+                    });
+                }
+                Landed::Queued => return Ok(Woken::Held { queued: true, goal }),
+                Landed::Composer if retried => return Ok(Woken::NotSubmitted),
+                Landed::Composer => {
+                    retried = true;
+                    self.tmux.send_key(&pane.id, "Enter", false)?;
+                }
+            }
+        }
+    }
+
+    /// Watch the pane for [`LANDED_FOR`]: settled as soon as the envelope is
+    /// submitted or a steer, else where it sits at the end.
+    fn landed(&self, pane: &Pane, id: &str) -> (codex_screen::Landed, bool) {
+        let start = Instant::now();
+        loop {
+            sleep(LANDED_EVERY);
+            let screen = self.tmux.capture(&pane.id, None).unwrap_or_default();
+            let landed = codex_screen::classify(&screen, id);
+            let settled = matches!(
+                landed,
+                codex_screen::Landed::Submitted | codex_screen::Landed::Steer
+            );
+            if settled || start.elapsed() >= LANDED_FOR {
+                return (landed, codex_screen::pursuing_goal(&screen));
+            }
+        }
     }
 }
 
