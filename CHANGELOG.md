@@ -4,6 +4,10 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.5.3 - 2026-10-11
+
+Reliable delivery to busy Codex agents.
+
 - **Mail reaches a busy Codex agent.** `hail setup` installs a third Codex
   hook, `PostToolUse`, running `hail deliver --event PostToolUse`. An agent that
   never ends its turn (Codex goal mode starts the next turn at once) submits
