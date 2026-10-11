@@ -92,7 +92,9 @@ pub const KINDS: &str = "\
 hail kinds — what each kind means and does
 
   ruling  go  ask     Leave an obligation on the recipient until it sends
-                      'done --re <id>'. 'hail brief' lists them.
+                      'done --re <id>', or until it lapses after 3d (or
+                      --for, at most 7d). 'hail brief' lists those in
+                      effect; done --re still closes a lapsed one.
   done                Close one obligation: --re <id> required.
   hold  block         In effect until 'release --re <id>', or until it lapses:
                       a hold after 8h, a block after 7d, or --for 30m|8h|3d
@@ -118,7 +120,8 @@ hail inbox.
 
   brief [--all]         Unread envelopes, your sends with no receipt after 2
                         minutes, holds in effect, obligations on you. Five per
-                        section; --all for everything.
+                        section; --all for everything, lapsed obligations
+                        too.
   inbox [--peek] [--all]
                         Unread bodies, marked read. --peek leaves them unread.
   show <id>             One message by id from any seat; claims nothing.

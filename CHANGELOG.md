@@ -4,6 +4,15 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+- **Obligations lapse.** A `ruling`, `go` or `ask` now lapses 3 days after
+  it is sent, or after `--for <span>` (at most 7 days), the way holds do.
+  Most obligations are superseded rather than closed, so seats carried
+  hundreds of stale ones and `hail brief` hid the few that were owed. A
+  lapsed obligation no longer counts in `brief` or `seats`; `brief` says how
+  many lapsed and `brief --all` lists them, and `done --re` still closes one.
+  `hail gc` deletes those that lapsed more than `--days` ago. Obligations
+  sent before this release lapse 3 days after they were sent.
+
 ## v0.5.3 - 2026-10-11
 
 Reliable delivery to busy Codex agents.

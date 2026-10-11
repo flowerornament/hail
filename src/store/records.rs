@@ -14,7 +14,7 @@ use super::message::Message;
 use super::{Store, list_names, write_atomic};
 use crate::envelope::Kind;
 use crate::error::{Error, Result};
-use crate::policy::{BLOCK_DEFAULT, HOLD_DEFAULT};
+use crate::policy::{BLOCK_DEFAULT, HOLD_DEFAULT, OBLIGATION_DEFAULT};
 use crate::seat::Addr;
 use crate::time;
 
@@ -29,16 +29,17 @@ pub struct Entry {
     pub scope: Option<String>,
     pub time: Option<Timestamp>,
     pub re: Option<Id>,
-    /// When a hold lapses; `None` for obligations, and for holds recorded
-    /// before holds lapsed (see [`Entry::lapses_at`]).
+    /// When it lapses; `None` for records written before obligations and
+    /// holds lapsed (see [`Entry::lapses_at`]).
     pub expires: Option<Timestamp>,
     pub headline: String,
 }
 
-/// How long a hold of this kind lasts when `--for` does not say.
-pub const fn hold_default(kind: Kind) -> std::time::Duration {
+/// How long a hold or obligation of this kind lasts when `--for` does not say.
+pub const fn lapse_default(kind: Kind) -> std::time::Duration {
     match kind {
         Kind::Block => BLOCK_DEFAULT,
+        Kind::Ruling | Kind::Go | Kind::Ask => OBLIGATION_DEFAULT,
         _ => HOLD_DEFAULT,
     }
 }
@@ -67,13 +68,13 @@ impl Entry {
             .header("headline", &self.headline)
     }
 
-    /// When this hold lapses: its `expires:`, else its kind's default after
-    /// it was sent. A hold with neither has already lapsed.
+    /// When this lapses: its `expires:`, else its kind's default after it
+    /// was sent. A record with neither has already lapsed.
     pub fn lapses_at(&self) -> Timestamp {
         self.expires
             .or_else(|| {
                 self.time
-                    .map(|t| time::after(t, hold_default(self.kind.unwrap_or(Kind::Hold))))
+                    .map(|t| time::after(t, lapse_default(self.kind.unwrap_or(Kind::Hold))))
             })
             .unwrap_or(Timestamp::UNIX_EPOCH)
     }
@@ -151,6 +152,29 @@ impl Store {
 
     pub fn remove_owed(&self, to: &Addr, id: &Id) -> Result<()> {
         remove(&self.owed_dir(to).join(id.as_str()))
+    }
+
+    /// Obligations on `to` in effect at `now`, newest first. Lapse is a
+    /// filter: a lapsed one stays in `owed()` and `done --re` still closes it.
+    pub fn open_owed(&self, to: &Addr, now: Timestamp) -> Vec<Entry> {
+        self.owed(to)
+            .into_iter()
+            .filter(|e| e.lapses_at() > now)
+            .collect()
+    }
+
+    /// Delete obligations, on every mailbox, that lapsed before `cutoff`.
+    /// Returns how many.
+    pub fn sweep_owed(&self, cutoff: Timestamp) -> usize {
+        let mut swept = 0;
+        for to in self.mailboxes() {
+            for e in self.owed(&to) {
+                if e.lapses_at() < cutoff && self.remove_owed(&to, &e.id).is_ok() {
+                    swept += 1;
+                }
+            }
+        }
+        swept
     }
 
     fn lapsed_dir(&self) -> PathBuf {
@@ -377,5 +401,50 @@ mod tests {
         assert!(store.hold(&orphan.id).is_none());
         assert_eq!(store.sweep_holds(now, now), 2);
         assert_eq!(ids(store.holds(now)), vec![live.id, old_block.id]);
+    }
+
+    #[test]
+    fn obligations_lapse_but_stay_closable_until_swept() {
+        let t = tempfile::tempdir().unwrap();
+        let store = Store::at(t.path());
+        let now: Timestamp = "2026-10-11T12:00:00Z".parse().unwrap();
+        let hours = |h: i64| now - jiff::SignedDuration::from_hours(h);
+        let me = Addr::parse("worker").unwrap();
+        let owed = |id: &str, kind, time, expires| Entry {
+            id: Id::parse(id).unwrap(),
+            kind: Some(kind),
+            issuer: Addr::parse("boss").unwrap(),
+            to: me.clone(),
+            scope: None,
+            time: Some(time),
+            re: None,
+            expires,
+            headline: id.into(),
+        };
+        // In effect by default (3d); lapsed by default; kept by --for;
+        // lapsed by its own expires:.
+        let fresh = owed("1011T000000-aaaa", Kind::Ask, hours(70), None);
+        let stale = owed("1008T000000-bbbb", Kind::Go, hours(73), None);
+        let long = owed(
+            "1007T000000-cccc",
+            Kind::Ruling,
+            hours(100),
+            Some(hours(-1)),
+        );
+        let short = owed("1011T000000-dddd", Kind::Ask, hours(2), Some(hours(1)));
+        for e in [&fresh, &stale, &long, &short] {
+            store.put_owed(e).unwrap();
+        }
+        let ids = |v: Vec<Entry>| v.into_iter().map(|e| e.id).collect::<Vec<_>>();
+        assert_eq!(
+            ids(store.open_owed(&me, now)),
+            vec![fresh.id.clone(), long.id.clone()]
+        );
+        assert!(store.has_owed(&me, &stale.id), "done --re still finds it");
+
+        // gc removes only those that lapsed before its cutoff.
+        assert_eq!(store.sweep_owed(hours(24)), 0);
+        assert_eq!(store.sweep_owed(now), 2);
+        assert_eq!(ids(store.owed(&me)), vec![fresh.id, long.id]);
     }
 }

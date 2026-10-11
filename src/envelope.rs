@@ -82,6 +82,11 @@ impl Kind {
     pub const fn is_hold(self) -> bool {
         matches!(self, Self::Hold | Self::Block)
     }
+
+    /// Leaves standing state that lapses on its own (`until:`, `--for`).
+    pub const fn lapses(self) -> bool {
+        self.is_hold() || self.creates_obligation()
+    }
 }
 
 impl std::fmt::Display for Kind {

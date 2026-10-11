@@ -252,6 +252,51 @@ fn obligations_and_holds() {
 }
 
 #[test]
+fn an_obligation_lapses_out_of_the_brief_but_done_still_closes_it() {
+    let w = World::new();
+    let ask = w.run(
+        "boss",
+        &["worker", "ask", "old question", "--for", "2d", "--no-wake"],
+    );
+    let id = stdout(&ask).trim().strip_prefix("id=").unwrap().to_string();
+    let owed = w.state().join("seats/worker/owed").join(&id);
+    assert!(header(&owed, "expires").is_some());
+    // Lapse it, as two days would.
+    let expires = header(&owed, "expires").unwrap();
+    let text = fs::read_to_string(&owed)
+        .unwrap()
+        .replace(&expires, "2020-01-01T00:00:00Z");
+    fs::write(&owed, text).unwrap();
+
+    let brief = stdout(&w.run("worker", &["brief"]));
+    assert!(!brief.contains("open obligations"), "{brief}");
+    assert!(brief.contains("1 obligation(s) on me lapsed"), "{brief}");
+    let all = stdout(&w.run("worker", &["brief", "--all"]));
+    assert!(
+        all.contains("lapsed obligations on me (1)") && all.contains(&id),
+        "{all}"
+    );
+    let seats = stdout(&w.run("worker", &["seats", "worker"]));
+    assert!(
+        seats
+            .lines()
+            .any(|l| l.starts_with("worker ") && l.split_whitespace().nth(3) == Some("0")),
+        "{seats}"
+    );
+
+    let done = w.run(
+        "worker",
+        &["boss", "done", "late", "--re", &id, "--no-wake"],
+    );
+    assert_eq!(done.status.code(), Some(5));
+    assert!(!owed.exists());
+
+    let fyi = w.run("boss", &["worker", "fyi", "x", "--for", "1d", "--no-wake"]);
+    assert!(!fyi.status.success());
+    assert!(String::from_utf8_lossy(&fyi.stderr).contains("--for applies to"));
+}
+
+#[test]
 fn a_seat_name_bound_elsewhere_is_refused() {
     let w = World::new();
     let other = w.root.join("elsewhere/boss");

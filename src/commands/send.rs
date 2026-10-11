@@ -19,7 +19,7 @@ use crate::route::{self, Mail, Sender};
 use crate::seat::Addr;
 use crate::store::ids::{self, Id};
 use crate::store::message::Message;
-use crate::store::records::{Entry, Pending, hold_default};
+use crate::store::records::{Entry, Pending, lapse_default};
 use crate::time;
 use crate::transport::pane_map::PaneMap;
 use crate::transport::tmux::{Pane, Tmux};
@@ -110,7 +110,9 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         None => (sender.from(), sender.boxes.primary.to_string()),
     };
     let re = a.re.as_ref().map(Id::as_str);
-    let until = a.kind.is_hold().then(|| time::iso(expires_at(a, now)));
+    // An obligation's default lapse is not news to its reader; a hold's is.
+    let until = (a.kind.is_hold() || (a.kind.lapses() && a.hold_for.is_some()))
+        .then(|| time::iso(expires_at(a, now)));
     let msg = Message::default()
         .header("from", &from)
         .header("reply", &reply)
@@ -338,9 +340,9 @@ fn check_state(ctx: &Ctx, a: &SendArgs, sender: &Sender) -> Result<()> {
     }
 }
 
-/// When a hold or block sent now lapses.
+/// When a hold, block or obligation sent now lapses.
 fn expires_at(a: &SendArgs, now: Timestamp) -> Timestamp {
-    time::after(now, a.hold_for.unwrap_or_else(|| hold_default(a.kind)))
+    time::after(now, a.hold_for.unwrap_or_else(|| lapse_default(a.kind)))
 }
 
 fn record_state(
@@ -360,7 +362,7 @@ fn record_state(
         scope: a.scope.clone(),
         time: Some(now),
         re: a.re.clone(),
-        expires: a.kind.is_hold().then(|| expires_at(a, now)),
+        expires: a.kind.lapses().then(|| expires_at(a, now)),
         headline: headline.to_string(),
     };
     match (a.kind, &a.re) {

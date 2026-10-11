@@ -874,7 +874,8 @@ s44() { # migrate a 0.3 tree: unread lands in the seat, receipts keep their kind
   expect "receipt kept" eq "$(cd "$BOSS_DIR" && XDG_STATE_HOME="$st" "$HAIL" sent 0101T000001-bbbb)" "injected 2026-01-02T03:04:05Z" || ok=1
   expect "unread still unread" eq "$(cd "$BOSS_DIR" && XDG_STATE_HOME="$st" "$HAIL" sent 0101T000000-aaaa)" "delivered" || ok=1
   out=$(cd "$WORKER_DIR" && XDG_STATE_HOME="$st" "$HAIL" brief)
-  expect "brief lists the unread and the obligation" contains "$out" "open obligations on me (1)" || ok=1
+  # A 0.3 obligation has no time:, so it has lapsed: counted, still closable.
+  expect "brief counts the migrated obligation as lapsed" contains "$out" "1 obligation(s) on me lapsed" || ok=1
   expect "old tree archived" exists "$st/hail/archive/0.3/inbox" || ok=1
   XDG_STATE_HOME="$st" "$HAIL" migrate --revert >/dev/null 2>&1; RC=$?
   expect "revert rc=0" eq "$RC" 0 || ok=1

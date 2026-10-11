@@ -152,9 +152,12 @@ arrives with their next prompt. A typed message costs its reader a turn, so
 progress belongs in the issue tracker, which hail does not touch.
 
 Holds and blocks lapse (8h and 7d by default, `--for` up to 7d): a hold is a
-person's decision, and tools serialize landing, installs and timing runs. An
-obligation never lapses, because hiding a live ruling by age would change
-what it means.
+person's decision, and tools serialize landing, installs and timing runs.
+Obligations lapse too, after 3 days (`--for` up to 7d). They were meant
+never to lapse, so that age could not hide a live ruling, but in practice
+almost all of them were superseded, never closed, and buried the few that
+were owed. A lapsed one leaves the count; `brief` says how many lapsed,
+`brief --all` lists them, and `done --re` still closes one.
 
 ## What is deliberately not here
 

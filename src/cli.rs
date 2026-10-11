@@ -145,7 +145,7 @@ pub struct SendCli {
     /// Sign as a sub-agent of this seat: `<seat>/<name>`.
     #[arg(long = "as", value_name = "NAME")]
     pub as_name: Option<String>,
-    /// How long a hold or block lasts: `30m`, `8h`, `3d`.
+    /// How long a hold, block or obligation lasts: `30m`, `8h`, `3d`.
     #[arg(long = "for", value_name = "SPAN")]
     pub hold_for: Option<String>,
 }
@@ -156,7 +156,7 @@ fn parse_hold_for(s: &str) -> Result<std::time::Duration> {
     match crate::time::parse_span(s) {
         Some(d) if d <= max => Ok(d),
         Some(_) => Err(Error::Usage(format!(
-            "--for {s}: at most {}d; a hold is a person's decision, not a standing lock",
+            "--for {s}: at most {}d; hail state is for a working session, not a standing lock",
             max.as_secs() / 86_400
         ))),
         None => Err(Error::Usage(format!(
@@ -301,9 +301,9 @@ impl SendCli {
             )));
         }
         let hold_for = self.hold_for.as_deref().map(parse_hold_for).transpose()?;
-        if hold_for.is_some() && !kind.is_hold() {
+        if hold_for.is_some() && !kind.lapses() {
             return Err(Error::Usage(format!(
-                "--for applies to hold and block, not {kind}"
+                "--for applies to hold, block, ruling, go and ask, not {kind}"
             )));
         }
         if let Some(b) = &self.bead {

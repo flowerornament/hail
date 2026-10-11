@@ -112,16 +112,16 @@ An envelope is one line in your prompt:
 - unread envelopes;
 - your sends with no receipt after two minutes;
 - holds in effect;
-- obligations on you.
+- obligations on you, and a count of those that lapsed.
 
-It shows five per section (`--all` for everything). The session-start hook
+It shows five per section (`--all` for everything, lapsed obligations too). The session-start hook
 runs it; run it yourself after a compaction.
 
 ## Kinds
 
 | kind | effect |
 |---|---|
-| `ruling` `go` `ask` | Leaves an obligation on the recipient until it sends `done --re <id>`. |
+| `ruling` `go` `ask` | Leaves an obligation on the recipient until it sends `done --re <id>`, or it lapses: after 3d, or `--for` (at most 7d). `done --re` still closes a lapsed one. |
 | `done` | Closes one obligation: `hail <issuer> done --re <id> '<what was done>'`. Only the obligated seat can. |
 | `hold` `block` | In effect, in every brief, until `release --re <id>` or it lapses: a hold after 8h, a block after 7d, or `--for 30m`/`3d` (at most 7d). Its envelope says `until:`. |
 | `release` | Lifts one hold: `--re <id>`. |

@@ -33,6 +33,12 @@ pub const HOLD_DEFAULT: Duration = Duration::from_hours(8);
 pub const BLOCK_DEFAULT: Duration = Duration::from_hours(168);
 pub const HOLD_MAX: Duration = Duration::from_hours(168);
 
+/// A ruling, go or ask lapses this long after it is sent unless `--for`
+/// says otherwise (at most [`HOLD_MAX`]). An obligation nobody closed in three
+/// days has almost always been superseded, and a brief full of them hides the
+/// few that are owed. A lapsed one can still be closed with `done --re`.
+pub const OBLIGATION_DEFAULT: Duration = Duration::from_hours(72);
+
 /// At migration, unread mail keyed by a live pane id goes to that pane's
 /// seat only when it is this recent: older mail may have been meant for an
 /// agent that has since left the pane.

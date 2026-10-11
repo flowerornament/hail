@@ -111,7 +111,7 @@ pub fn seats(ctx: &Ctx, only: Option<&str>) -> Result<u8> {
                 agents
             },
             ctx.store.mailbox(&addr).unread().len().to_string(),
-            ctx.store.owed(&addr).len().to_string(),
+            ctx.store.open_owed(&addr, now).len().to_string(),
             // How long ago a prompt hook last read this mailbox: "-" means
             // nothing delivers its mail until someone runs hail inbox there.
             ctx.store

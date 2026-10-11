@@ -225,6 +225,8 @@ New bounds, in `brief` only. Obligations never expire: hiding a live ruling by a
 - `brief` shows at most 5 obligations and 5 holds, newest first, then `… N more, oldest Nd (hail brief --all)`.
 - Obligations keyed by pane id are artefacts of 0.3's identity bug. Migration moves them out of every live seat (§11.1).
 
+*(Amended for 0.5.4.)* Obligations lapse as well: `ruling`, `go` and `ask` take `--for <span>` (default 3d, at most 7d), and the record carries `expires:`. The envelope carries `until:` only when `--for` was given. In use, almost every obligation older than a few days had been superseded and never closed, so the brief listed hundreds that nobody owed and hid the few that were. Lapse is the same read-time filter as for holds. `brief` and `seats` count only those in effect; `brief` adds one line with how many lapsed, and `brief --all` lists them. `done --re` still closes a lapsed one. `gc` deletes obligations that lapsed more than `--days` ago.
+
 Closing stays explicit (`done --re`). A reply of another kind with `--re` does not close an obligation, because progress `fyi`s carry `--re` too.
 
 ### 6.7 gc
@@ -451,7 +453,7 @@ Migration is a step of its own, not a side effect. The first command after an up
 |---|---|---|
 | Q1 | Two agents in one directory | Checked sub-seats for Claude panes (D2, §5). A Codex pane in a shared directory needs its own workspace. |
 | Q2 | Is `reply:<seat>` safe? | Yes. No scripts parse `reply:%`. Pane targets keep resolving for old envelopes. |
-| Q3 | Expiry of obligations | None. Bounded in `brief` only (§6.6). Pending sends expire at 7 days. |
+| Q3 | Expiry of obligations | None in 0.4; from 0.5.4 they lapse after 3 days (§6.6). Pending sends expire at 7 days. |
 | Q4 | Lower the 300 ms submit wait? | Not in 0.4. A named per-harness constant, and the trial in §7. |
 | Q5 | PostToolUse delivery in 0.4? | No. It ships with S3 in 0.5. |
 
