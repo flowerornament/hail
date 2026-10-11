@@ -6,7 +6,9 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crate::error::{Error, Result};
-use crate::policy::{STDIN_FIRST_BYTE, STDIN_MAX, STDIN_TOTAL};
+use crate::policy::{
+    HOOK_PAYLOAD_FIRST_BYTE, HOOK_PAYLOAD_TOTAL, STDIN_FIRST_BYTE, STDIN_MAX, STDIN_TOTAL,
+};
 
 /// A file or /dev/null is readable at once.
 const READY_WAIT: Duration = Duration::from_millis(10);
@@ -24,11 +26,27 @@ pub fn read() -> Result<Option<Vec<u8>>> {
     if std::io::stdin().is_terminal() {
         return Ok(None);
     }
-    read_if_ready(if is_pipe() {
-        STDIN_FIRST_BYTE
-    } else {
-        READY_WAIT
-    })
+    read_if_ready(
+        if is_pipe() {
+            STDIN_FIRST_BYTE
+        } else {
+            READY_WAIT
+        },
+        STDIN_TOTAL,
+    )
+}
+
+/// The JSON a harness writes to a hook's stdin, if it arrives promptly. A
+/// hook runs on every tool call, so the waits are short; `None` when there is
+/// nothing, it is late, or it is not JSON.
+pub fn hook_payload() -> Option<serde_json::Value> {
+    if std::io::stdin().is_terminal() {
+        return None;
+    }
+    let bytes = read_if_ready(HOOK_PAYLOAD_FIRST_BYTE, HOOK_PAYLOAD_TOTAL)
+        .ok()
+        .flatten()?;
+    serde_json::from_slice(&bytes).ok()
 }
 
 fn is_pipe() -> bool {
@@ -42,7 +60,7 @@ enum Chunk {
     End,
 }
 
-fn read_if_ready(first_byte: Duration) -> Result<Option<Vec<u8>>> {
+fn read_if_ready(first_byte: Duration, total: Duration) -> Result<Option<Vec<u8>>> {
     let (tx, rx) = mpsc::channel::<Chunk>();
     std::thread::spawn(move || {
         let mut lock = std::io::stdin().lock();
@@ -64,7 +82,7 @@ fn read_if_ready(first_byte: Duration) -> Result<Option<Vec<u8>>> {
     let Ok(Chunk::Data(mut data)) = rx.recv_timeout(first_byte) else {
         return Ok(None);
     };
-    let deadline = Instant::now() + STDIN_TOTAL;
+    let deadline = Instant::now() + total;
     loop {
         match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
             Ok(Chunk::Data(d)) => {
@@ -80,7 +98,7 @@ fn read_if_ready(first_byte: Duration) -> Result<Option<Vec<u8>>> {
             Err(_) => {
                 return Err(Error::Usage(format!(
                     "stdin did not end within {} s; pass a finite body (a heredoc or a file)",
-                    STDIN_TOTAL.as_secs()
+                    total.as_secs()
                 )));
             }
         }

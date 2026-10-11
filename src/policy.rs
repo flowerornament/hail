@@ -51,6 +51,11 @@ pub const STDIN_TOTAL: Duration = Duration::from_secs(30);
 /// A body larger than this is refused rather than read without bound.
 pub const STDIN_MAX: usize = 16 << 20;
 
+/// A hook's JSON payload on stdin: the harness writes it before the hook
+/// starts, so a short wait suffices, and the hook runs on every tool call.
+pub const HOOK_PAYLOAD_FIRST_BYTE: Duration = Duration::from_millis(200);
+pub const HOOK_PAYLOAD_TOTAL: Duration = Duration::from_secs(1);
+
 /// `hook-errors.log` rotates at this size.
 pub const HOOK_LOG_MAX: u64 = 1 << 20;
 

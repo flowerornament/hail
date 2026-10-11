@@ -4,6 +4,13 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+- **Mail reaches a busy Codex agent.** `hail setup` installs a third Codex
+  hook, `PostToolUse`, running `hail deliver --event PostToolUse`. An agent that
+  never ends its turn (Codex goal mode starts the next turn at once) submits
+  no prompt, and Codex can hold typed text until a turn ends, so envelopes
+  could wait unseen for minutes. Now unread mail arrives after the agent's
+  next tool call; a sub-agent's tool calls are skipped. Run `hail setup`
+  again (and trust the new hook in Codex with `/hooks`).
 - **A send to Codex reports where the envelope went.** Codex does not always
   submit on Enter: input that misses the current turn can wait until the turn
   ends, or until no turn is running, which under a running goal can be long.
@@ -11,7 +18,7 @@ All notable changes to `hail` are documented in this file.
   tool call: exit 0. Still in the composer: one more Enter, then exit 5 if it
   stayed. Held until the turn ends or queued: exit 5, saying where and that a
   goal is running. hail never sends Escape, which in Codex interrupts the
-  turn (hail-qx4).
+  turn.
 
 ## v0.5.2 - 2026-10-08
 

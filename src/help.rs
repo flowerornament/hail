@@ -122,9 +122,10 @@ hail inbox.
   inbox [--peek] [--all]
                         Unread bodies, marked read. --peek leaves them unread.
   show <id>             One message by id from any seat; claims nothing.
-  deliver --format claude|codex
-                        For the UserPromptSubmit hook: unread bodies as hook
-                        JSON, marked injected. Silent when there are none.
+  deliver --format claude|codex [--event PostToolUse]
+                        For the UserPromptSubmit and PostToolUse hooks: unread
+                        bodies as hook JSON, marked injected. Silent when
+                        there are none.
 ";
 
 pub const SEATS: &str = "\

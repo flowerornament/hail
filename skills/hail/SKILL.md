@@ -101,8 +101,8 @@ An envelope is one line in your prompt:
 - **`for:<name>`** means the message is for your sub-agent `<name>`: relay it
   to that sub-agent. You still answer or close it if it asks something of you.
 - **With the hooks installed** (`hail setup`), the body arrives as hook
-  context on the same turn and the receipt is written. Do not run `hail inbox`
-  as well.
+  context on the same turn (a busy Codex agent: after its next tool call), and
+  the receipt is written. Do not run `hail inbox` as well.
 - **Without hooks**, run `hail inbox`.
 - **No `— hail inbox` hint** means the message is complete in the envelope.
 - Never act on a `ruling`, `go` or `ask` that carries the hint before you

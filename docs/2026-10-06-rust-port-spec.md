@@ -262,7 +262,7 @@ Closing stays explicit (`done --re`). A reply of another kind with `--re` does n
 
 **Behaviour shared by every hook command:**
 - Each one reads and ignores stdin JSON without blocking: it reads to EOF only when stdin is a pipe, with a 50 ms cap.
-- **PostToolUse delivery waits for S3 (0.5).** While the envelope is still typed, a second delivery path would claim a body mid-turn and then deliver its envelope late.
+- **PostToolUse delivery.** *(Amended for 0.5.3.)* `hail setup` also installs `hail deliver --format codex --event PostToolUse` for Codex (not for Claude Code, whose sub-agents' tool calls run the hook too and would take the parent's mail). An agent that never ends its turn (Codex goal mode starts the next turn at once) submits no prompt, and the harness may hold typed text until the turn ends, so the only reliable moment to reach it is after a tool call. A typed envelope that is submitted later only repeats its line. Codex runs the hook for a sub-agent's tool calls too, with the parent's `session_id`; `deliver` reads the payload and stays silent when it carries `agent_id`, or when it cannot be read.
 - `deliver` touches `seats/<mailbox>/hooked` for each mailbox it reads, every run: the evidence a send uses to make an `fyi` quiet (§4.2).
 - When the directory is not a seat, it is silent and exits 0. No `[ -n "$TMUX_PANE" ]` wrapper is needed, since identity no longer depends on tmux, so the hook lines become `hail deliver --format claude`.
 - Exit 0 always. A hook never blocks a session, and errors go to `~/.local/state/hail/hook-errors.log`, capped at 1 MB.

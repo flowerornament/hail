@@ -20,7 +20,7 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<u8> {
         )),
         Cmd::Sent { id } => Ok(receive::sent(ctx, &id)),
         Cmd::Await { ids, timeout, any } => Ok(receive::await_ids(ctx, &ids, timeout, any)),
-        Cmd::Deliver { format } => Ok(receive::deliver(ctx, format.as_deref())),
+        Cmd::Deliver { format, event } => Ok(receive::deliver(ctx, format.as_deref(), &event)),
         Cmd::Brief { all, hook } => brief::run(ctx, all, hook),
         Cmd::Inbox { peek, all } => receive::inbox(ctx, peek, all),
         Cmd::Show { id } => receive::show(ctx, &id),

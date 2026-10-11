@@ -115,11 +115,12 @@ pub fn setup(check: bool, yes: bool) -> Result<u8> {
         crate::store::write_atomic(&h.file, new.as_bytes())?;
         outln!("done  {}: updated {path}; {}", h.name, h.note);
     }
-    for (event, cmd) in wanted("<harness>") {
-        if check {
-            break;
+    if !check {
+        for harness in ["claude", "codex"] {
+            for (event, cmd) in wanted(harness) {
+                outln!("      {harness} {event}: {cmd}");
+            }
         }
-        outln!("      {event}: {cmd}");
     }
     Ok(u8::from(check && drift))
 }

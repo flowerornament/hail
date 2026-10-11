@@ -602,3 +602,42 @@ fn doctor_and_seats_show_mail_no_hook_will_deliver() {
     let seats = stdout(&w.run("boss", &["seats", "worker"]));
     assert!(seats.lines().nth(1).unwrap().contains("s "), "{seats}");
 }
+
+#[test]
+fn a_busy_agent_gets_its_mail_after_a_tool_call() {
+    // A turn that never ends submits no prompt; PostToolUse still runs.
+    let w = World::new();
+    let id = w.send("while you work");
+    let post_tool_use = |payload: &str| {
+        let mut child = w
+            .hail("worker")
+            .args(["deliver", "--format", "codex", "--event", "PostToolUse"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    };
+    // A sub-agent's tool call (agent_id set): nothing claimed, nothing marked.
+    let out = post_tool_use(r#"{"session_id":"s","agent_id":"a","agent_type":"default"}"#);
+    assert_eq!(stdout(&out), "");
+    assert_eq!(stdout(&w.run("boss", &["sent", &id])).trim(), "delivered");
+    assert!(!w.state().join("seats/worker/hooked").exists());
+
+    // The agent's own tool call: the mail arrives as PostToolUse context.
+    let out = post_tool_use(r#"{"session_id":"s","tool_name":"exec"}"#);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PostToolUse");
+    let ctx = v["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(ctx.contains(&format!("id:{id}")), "{ctx}");
+    assert!(stdout(&w.run("boss", &["sent", &id])).starts_with("injected "));
+    assert!(w.state().join("seats/worker/hooked").exists());
+}

@@ -57,6 +57,9 @@ hooks = true
 [[hooks.UserPromptSubmit]]
 hooks = [{ type = "command", command = "hail deliver --format codex" }]
 
+[[hooks.PostToolUse]]
+hooks = [{ type = "command", command = "hail deliver --format codex --event PostToolUse" }]
+
 [[hooks.SessionStart]]
 hooks = [{ type = "command", command = "hail brief --hook" }]
 ```
@@ -105,6 +108,7 @@ needs its own review. A layer carrying both `.codex/hooks.json` and
 | event | command | output |
 |---|---|---|
 | `UserPromptSubmit` | `hail deliver --format <harness>` | `{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"<unread bodies>"}}`, or nothing. Marks each body `injected <UTC time>`. Control kinds are complete in the envelope and are not injected. |
+| `PostToolUse` (Codex only) | `hail deliver --format codex --event PostToolUse` | The same, as `PostToolUse` context. It reaches an agent that is busy: a turn that never ends (Codex goal mode) submits no prompt, and the harness may hold typed text, but every tool call runs this hook. A sub-agent's tool calls (the payload carries `agent_id`) are skipped, so mail is never claimed into a sub-agent's context. Nothing unread costs a few milliseconds. Not installed for Claude Code, whose sub-agents' tool calls would take the parent's mail. |
 | `SessionStart` | `hail brief --hook` | The brief as plain text (injected as context), or nothing. |
 
 `deliver` claims each body once (a Maildir rename) and takes a few

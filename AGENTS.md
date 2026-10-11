@@ -38,6 +38,11 @@ Where things are: the behaviour contract is
 - **A behaviour change updates the spec, `DESIGN.md`, the skill,
   `src/help.rs` and `CHANGELOG.md` together.** Agents learn hail from the
   skill and the help pages, so an out-of-date page misleads every one of them.
+- **This is a public repository.** The CHANGELOG, docs, help, comments and
+  examples explain changes the way an open-source project does: no local
+  project or seat names, no machine paths, no counts from one machine, no
+  internal issue ids (`hail-xxx`). Examples use neutral seats (`api-1a`,
+  `web-1b`). Put the evidence on the bead.
 - **Comments state the rule, not the history.** A reader a year from now
   won't know what 0.3 was. Put the history in the CHANGELOG.
 - **Track work in bd** (`bd ready`, `bd create`, `bd close`), and put the id

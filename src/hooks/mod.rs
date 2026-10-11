@@ -54,3 +54,31 @@ pub fn stdout_reaches_anyone() -> bool {
         (Ok(_), Err(_)) => true,
     }
 }
+
+/// Whether a tool-call hook's payload comes from the agent itself, not one of
+/// its sub-agents. Codex runs `PostToolUse` for a sub-agent's tool calls with
+/// the parent's `session_id`; only `agent_id` (and `agent_type`) mark them.
+/// Mail delivered there would be claimed into the sub-agent's context, so a
+/// missing or unreadable payload counts as not the agent: the next prompt
+/// still delivers.
+pub fn from_the_agent_itself(payload: Option<&serde_json::Value>) -> bool {
+    payload
+        .is_some_and(|p| p.is_object() && p.get("agent_id").is_none_or(serde_json::Value::is_null))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::from_the_agent_itself;
+    use serde_json::json;
+
+    #[test]
+    fn sub_agent_tool_calls_are_not_the_agent() {
+        let own = json!({"session_id": "s", "turn_id": "t", "tool_name": "exec"});
+        let sub =
+            json!({"session_id": "s", "turn_id": "u", "agent_id": "a", "agent_type": "default"});
+        assert!(from_the_agent_itself(Some(&own)));
+        assert!(!from_the_agent_itself(Some(&sub)));
+        assert!(!from_the_agent_itself(None));
+        assert!(!from_the_agent_itself(Some(&json!("not an object"))));
+    }
+}

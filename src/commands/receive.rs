@@ -11,6 +11,7 @@ use crate::ctx::Ctx;
 use crate::envelope::{self, Head, Kind};
 use crate::error::{Error, Result};
 use crate::hooks;
+use crate::input;
 use crate::policy::{DELIVER_BODIES, DELIVER_BYTES};
 use crate::seat::Addr;
 use crate::store::ids::Id;
@@ -21,15 +22,18 @@ use crate::store::{Status, Store};
 /// Print this seat's unread bodies and claim them (`injected`). A hook must
 /// never fail a session: this always exits 0, and an error is logged to
 /// `hook-errors.log` with every claim it made given back.
-pub fn deliver(ctx: &Ctx, format: Option<&str>) -> u8 {
-    if let Err(e) = deliver_inner(ctx, format) {
+pub fn deliver(ctx: &Ctx, format: Option<&str>, event: &str) -> u8 {
+    if let Err(e) = deliver_inner(ctx, format, event) {
         hooks::log_error(&ctx.store, "deliver", &e);
     }
     0
 }
 
-fn deliver_inner(ctx: &Ctx, format: Option<&str>) -> Result<()> {
+fn deliver_inner(ctx: &Ctx, format: Option<&str>, event: &str) -> Result<()> {
     if ctx.store.legacy_present() || !hooks::stdout_reaches_anyone() {
+        return Ok(());
+    }
+    if event == "PostToolUse" && !hooks::from_the_agent_itself(input::hook_payload().as_ref()) {
         return Ok(());
     }
     let Some(seat) = ctx.seat_here()? else {
@@ -81,7 +85,7 @@ fn deliver_inner(ctx: &Ctx, format: Option<&str>) -> Result<()> {
     }
     let text = parts.join("\n---\n");
     let out = match format {
-        Some(_) => hooks::hook_json("UserPromptSubmit", &text),
+        Some(_) => hooks::hook_json(event, &text),
         None => text,
     };
     let mut stdout = std::io::stdout().lock();

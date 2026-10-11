@@ -44,6 +44,9 @@ pub enum Cmd {
     Deliver {
         #[arg(long, value_parser = ["claude", "codex"])]
         format: Option<String>,
+        /// The hook event this runs for; it names the JSON it answers with.
+        #[arg(long, default_value = "UserPromptSubmit", value_parser = ["UserPromptSubmit", "PostToolUse"])]
+        event: String,
     },
     Brief {
         #[arg(long)]

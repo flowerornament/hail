@@ -9,14 +9,27 @@ use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, val
 use crate::error::{Error, Result};
 
 /// The hooks hail wants, per harness: (event, command).
-pub fn wanted(harness: &str) -> [(&'static str, String); 2] {
-    [
+///
+/// Codex also gets `PostToolUse`: an agent whose turn never ends (a goal
+/// starts the next turn at once) submits no prompt, and Codex can hold typed
+/// text until a turn ends, but every tool call runs this hook. Claude Code
+/// does not: its sub-agents' tool calls run `PostToolUse` too, and would take
+/// the parent's mail into the sub-agent's context.
+pub fn wanted(harness: &str) -> Vec<(&'static str, String)> {
+    let mut hooks = vec![
         ("SessionStart", "hail brief --hook".to_string()),
         (
             "UserPromptSubmit",
             format!("hail deliver --format {harness}"),
         ),
-    ]
+    ];
+    if harness == "codex" {
+        hooks.push((
+            "PostToolUse",
+            format!("hail deliver --format {harness} --event PostToolUse"),
+        ));
+    }
+    hooks
 }
 
 fn is_hail_command(cmd: &str) -> bool {
@@ -170,10 +183,10 @@ fn merge_codex_event(hooks: &mut Table, event: &str, cmd: &str) {
     t.insert("hooks", value(arr));
     t.decor_mut().set_prefix(format!(
         "\n# hail: {}\n",
-        if event == "SessionStart" {
-            "the brief at session start"
-        } else {
-            "message bodies at prompt submit"
+        match event {
+            "SessionStart" => "the brief at session start",
+            "PostToolUse" => "message bodies after each tool call, for a busy agent",
+            _ => "message bodies at prompt submit",
         }
     ));
     aot.push(t);
@@ -201,6 +214,7 @@ mod tests {
         let out = merge_claude(OLD_CLAUDE).unwrap();
         assert!(out.contains("\"hail brief --hook\""));
         assert!(out.contains("\"hail deliver --format claude\""));
+        assert!(!out.contains("PostToolUse"), "not for Claude Code");
         assert!(!out.contains("TMUX_PANE"));
         assert!(out.contains("other-tool"));
         assert!(out.find("\"model\"") < out.find("\"hooks\""));
@@ -235,6 +249,7 @@ hooks = [{ type = "command", command = "[ -n \"$TMUX_PANE\" ] || exit 0; hail br
         assert!(out.contains("# my own comment"));
         assert!(out.contains("notify-me"));
         assert!(out.contains("command = \"hail deliver --format codex\""));
+        assert!(out.contains("command = \"hail deliver --format codex --event PostToolUse\""));
         assert!(out.contains("command = \"hail brief --hook\""));
         assert!(!out.contains("TMUX_PANE"));
         assert_eq!(merge_codex(&out).unwrap(), out, "idempotent");
@@ -245,6 +260,6 @@ hooks = [{ type = "command", command = "[ -n \"$TMUX_PANE\" ] || exit 0; hail br
         let out = merge_codex("").unwrap();
         let doc: DocumentMut = out.parse().unwrap();
         assert_eq!(doc["features"]["hooks"].as_bool(), Some(true));
-        assert_eq!(out.matches("hail deliver").count(), 1);
+        assert_eq!(out.matches("hail deliver").count(), 2);
     }
 }
