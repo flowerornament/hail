@@ -4,6 +4,10 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.5.4 - 2026-10-18
+
+Stale obligations stop piling up.
+
 - **Obligations lapse.** A `ruling`, `go` or `ask` now lapses 3 days after
   it is sent, or after `--for <span>` (at most 7 days), the way holds do.
   Most obligations are superseded rather than closed, so seats carried
