@@ -24,7 +24,7 @@ factor="${BENCH_FACTOR:-3}"
 fail=0
 while IFS='|' read -r name budget cmd; do
   mean=$(cd "$WORK/worker" && hyperfine -N --warmup 5 --runs 50 --export-json "$WORK/r.json" "$cmd" >/dev/null 2>&1 \
-    && python3 -c 'import json,sys; r=json.load(open(sys.argv[1]))["results"][0]; print(round((r["user"]+r["system"])*1000, 2))' "$WORK/r.json")
+    && python3 -c 'import json,sys; r=json.load(open(sys.argv[1]))["results"][0]; cpu=r["summary"]["time_cpu"]["mean"] if "summary" in r else r["user"]+r["system"]; print(round(cpu*1000, 2))' "$WORK/r.json")
   limit=$(python3 -c "print($budget * $factor)")
   verdict=ok
   python3 -c "import sys; sys.exit(0 if $mean <= $limit else 1)" || { verdict=SLOW; fail=1; }
