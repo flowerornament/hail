@@ -5,17 +5,33 @@
 # the assertions refuse skill.enable without enable.
 set -euo pipefail
 
-for cmd in nix git python3; do
+for cmd in nix python3; do
   command -v "$cmd" >/dev/null 2>&1 || { printf 'error: missing required command: %s\n' "$cmd" >&2; exit 1; }
 done
 
-ROOT="$(git rev-parse --show-toplevel)"
+# The checkout is the directory above this script, never what git finds by
+# walking up: a jj workspace has no .git, and git would answer for the
+# nearest enclosing repository (such as a dotfiles repo at ~).
+ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+unset GIT_DIR GIT_WORK_TREE
+tracked() {
+  if [ -d "$ROOT/.jj" ] && command -v jj >/dev/null 2>&1; then
+    jj file list --no-pager | tr '\n' '\0'
+  elif [ "$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)" = "$ROOT" ]; then
+    git -C "$ROOT" ls-files -z
+  else
+    printf 'error: %s is neither a jj workspace nor a git checkout\n' "$ROOT" >&2
+    return 1
+  fi
+}
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/hail-hm.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
 # Copy the tracked tree so the flake evaluates from a clean path.
 SOURCE="$WORK/source"; mkdir -p "$SOURCE"
-(cd "$ROOT" && git ls-files -z | tar --null -T - -cf -) | tar -xf - -C "$SOURCE"
+(cd "$ROOT" && tracked) > "$WORK/files"
+(cd "$ROOT" && tar --null -T "$WORK/files" -cf -) | tar -xf - -C "$SOURCE"
+[ -f "$SOURCE/flake.nix" ] || { printf 'error: no flake.nix among the tracked files of %s\n' "$ROOT" >&2; exit 1; }
 
 EVAL="$WORK/eval.nix"
 cat > "$EVAL" <<'NIX'
