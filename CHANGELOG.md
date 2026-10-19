@@ -29,6 +29,22 @@ All notable changes to `hail` are documented in this file.
   read: set `HAIL_SOCKET`. Run `hail setup` to replace any hook that still
   calls `tmux-bridge deliver`. The skill no longer mentions `[tb …]` or
   `[tmux-bridge …]` envelopes.
+- **Obligations are removed (breaking).** `ruling`, `go` and `ask` stay, and
+  are delivered as before (typed, with the body hint), but they no longer
+  leave a record on the recipient. They ask for a reply, and the reply is any
+  message with `--re <id>`: an `fyi --re <id>` for an outcome. The record of
+  what each seat owed had become a second work tracker that agents rarely
+  closed: seats carried hundreds of stale obligations, a record left on a
+  sub-seat whose pane had gone could not be closed at all, and the 0.5.4
+  lapse only hid them. Keep open work in your issue tracker.
+  - The `done` kind is gone. Sending it fails with a usage error that says
+    to answer with `--re` instead. A `done` message from an older hail is
+    still listed by `brief` and printed by `inbox` and `show`; the hook
+    delivers it as stored.
+  - `hail brief` no longer lists obligations, and `hail seats` drops its
+    `OWED` column.
+  - `--for` applies to `hold` and `block` only again.
+  - `hail gc` deletes the `seats/*/owed/` directories older versions left.
 
 ## v0.5.5 - 2026-10-18
 

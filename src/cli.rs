@@ -123,7 +123,7 @@ pub struct SendCli {
     /// Sign as a sub-agent of this seat: `<seat>/<name>`.
     #[arg(long = "as", value_name = "NAME")]
     pub as_name: Option<String>,
-    /// How long a hold, block or obligation lasts: `30m`, `8h`, `3d`.
+    /// How long a hold or block lasts: `30m`, `8h`, `3d`.
     #[arg(long = "for", value_name = "SPAN")]
     pub hold_for: Option<String>,
 }
@@ -219,14 +219,21 @@ impl SendCli {
                 "unexpected argument '{extra}' after the headline"
             )));
         }
-        let kind = Kind::parse(&kind).ok_or_else(|| {
-            Error::Usage(format!(
-                "'{kind}' is not a kind ({}). Usage: hail {} <kind> '<headline>'; if '{}' is a command, 'hail help' lists them",
-                Kind::list(),
-                self.target,
-                self.target
-            ))
-        })?;
+        let kind = match Kind::parse_sent(&kind) {
+            Ok(k) => k,
+            Err(why) if kind == "done" => {
+                return Err(Error::Usage(format!(
+                    "{why}. Usage: hail {} fyi '<outcome>' --re <id>",
+                    self.target
+                )));
+            }
+            Err(why) => {
+                return Err(Error::Usage(format!(
+                    "{why}. Usage: hail {} <kind> '<headline>'; if '{}' is a command, 'hail help' lists them",
+                    self.target, self.target
+                )));
+            }
+        };
         let re = self
             .re
             .map(|r| Id::parse(&r).ok_or_else(|| Error::Usage("--re must be a message id".into())))
@@ -241,9 +248,9 @@ impl SendCli {
             )));
         }
         let hold_for = self.hold_for.as_deref().map(parse_hold_for).transpose()?;
-        if hold_for.is_some() && !kind.lapses() {
+        if hold_for.is_some() && !kind.is_hold() {
             return Err(Error::Usage(format!(
-                "--for applies to hold, block, ruling, go and ask, not {kind}"
+                "--for applies to hold and block, not {kind}"
             )));
         }
         Ok(SendArgs {
@@ -273,7 +280,7 @@ mod tests {
     /// purpose rather than slipping past the check.
     const PLACEHOLDERS: &[(&str, &str)] = &[
         ("<seat>", "api-1b"),
-        ("<issuer>", "api-1a"),
+        ("<reply>", "api-1a"),
         ("<kind>", "ask"),
         ("<id>...", "1006T171200-a3f1"),
         ("<id>", "1006T171200-a3f1"),

@@ -51,8 +51,8 @@ fn gc(ctx: &Ctx, days: u64) -> Result<u8> {
     );
     let swept = ctx.store.sweep_holds(now, cutoff);
     outln!("removed {swept} lapsed holds (older than {days} days, or from a seat that is gone)");
-    let swept = ctx.store.sweep_owed(cutoff);
-    outln!("removed {swept} obligations that lapsed more than {days} days ago");
+    let swept = ctx.store.sweep_owed_dirs();
+    outln!("removed {swept} obligation directories left by hail before 0.6");
     Ok(0)
 }
 

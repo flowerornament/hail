@@ -15,13 +15,13 @@ Send (the body is everything after the first line):
   await <id>... [--timeout S]     Block until every id (--any: any id) has a receipt
 
 Receive:
-  brief                           What you owe, what you were sent, holds in effect
+  brief                           What you were sent, late sends, holds in effect
   inbox [--peek] [--all]          Unread bodies (the hook usually delivers them)
   show <id>                       One message by id, from any seat
 
 Seats (a seat is the workspace directory an agent works in):
   whoami                          This directory's seat
-  seats [seat]                    Every seat: agent panes, unread, open obligations
+  seats [seat]                    Every seat: agent panes, unread, hook, root
   list                            Every tmux pane with its seat
 
 Panes (for shells and processes, not agents):
@@ -35,8 +35,8 @@ Tool:
 
 Examples:
   hail api-1b ask <<'EOF'
-  Review src/auth.ts before the merge; reply done with your verdict
+  Review src/auth.ts before the merge; reply with your verdict
   The refresh path is auth/refresh.rs:40-120.
   EOF
-  hail api-1a done --re 1006T171200-a3f1 'committed on abc123'
+  hail api-1a fyi --re 1006T171200-a3f1 'committed on abc123'
   hail await 1006T171200-a3f1 --timeout 900

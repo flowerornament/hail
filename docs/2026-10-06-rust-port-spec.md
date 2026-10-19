@@ -166,7 +166,7 @@ seats/<seat>/tmp/<id>.md               being written
 seats/<seat>/new/<id>.md               unread
 seats/<seat>/cur/<id>.<how>.md         claimed; how ∈ injected|read|inline; mtime = receipt time
 seats/<seat>/pending/<id>              my sends with no receipt yet (bounded, §6.5)
-seats/<seat>/owed/<id>                 open obligations on this seat (ruling, go, ask)
+seats/<seat>/owed/<id>                 open obligations on this seat (ruling, go, ask); gone in 0.6, §6.6
 holds/<id>                             holds and blocks in effect (global)
 ids/<id> -> <seat>                     symlink, created exclusively; the id index
 archive/<yyyy-mm>/<seat>/...           gc'd messages
@@ -185,7 +185,7 @@ The message file format is unchanged: header lines (`from`, `reply`, `kind`, `id
 1. Reserve the id.
 2. Write `tmp/<id>.md` and fsync it.
 3. Rename it to `new/<id>.md`. For a control kind, rename to `cur/<id>.inline.md` instead.
-4. Record the state change: `owed/`, `holds/` or `pending/`.
+4. Record the state change: `owed/`, `holds/` or `pending/`. *(Amended for 0.6: `holds/` or `pending/`; there is no `owed/`, §6.6.)*
 5. Then the transport.
 
 The message is durable before anything is typed. A failed wake leaves a deliverable message and exit 5.
@@ -232,6 +232,8 @@ New bounds, in `brief` only. Obligations never expire: hiding a live ruling by a
 *(Amended for 0.5.4.)* Obligations lapse as well: `ruling`, `go` and `ask` take `--for <span>` (default 3d, at most 7d), and the record carries `expires:`. The envelope carries `until:` only when `--for` was given. In use, almost every obligation older than a few days had been superseded and never closed, so the brief listed hundreds that nobody owed and hid the few that were. Lapse is the same read-time filter as for holds. `brief` and `seats` count only those in effect; `brief` adds one line with how many lapsed, and `brief --all` lists them. `done --re` still closes a lapsed one. `gc` deletes obligations that lapsed more than `--days` ago.
 
 Closing stays explicit (`done --re`). A reply of another kind with `--re` does not close an obligation, because progress `fyi`s carry `--re` too.
+
+*(Amended for 0.6.)* Obligations are gone. `ruling`, `go` and `ask` keep their meaning and their delivery (typed, never quiet, with the body hint): they ask for a reply, and the reply is any message with `--re <id>`, an `fyi` for an outcome. They write no record, and `--for` applies to `hold` and `block` only. The `done` kind is removed: a send of it is refused (exit 1) with `done is gone in 0.6: answer with any kind and --re <id> (fyi for an outcome)`. A stored message whose kind is `done`, written by an older hail, is still listed by `brief` and printed by `inbox` and `show`; `deliver` emits it as stored rather than as an envelope line, since its kind is unknown. `brief` no longer lists what is owed, `seats` drops its `OWED` column, and `gc` deletes any `seats/*/owed/` directories left by older versions. Why: the record became a second work tracker that agents rarely closed. Seats carried hundreds of stale obligations, a coordinator could leave a hundred on one recipient in a day, a record left on a sub-seat whose pane had gone could not be closed from the seat's other panes, and the 0.5.4 lapse only hid them. Whether work is done belongs in the issue tracker; hail carries the messages about it. This completes slice S4 for obligations; holds stay.
 
 ### 6.7 gc
 
@@ -459,7 +461,7 @@ Migration is a step of its own, not a side effect. The first command after an up
 |---|---|---|
 | Q1 | Two agents in one directory | Checked sub-seats for Claude panes (D2, §5). A Codex pane in a shared directory needs its own workspace. |
 | Q2 | Is `reply:<seat>` safe? | Yes. No scripts parse `reply:%`. Pane targets keep resolving for old envelopes. |
-| Q3 | Expiry of obligations | None in 0.4; from 0.5.4 they lapse after 3 days (§6.6). Pending sends expire at 7 days. |
+| Q3 | Expiry of obligations | None in 0.4; from 0.5.4 they lapse after 3 days (§6.6). Pending sends expire at 7 days. *(Amended for 0.6: obligations are removed, so nothing is left to expire; §6.6.)* |
 | Q4 | Lower the 300 ms submit wait? | Not in 0.4. A named per-harness constant, and the trial in §7. |
 | Q5 | PostToolUse delivery in 0.4? | No. It ships with S3 in 0.5. |
 

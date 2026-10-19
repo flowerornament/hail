@@ -15,13 +15,13 @@ Send (the body is everything after the first line):
   await <id>... [--timeout S]     Block until every id (--any: any id) has a receipt
 
 Receive:
-  brief                           What you owe, what you were sent, holds in effect
+  brief                           What you were sent, late sends, holds in effect
   inbox [--peek] [--all]          Unread bodies (the hook usually delivers them)
   show <id>                       One message by id, from any seat
 
 Seats (a seat is the workspace directory an agent works in):
   whoami                          This directory's seat
-  seats [seat]                    Every seat: agent panes, unread, open obligations
+  seats [seat]                    Every seat: agent panes, unread, hook, root
   list                            Every tmux pane with its seat
 
 Panes (for shells and processes, not agents):
@@ -35,10 +35,10 @@ Tool:
 
 Examples:
   hail api-1b ask <<'EOF'
-  Review src/auth.ts before the merge; reply done with your verdict
+  Review src/auth.ts before the merge; reply with your verdict
   The refresh path is auth/refresh.rs:40-120.
   EOF
-  hail api-1a done --re 1006T171200-a3f1 'committed on abc123'
+  hail api-1a fyi --re 1006T171200-a3f1 'committed on abc123'
   hail await 1006T171200-a3f1 --timeout 900
 ";
 
@@ -60,7 +60,7 @@ not waited on. In a heredoc, quote the delimiter (<<'EOF') so nothing in the
 body is expanded.
 
 Options:
-  --re <id>       The message this answers, closes (done) or lifts (release)
+  --re <id>       The message this answers, or lifts (release)
   --scope <s>     What it applies to: an issue, ref, path or action (one line)
   --no-submit     Type the envelope but do not press Enter
   --force         Skip the dialog guard. Only after 'hail read <seat> 10'.
@@ -89,11 +89,9 @@ permission dialog.
 pub const KINDS: &str = "\
 hail kinds — what each kind means and does
 
-  ruling  go  ask     Leave an obligation on the recipient until it sends
-                      'done --re <id>', or until it lapses after 3d (or
-                      --for, at most 7d). 'hail brief' lists those in
-                      effect; done --re still closes a lapsed one.
-  done                Close one obligation: --re <id> required.
+  ruling  go  ask     Ask for a reply: any message with --re <id>, an fyi
+                      for an outcome. No state: hail keeps no record of
+                      what is owed; track open work in your issue tracker.
   hold  block         In effect until 'release --re <id>', or until it lapses:
                       a hold after 8h, a block after 7d, or --for 30m|8h|3d
                       (at most 7d). For a person's decision, not a lock:
@@ -117,9 +115,8 @@ envelope lands, as hook context, and the receipt is written. Do not also run
 hail inbox.
 
   brief [--all]         Unread envelopes, your sends with no receipt after 2
-                        minutes, holds in effect, obligations on you. Five per
-                        section; --all for everything, lapsed obligations
-                        too.
+                        minutes, holds in effect. Five per section; --all
+                        for everything.
   inbox [--peek] [--all]
                         Unread bodies, marked read. --peek leaves them unread.
   show <id>             One message by id from any seat; claims nothing.
@@ -145,8 +142,8 @@ addressed <seat>/<name> through the parent, signs with --as <name>, and runs
 no verb that reads mail (inbox, deliver, brief): those take the parent's mail.
 
   whoami          This directory's seat and where it came from
-  seats [seat]    Every seat: agent panes, unread, open obligations, how long
-                  ago a prompt hook read it (HOOK; - means nothing delivers
+  seats [seat]    Every seat: agent panes, unread, how long ago a prompt
+                  hook read it (HOOK; - means nothing delivers
                   its mail), root
   list            Every tmux pane: target, session, size, process, seat, cwd
 ";
@@ -180,7 +177,6 @@ hail state — files, environment, exit codes
 State ($XDG_STATE_HOME/hail, default ~/.local/state/hail):
   seats/<seat>/new/<id>.md          unread
   seats/<seat>/cur/<id>.<how>.md    claimed (how: injected, read, inline; mtime = when)
-  seats/<seat>/owed/<id>            obligations on the seat
   seats/<seat>/pending/<id>         sends with no receipt yet
   holds/<id>                        holds and blocks (expires: says when each lapses)
   holds/lapsed/<id>                 lapsed ones, after their issuer's brief said so

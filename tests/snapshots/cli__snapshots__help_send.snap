@@ -19,7 +19,7 @@ not waited on. In a heredoc, quote the delimiter (<<'EOF') so nothing in the
 body is expanded.
 
 Options:
-  --re <id>       The message this answers, closes (done) or lifts (release)
+  --re <id>       The message this answers, or lifts (release)
   --scope <s>     What it applies to: an issue, ref, path or action (one line)
   --no-submit     Type the envelope but do not press Enter
   --force         Skip the dialog guard. Only after 'hail read <seat> 10'.

@@ -51,7 +51,7 @@ impl Message {
         s
     }
 
-    /// A record (an obligation, hold or pending send) is headers only.
+    /// A record (a hold or a pending send) is headers only.
     pub fn render_record(&self) -> String {
         self.headers.iter().fold(String::new(), |mut s, (k, v)| {
             let _ = writeln!(s, "{k}: {v}");

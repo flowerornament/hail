@@ -1,6 +1,6 @@
 ---
 name: hail
-description: "Messages between coding agents on one machine with hail. Use this skill whenever the user mentions sending a message to another agent, seat or pane, a `[hail ...]` envelope appears in your prompt, you need to know whether another agent has read something, you must answer or close a ruling, go, ask, hold or block, or you must drive a non-agent tmux pane (a shell, a running process). Covers the hail CLI: send, sent, await, brief, inbox, show, whoami, seats, kinds with state, and pane driving."
+description: "Messages between coding agents on one machine with hail. Use this skill whenever the user mentions sending a message to another agent, seat or pane, a `[hail ...]` envelope appears in your prompt, you need to know whether another agent has read something, you must answer a ruling, go or ask, or release a hold or block, or you must drive a non-agent tmux pane (a shell, a running process). Covers the hail CLI: send, sent, await, brief, inbox, show, whoami, seats, kinds with state, and pane driving."
 metadata:
   { "version": "0.5.0", "openclaw": { "emoji": "📯", "os": ["darwin", "linux"], "requires": { "bins": ["tmux", "hail"] } } }
 ---
@@ -41,7 +41,7 @@ parent's mail and prune its pending sends. It only sends, with `--as`.
 
 ```bash
 hail api-1b ask <<'EOF'
-Review src/auth.ts before the merge; reply done with your verdict
+Review src/auth.ts before the merge; reply with your verdict
 The refresh path is auth/refresh.rs:40-120. Coverage report: /tmp/cov.txt
 EOF
 #   → id=1006T171200-a3f1
@@ -51,7 +51,7 @@ EOF
   sentences. Everything after it is the body, of any length.
 - **Quote the heredoc delimiter** (`<<'EOF'`) so nothing in it is expanded.
 - **No body?** Pass the headline as an argument: `hail api-1b fyi 'gate green'`.
-- **Options:** `--re <id>` answers, closes or lifts a message. `--scope <s>`
+- **Options:** `--re <id>` answers a message, or lifts a hold. `--scope <s>`
   names what it applies to. `--as <name>` signs as your
   sub-agent `<seat>/<name>`.
 - **Targets:** a seat (`api-1b`), a sub-seat (`hail@%28`), a sub-agent
@@ -99,7 +99,7 @@ An envelope is one line in your prompt:
 
 - **Reply to the `reply:` value** (a seat, or a sub-agent's `seat/name`).
 - **`for:<name>`** means the message is for your sub-agent `<name>`: relay it
-  to that sub-agent. You still answer or close it if it asks something of you.
+  to that sub-agent. You still answer it if it asks something of you.
 - **With the hooks installed** (`hail setup`), the body arrives as hook
   context on the same turn (a busy Codex agent: after its next tool call), and
   the receipt is written. Do not run `hail inbox` as well.
@@ -111,22 +111,24 @@ An envelope is one line in your prompt:
 `hail brief` prints your standing state:
 - unread envelopes;
 - your sends with no receipt after two minutes;
-- holds in effect;
-- obligations on you, and a count of those that lapsed.
+- holds in effect.
 
-It shows five per section (`--all` for everything, lapsed obligations too). The session-start hook
-runs it; run it yourself after a compaction.
+It shows five per section (`--all` for everything). The session-start hook
+runs it; run it yourself after a compaction. It does not list what you owe:
+hail keeps no record of asks. Keep open work in your issue tracker.
 
 ## Kinds
 
 | kind | effect |
 |---|---|
-| `ruling` `go` `ask` | Leaves an obligation on the recipient until it sends `done --re <id>`, or it lapses: after 3d, or `--for` (at most 7d). `done --re` still closes a lapsed one. |
-| `done` | Closes one obligation: `hail <issuer> done --re <id> '<what was done>'`. Only the obligated seat can. |
+| `ruling` `go` `ask` | Asks for a reply. Answer with any kind and `--re <id>`; an outcome is an `fyi`: `hail <reply> fyi --re <id> '<what was done>'`. No state. |
 | `hold` `block` | In effect, in every brief, until `release --re <id>` or it lapses: a hold after 8h, a block after 7d, or `--for 30m`/`3d` (at most 7d). Its envelope says `until:`. |
 | `release` | Lifts one hold: `--re <id>`. |
 | `nogo` `stop` `announce` | No state. |
 | `fyi` | No state, and quiet: arrives with the next prompt. For outcomes the reader acts on later; progress belongs in the issue tracker. |
+
+There is no `done` kind (it went in 0.6): answer with `--re`, and keep what is
+still owed in your issue tracker, not in hail.
 
 **A hold is a person's decision** ("don't touch the parser while I redesign
 it"), not a lock. To serialize landing, installs or timing runs, use the

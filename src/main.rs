@@ -16,9 +16,9 @@
 //!   `cur/`. That rename is the **receipt** `hail sent` and `hail await` read.
 //! - **kind**: what a message asks (`envelope::Kind`). **Control kinds**
 //!   (stop, hold, block, release, announce) are complete in the envelope.
-//!   An **obligation** (left by ruling, go, ask) stays on the recipient until
-//!   it sends `done --re <id>`. A **hold** or block stays in effect until a
-//!   `release`.
+//!   ruling, go and ask ask for a reply, which is any message with
+//!   `--re <id>`; hail keeps no state for them. A **hold** or block stays in
+//!   effect until a `release` or until it lapses.
 //! - **harness**: the agent program, Claude Code or Codex. Its **hooks** run
 //!   `hail deliver` and `hail brief` (`hooks/`).
 

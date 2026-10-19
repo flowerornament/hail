@@ -119,12 +119,12 @@ route.rs           what a target names, and where mail for it goes and who to wa
 envelope.rs        kinds, the [hail ...] line, headline folding                 (2)
 commands/send.rs   the send pipeline: compose, route, check, post, wake        (1),(2)
 commands/receive.rs deliver (the hook), inbox, show; sent and await           (3)-(5)
-commands/brief.rs  the standing state: unread, late sends, holds, obligations
+commands/brief.rs  the standing state: unread, late sends, holds
 commands/panes.rs  whoami, seats, list; read/type/keys for non-agent panes
 commands/setup.rs, doctor.rs   install the hooks; check the install
 hooks/             what the hooks run and print; the config merge (setup.rs)
 store/             the Maildir (mailbox.rs), ids and their index (ids.rs), the
-                   file format (message.rs), owed/holds/pending (records.rs),
+                   file format (message.rs), holds/pending (records.rs),
                    the archive (gc.rs)                                          (1),(4)
 transport/         tmux (tmux.rs), which panes run agents (agent.rs), panes to
                    seats (pane_map.rs), the dialog guard (dialog.rs), typing
@@ -152,17 +152,20 @@ progress belongs in the issue tracker, which hail does not touch.
 
 Holds and blocks lapse (8h and 7d by default, `--for` up to 7d): a hold is a
 person's decision, and tools serialize landing, installs and timing runs.
-Obligations lapse too, after 3 days (`--for` up to 7d). They were meant
-never to lapse, so that age could not hide a live ruling, but in practice
-almost all of them were superseded, never closed, and buried the few that
-were owed. A lapsed one leaves the count; `brief` says how many lapsed,
-`brief --all` lists them, and `done --re` still closes one.
+`ruling`, `go` and `ask` ask for a reply, which is any message with
+`--re <id>`; hail keeps no record of them. A record of what each seat owed,
+closed by a `done`, became a second work tracker that agents rarely closed:
+seats carried hundreds of stale obligations, and a record left on a sub-seat
+whose pane had gone could not be closed at all. Whether work is done belongs
+in the issue tracker; hail carries the messages about it.
 
 ## What is deliberately not here
 
 - No polling helper for agents. `await` checks the id index every 100 ms (a few
   stats per id); it is the only verb that waits.
 - No broadcast. A message has one recipient; a coordinator loops.
+- No record of what is owed. An ask is answered by a message with `--re`;
+  open work lives in the issue tracker.
 - No message history in the tool. `hail inbox --all` lists the files; the issue
   tracker holds anything that matters.
 - No issue-tracker integration. 0.5.1 removed bd: posting bodies to beads and

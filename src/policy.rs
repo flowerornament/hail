@@ -32,12 +32,6 @@ pub const HOLD_DEFAULT: Duration = Duration::from_hours(8);
 pub const BLOCK_DEFAULT: Duration = Duration::from_hours(168);
 pub const HOLD_MAX: Duration = Duration::from_hours(168);
 
-/// A ruling, go or ask lapses this long after it is sent unless `--for`
-/// says otherwise (at most [`HOLD_MAX`]). An obligation nobody closed in three
-/// days has almost always been superseded, and a brief full of them hides the
-/// few that are owed. A lapsed one can still be closed with `done --re`.
-pub const OBLIGATION_DEFAULT: Duration = Duration::from_hours(72);
-
 /// `hail gc` archives read mail older than this many days by default, and
 /// `doctor` suggests it past this many read messages in one seat.
 pub const GC_DAYS: u64 = 90;

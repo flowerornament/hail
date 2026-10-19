@@ -91,17 +91,6 @@ fn brief(ctx: &Ctx, all: bool, hook: bool) -> Result<()> {
             "{others} other holds in effect between other seats (hail brief --all)"
         );
     }
-    let (open, lapsed) = owed(ctx, &boxes, now);
-    write_section(&mut out, &open, cap, width);
-    if all {
-        write_section(&mut out, &lapsed, cap, width);
-    } else if !lapsed.lines.is_empty() {
-        let _ = writeln!(
-            out,
-            "{} obligation(s) on me lapsed unanswered (hail brief --all)",
-            lapsed.lines.len()
-        );
-    }
     out!("{out}");
     Ok(())
 }
@@ -211,38 +200,6 @@ fn holds(ctx: &Ctx, me: &Addr, all: bool, now: Timestamp) -> (Section, usize) {
             oldest_days,
         },
         others.len(),
-    )
-}
-
-/// Obligations on this pane's sub-seat and the seat, newest first, each with
-/// the command that closes it: those in effect, then those that lapsed.
-fn owed(ctx: &Ctx, boxes: &Boxes, now: Timestamp) -> (Section, Section) {
-    let mut owed: Vec<Entry> = boxes.iter().flat_map(|b| ctx.store.owed(b)).collect();
-    owed.sort_by(|a, b| b.id.cmp(&a.id));
-    let (open, lapsed): (Vec<Entry>, Vec<Entry>) =
-        owed.into_iter().partition(|e| e.lapses_at() > now);
-    let section = |title, entries: &[Entry]| Section {
-        title,
-        unit: "",
-        lines: entries
-            .iter()
-            .map(|e| {
-                let line = Tag::brief(e.kind.map_or("?", Kind::as_str))
-                    .field("from", &e.issuer)
-                    .field("id", &e.id)
-                    .opt("scope", e.scope.as_deref())
-                    .text(&e.headline);
-                format!(
-                    "{line} — hail {} done --re {} '<what was done>'",
-                    e.issuer, e.id
-                )
-            })
-            .collect(),
-        oldest_days: entries.last().map(|e| age_days(e, now)),
-    };
-    (
-        section("open obligations on me", &open),
-        section("lapsed obligations on me", &lapsed),
     )
 }
 

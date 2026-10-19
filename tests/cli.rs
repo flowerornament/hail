@@ -231,69 +231,78 @@ fn parallel_sends_never_share_an_id() {
 }
 
 #[test]
-fn obligations_and_holds() {
+fn an_ask_leaves_no_record_and_any_kind_with_re_answers_it() {
     let w = World::new();
     let ask = w.run("boss", &["worker", "ask", "please do", "--no-wake"]);
     let id = stdout(&ask).trim().strip_prefix("id=").unwrap().to_string();
-    assert!(stdout(&w.run("worker", &["brief"])).contains("open obligations on me (1)"));
-    let wrong = w.run("boss", &["worker", "done", "x", "--re", &id, "--no-wake"]);
-    assert_eq!(
-        wrong.status.code(),
-        Some(1),
-        "only the obligated seat closes it"
-    );
+    assert!(!w.state().join("seats/worker/owed").exists());
+    assert!(!stdout(&w.run("worker", &["brief"])).contains("obligation"));
+
     let done = w.run(
         "worker",
         &["boss", "done", "did it", "--re", &id, "--no-wake"],
     );
-    assert_eq!(done.status.code(), Some(5));
-    assert!(!stdout(&w.run("worker", &["brief"])).contains("obligations"));
-    assert!(!Path::new(&w.state().join("seats/worker/owed").join(&id)).exists());
+    assert_eq!(done.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&done.stderr);
+    assert!(
+        err.contains("done is gone in 0.6") && err.contains("fyi '<outcome>' --re <id>"),
+        "{err}"
+    );
+    let reply = w.run(
+        "worker",
+        &["boss", "fyi", "did it", "--re", &id, "--no-wake"],
+    );
+    assert_eq!(reply.status.code(), Some(5));
+
+    for kind in ["ask", "fyi"] {
+        let o = w.run("boss", &["worker", kind, "x", "--for", "1d", "--no-wake"]);
+        assert!(!o.status.success());
+        assert!(
+            String::from_utf8_lossy(&o.stderr).contains("--for applies to hold and block"),
+            "{o:?}"
+        );
+    }
 }
 
 #[test]
-fn an_obligation_lapses_out_of_the_brief_but_done_still_closes_it() {
+fn a_done_from_an_older_hail_is_still_delivered_and_shown() {
     let w = World::new();
-    let ask = w.run(
-        "boss",
-        &["worker", "ask", "old question", "--for", "2d", "--no-wake"],
-    );
-    let id = stdout(&ask).trim().strip_prefix("id=").unwrap().to_string();
-    let owed = w.state().join("seats/worker/owed").join(&id);
-    assert!(header(&owed, "expires").is_some());
-    // Lapse it, as two days would.
-    let expires = header(&owed, "expires").unwrap();
-    let text = fs::read_to_string(&owed)
+    let id = w.send("committed on abc123");
+    let path = w.state().join("seats/worker/new").join(format!("{id}.md"));
+    let text = fs::read_to_string(&path)
         .unwrap()
-        .replace(&expires, "2020-01-01T00:00:00Z");
-    fs::write(&owed, text).unwrap();
+        .replace("kind: fyi", "kind: done");
+    fs::write(&path, text).unwrap();
 
     let brief = stdout(&w.run("worker", &["brief"]));
-    assert!(!brief.contains("open obligations"), "{brief}");
-    assert!(brief.contains("1 obligation(s) on me lapsed"), "{brief}");
-    let all = stdout(&w.run("worker", &["brief", "--all"]));
     assert!(
-        all.contains("lapsed obligations on me (1)") && all.contains(&id),
-        "{all}"
+        brief.contains(&format!(
+            "[hail done from:boss id:{id}] committed on abc123"
+        )),
+        "{brief}"
     );
-    let seats = stdout(&w.run("worker", &["seats", "worker"]));
+    let shown = stdout(&w.run("worker", &["show", &id]));
+    assert!(shown.contains("kind: done"), "{shown}");
+    // Its kind is unknown now, so it goes in as stored rather than as an
+    // envelope line.
+    let d = stdout(&w.run("worker", &["deliver"]));
     assert!(
-        seats
-            .lines()
-            .any(|l| l.starts_with("worker ") && l.split_whitespace().nth(3) == Some("0")),
-        "{seats}"
+        d.contains("kind: done") && d.contains("ask: committed on abc123"),
+        "{d}"
     );
+    assert!(stdout(&w.run("boss", &["sent", &id])).starts_with("injected "));
+}
 
-    let done = w.run(
-        "worker",
-        &["boss", "done", "late", "--re", &id, "--no-wake"],
-    );
-    assert_eq!(done.status.code(), Some(5));
+#[test]
+fn gc_removes_obligation_directories_from_older_versions() {
+    let w = World::new();
+    let owed = w.state().join("seats/worker/owed");
+    fs::create_dir_all(&owed).unwrap();
+    fs::write(owed.join("1011T000000-aaaa"), "kind: ask\n").unwrap();
+    let gc = stdout(&w.run("worker", &["gc"]));
+    assert!(gc.contains("removed 1 obligation directories"), "{gc}");
     assert!(!owed.exists());
-
-    let fyi = w.run("boss", &["worker", "fyi", "x", "--for", "1d", "--no-wake"]);
-    assert!(!fyi.status.success());
-    assert!(String::from_utf8_lossy(&fyi.stderr).contains("--for applies to"));
+    assert!(w.state().join("seats/worker").is_dir(), "the seat stays");
 }
 
 #[test]
@@ -567,8 +576,6 @@ fn a_sub_agent_is_reached_through_its_parent_and_answers_as_itself() {
     let id = id_of(&out);
     let msg = w.state().join(format!("seats/worker/new/{id}.md"));
     assert_eq!(header(&msg, "for").as_deref(), Some("scout"));
-    // The obligation sits on the parent's mailbox, which relays and closes it.
-    assert!(w.state().join(format!("seats/worker/owed/{id}")).is_file());
 
     // The sub-agent answers with --as: it signs as worker/scout.
     let out = w.run(

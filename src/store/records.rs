@@ -1,6 +1,5 @@
 //! Standing state as small header-only records, typed here so the header
 //! names live in one place:
-//! - `seats/<mailbox>/owed/<id>`: obligations on a mailbox ([`Entry`]);
 //! - `holds/<id>`: holds and blocks in effect, global ([`Entry`]);
 //! - `seats/<mailbox>/pending/<id>`: my sends with no receipt yet ([`Pending`]).
 
@@ -14,11 +13,11 @@ use super::message::Message;
 use super::{Store, list_names, write_atomic};
 use crate::envelope::Kind;
 use crate::error::{Error, Result};
-use crate::policy::{BLOCK_DEFAULT, HOLD_DEFAULT, OBLIGATION_DEFAULT};
+use crate::policy::{BLOCK_DEFAULT, HOLD_DEFAULT};
 use crate::seat::Addr;
 use crate::time;
 
-/// An obligation or a hold: what was asked, by whom, of whom.
+/// A hold or block: what was asked, by whom, of whom.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub id: Id,
@@ -29,17 +28,16 @@ pub struct Entry {
     pub scope: Option<String>,
     pub time: Option<Timestamp>,
     pub re: Option<Id>,
-    /// When it lapses; `None` for records written before obligations and
-    /// holds lapsed (see [`Entry::lapses_at`]).
+    /// When it lapses; `None` for records written before holds lapsed
+    /// (see [`Entry::lapses_at`]).
     pub expires: Option<Timestamp>,
     pub headline: String,
 }
 
-/// How long a hold or obligation of this kind lasts when `--for` does not say.
-pub const fn lapse_default(kind: Kind) -> std::time::Duration {
+/// How long a hold or block lasts when `--for` does not say.
+pub const fn hold_default(kind: Kind) -> std::time::Duration {
     match kind {
         Kind::Block => BLOCK_DEFAULT,
-        Kind::Ruling | Kind::Go | Kind::Ask => OBLIGATION_DEFAULT,
         _ => HOLD_DEFAULT,
     }
 }
@@ -74,7 +72,7 @@ impl Entry {
         self.expires
             .or_else(|| {
                 self.time
-                    .map(|t| time::after(t, lapse_default(self.kind.unwrap_or(Kind::Hold))))
+                    .map(|t| time::after(t, hold_default(self.kind.unwrap_or(Kind::Hold))))
             })
             .unwrap_or(Timestamp::UNIX_EPOCH)
     }
@@ -125,56 +123,18 @@ impl Pending {
 }
 
 impl Store {
-    fn owed_dir(&self, to: &Addr) -> PathBuf {
-        self.seat_dir(to).join("owed")
-    }
-
     fn pending_dir(&self, from: &Addr) -> PathBuf {
         self.seat_dir(from).join("pending")
     }
 
-    pub fn owed(&self, to: &Addr) -> Vec<Entry> {
-        read_all(&self.owed_dir(to))
-            .map(|(id, m)| Entry::from_message(id, &m))
-            .collect()
-    }
-
-    pub fn has_owed(&self, to: &Addr, id: &Id) -> bool {
-        self.owed_dir(to).join(id.as_str()).is_file()
-    }
-
-    pub fn put_owed(&self, e: &Entry) -> Result<()> {
-        write_atomic(
-            &self.owed_dir(&e.to).join(e.id.as_str()),
-            e.to_message().render_record().as_bytes(),
-        )
-    }
-
-    pub fn remove_owed(&self, to: &Addr, id: &Id) -> Result<()> {
-        remove(&self.owed_dir(to).join(id.as_str()))
-    }
-
-    /// Obligations on `to` in effect at `now`, newest first. Lapse is a
-    /// filter: a lapsed one stays in `owed()` and `done --re` still closes it.
-    pub fn open_owed(&self, to: &Addr, now: Timestamp) -> Vec<Entry> {
-        self.owed(to)
-            .into_iter()
-            .filter(|e| e.lapses_at() > now)
-            .collect()
-    }
-
-    /// Delete obligations, on every mailbox, that lapsed before `cutoff`.
-    /// Returns how many.
-    pub fn sweep_owed(&self, cutoff: Timestamp) -> usize {
-        let mut swept = 0;
-        for to in self.mailboxes() {
-            for e in self.owed(&to) {
-                if e.lapses_at() < cutoff && self.remove_owed(&to, &e.id).is_ok() {
-                    swept += 1;
-                }
-            }
-        }
-        swept
+    /// Delete the `seats/*/owed/` directories that hail before 0.6 kept
+    /// obligations in; nothing reads them now. Returns how many.
+    pub fn sweep_owed_dirs(&self) -> usize {
+        self.mailboxes()
+            .iter()
+            .map(|to| self.seat_dir(to).join("owed"))
+            .filter(|dir| dir.is_dir() && fs::remove_dir_all(dir).is_ok())
+            .count()
     }
 
     fn lapsed_dir(&self) -> PathBuf {
@@ -321,11 +281,6 @@ mod tests {
             expires: None,
             headline: "GO".into(),
         };
-        store.put_owed(&e).unwrap();
-        assert_eq!(store.owed(&e.to), vec![e.clone()]);
-        assert!(store.has_owed(&e.to, &e.id));
-        store.remove_owed(&e.to, &e.id).unwrap();
-        assert_eq!(store.owed(&e.to), vec![]);
         store.put_hold(&e).unwrap();
         let now = time::now();
         assert_eq!(store.holds(now), vec![e]);
@@ -404,47 +359,20 @@ mod tests {
     }
 
     #[test]
-    fn obligations_lapse_but_stay_closable_until_swept() {
+    fn gc_removes_the_owed_directories_older_versions_left() {
         let t = tempfile::tempdir().unwrap();
         let store = Store::at(t.path());
-        let now: Timestamp = "2026-10-11T12:00:00Z".parse().unwrap();
-        let hours = |h: i64| now - jiff::SignedDuration::from_hours(h);
-        let me = Addr::parse("worker").unwrap();
-        let owed = |id: &str, kind, time, expires| Entry {
-            id: Id::parse(id).unwrap(),
-            kind: Some(kind),
-            issuer: Addr::parse("boss").unwrap(),
-            to: me.clone(),
-            scope: None,
-            time: Some(time),
-            re: None,
-            expires,
-            headline: id.into(),
-        };
-        // In effect by default (3d); lapsed by default; kept by --for;
-        // lapsed by its own expires:.
-        let fresh = owed("1011T000000-aaaa", Kind::Ask, hours(70), None);
-        let stale = owed("1008T000000-bbbb", Kind::Go, hours(73), None);
-        let long = owed(
-            "1007T000000-cccc",
-            Kind::Ruling,
-            hours(100),
-            Some(hours(-1)),
-        );
-        let short = owed("1011T000000-dddd", Kind::Ask, hours(2), Some(hours(1)));
-        for e in [&fresh, &stale, &long, &short] {
-            store.put_owed(e).unwrap();
+        let worker = Addr::parse("worker").unwrap();
+        let boss = Addr::parse("boss").unwrap();
+        let owed = store.seat_dir(&worker).join("owed");
+        fs::create_dir_all(&owed).unwrap();
+        fs::create_dir_all(store.seat_dir(&boss)).unwrap();
+        for id in ["1011T000000-aaaa", "1011T000000-bbbb"] {
+            fs::write(owed.join(id), "kind: ask\n").unwrap();
         }
-        let ids = |v: Vec<Entry>| v.into_iter().map(|e| e.id).collect::<Vec<_>>();
-        assert_eq!(
-            ids(store.open_owed(&me, now)),
-            vec![fresh.id.clone(), long.id.clone()]
-        );
-        assert!(store.has_owed(&me, &stale.id), "done --re still finds it");
-
-        // gc removes only those that lapsed before its cutoff.
-        assert_eq!(store.sweep_owed(hours(24)), 0);
-        assert_eq!(store.sweep_owed(now), 2);
-        assert_eq!(ids(store.owed(&me)), vec![fresh.id, long.id]);
+        assert_eq!(store.sweep_owed_dirs(), 1);
+        assert!(!owed.exists());
+        assert!(store.seat_dir(&worker).is_dir(), "the seat stays");
+        assert_eq!(store.sweep_owed_dirs(), 0);
     }
 }

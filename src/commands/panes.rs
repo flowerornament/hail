@@ -65,8 +65,8 @@ fn tilde(ctx: &Ctx, p: &Path) -> String {
     }
 }
 
-/// Every seat (or one, with its sub-seats): agent panes, unread mail, open
-/// obligations, root. Writes nothing.
+/// Every seat (or one, with its sub-seats): agent panes, unread mail, when a
+/// hook last read it, root. Writes nothing.
 pub fn seats(ctx: &Ctx, only: Option<&str>) -> Result<u8> {
     let pm = Tmux::detect()
         .ok()
@@ -89,7 +89,7 @@ pub fn seats(ctx: &Ctx, only: Option<&str>) -> Result<u8> {
     }
     let label = |p: &Pane| format!("{}:{}", p.id, p.agent.as_ref().map_or("-", Agent::name));
     let now = time::now();
-    let mut t = Table::new(&["SEAT", "AGENTS", "UNREAD", "OWED", "HOOK", "ROOT"]);
+    let mut t = Table::new(&["SEAT", "AGENTS", "UNREAD", "HOOK", "ROOT"]);
     for addr in addrs {
         let agents = match (&pm, &addr) {
             (Some(pm), Addr::Seat(seat)) => pm
@@ -111,7 +111,6 @@ pub fn seats(ctx: &Ctx, only: Option<&str>) -> Result<u8> {
                 agents
             },
             ctx.store.mailbox(&addr).unread().len().to_string(),
-            ctx.store.open_owed(&addr, now).len().to_string(),
             // How long ago a prompt hook last read this mailbox: "-" means
             // nothing delivers its mail until someone runs hail inbox there.
             ctx.store

@@ -10,13 +10,13 @@ and that writes a receipt the sender can check or wait on. No daemon, no
 database, no pane-reading.
 
 ```
-[hail kind:ask from:api-1a/%5 reply:api-1a id:1006T171200-a3f1] Review src/auth.ts before the merge; reply done with your verdict — hail inbox
+[hail kind:ask from:api-1a/%5 reply:api-1a id:1006T171200-a3f1] Review src/auth.ts before the merge; reply with your verdict — hail inbox
 ```
 
 ## Why
 
 Agents working in parallel need to hand each other rulings, reviews, holds and
-"done". Typing whole messages into each other's panes has three problems:
+outcomes. Typing whole messages into each other's panes has three problems:
 
 - **Context cost.** Codex keeps every user message verbatim through
   compaction, so a relayed message rides on every later API call. In one pane,
@@ -79,8 +79,7 @@ its commands cannot be told apart by pane.
 
 | kind | what it does |
 |---|---|
-| `ruling` `go` `ask` | Leaves an obligation on the recipient, shown in its `brief` until it sends `done --re <id>`. |
-| `done` | Closes one obligation. Only the obligated seat can. |
+| `ruling` `go` `ask` | Asks for a reply: any message with `--re <id>` (an `fyi` for an outcome). No state. |
 | `hold` `block` | In effect, and shown to the seats involved, until anyone sends `release --re <id>`. |
 | `release` | Lifts a hold. |
 | `fyi` `nogo` `stop` `announce` | No state. |
@@ -177,11 +176,11 @@ Labels are gone: a seat is named by its directory.
 
 ```bash
 hail whoami                                   # this directory's seat
-hail seats                                    # every seat: agent panes, unread, obligations, last hook read, root
+hail seats                                    # every seat: agent panes, unread, last hook read, root
 
 # Send. The first line is the headline (the ask and the why); the rest is the body.
 hail api-1b ask <<'EOF'
-Review src/auth.ts before the merge; reply done with your verdict
+Review src/auth.ts before the merge; reply with your verdict
 The refresh path is auth/refresh.rs:40-120. Coverage: /tmp/cov.txt
 EOF
 #   id=1006T171200-a3f1
@@ -190,12 +189,11 @@ hail api-1b fyi 'gate green'               # headline only, no body
 hail sent 1006T171200-a3f1                    # delivered | injected <t> | read <t> | inline <t> | unknown
 hail await 1006T171200-a3f1 --timeout 900     # block until a receipt (--any for the first of several)
 
-# Answer, close, lift.
+# Answer, lift.
 hail api-1a fyi --re 1006T171200-a3f1 '87% coverage; refresh path uncovered'
-hail api-1a done --re 1006T171200-a3f1 'committed on abc123'
 hail api-1b release --re 1006T165000-1c2e 'gate green'
 
-hail brief                                    # what you were sent, what you owe, holds, late sends
+hail brief                                    # what you were sent, holds, late sends
 hail inbox                                    # unread bodies (the hook usually delivers them)
 hail show 1006T171200-a3f1                    # one message by id, from any seat
 ```
@@ -260,7 +258,6 @@ Everything lives under `$XDG_STATE_HOME/hail` (default
 |---|---|
 | `seats/<seat>/new/<id>.md` | unread messages |
 | `seats/<seat>/cur/<id>.<how>.md` | claimed (`injected`, `read` or `inline`); the mtime is the receipt time |
-| `seats/<seat>/owed/<id>` | obligations on the seat |
 | `seats/<seat>/pending/<id>` | its sends with no receipt yet |
 | `holds/<id>` | holds and blocks in effect; delete one to lift it silently |
 | `ids/<id>` | the id index (a symlink to the seat) |

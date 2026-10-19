@@ -14,7 +14,6 @@ pub enum Kind {
     Nogo,
     Ask,
     Fyi,
-    Done,
     Stop,
     Hold,
     Block,
@@ -23,13 +22,12 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 10] = [
         Self::Ruling,
         Self::Go,
         Self::Nogo,
         Self::Ask,
         Self::Fyi,
-        Self::Done,
         Self::Stop,
         Self::Hold,
         Self::Block,
@@ -44,7 +42,6 @@ impl Kind {
             Self::Nogo => "nogo",
             Self::Ask => "ask",
             Self::Fyi => "fyi",
-            Self::Done => "done",
             Self::Stop => "stop",
             Self::Hold => "hold",
             Self::Block => "block",
@@ -53,8 +50,22 @@ impl Kind {
         }
     }
 
+    /// Lenient: `None` for a kind this version does not know, such as the
+    /// `done` older senders still write. Readers show such a message as it
+    /// is stored; only a send refuses it ([`Kind::parse_sent`]).
     pub fn parse(s: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|k| k.as_str() == s)
+    }
+
+    /// A kind to send, or the usage text that says what to use instead.
+    pub fn parse_sent(s: &str) -> Result<Self, String> {
+        if s == "done" {
+            return Err(
+                "done is gone in 0.6: answer with any kind and --re <id> (fyi for an outcome)"
+                    .into(),
+            );
+        }
+        Self::parse(s).ok_or_else(|| format!("'{s}' is not a kind ({})", Self::list()))
     }
 
     /// `ruling go nogo …`, for error messages.
@@ -70,24 +81,14 @@ impl Kind {
         )
     }
 
-    /// Leaves an obligation on the recipient until it sends `done --re`.
-    pub const fn creates_obligation(self) -> bool {
-        matches!(self, Self::Ruling | Self::Go | Self::Ask)
-    }
-
-    /// Closes or lifts another message, so `--re` is required.
+    /// Lifts another message, so `--re` is required.
     pub const fn needs_re(self) -> bool {
-        matches!(self, Self::Done | Self::Release)
+        matches!(self, Self::Release)
     }
 
     /// Sets a hold in effect until a `release`.
     pub const fn is_hold(self) -> bool {
         matches!(self, Self::Hold | Self::Block)
-    }
-
-    /// Leaves standing state that lapses on its own (`until:`, `--for`).
-    pub const fn lapses(self) -> bool {
-        self.is_hold() || self.creates_obligation()
     }
 }
 
@@ -323,6 +324,16 @@ mod tests {
     fn fold_prefers_a_sentence() {
         let t = "First sentence is here. Second sentence goes on and on and on and on.";
         assert_eq!(fold_headline(t, 40), "First sentence is here …");
+    }
+
+    #[test]
+    fn done_is_refused_to_send_but_read_leniently() {
+        let gone = Kind::parse_sent("done").unwrap_err();
+        assert!(gone.contains("--re <id>"), "{gone}");
+        assert!(!Kind::list().contains("done"));
+        assert_eq!(Kind::parse("done"), None);
+        assert_eq!(Kind::parse_sent("ask"), Ok(Kind::Ask));
+        assert!(Kind::parse_sent("nope").unwrap_err().contains("not a kind"));
     }
 
     proptest! {

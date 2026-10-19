@@ -15,7 +15,7 @@ use crate::policy::QUIET_HOOKS_SEEN;
 use crate::route::{self, Mail, Sender};
 use crate::seat::Addr;
 use crate::store::ids::{self, Id};
-use crate::store::records::{Entry, Pending, lapse_default};
+use crate::store::records::{Entry, Pending, hold_default};
 use crate::time;
 use crate::transport::pane_map::PaneMap;
 use crate::transport::tmux::{Pane, Tmux};
@@ -28,7 +28,7 @@ pub struct SendArgs {
     /// The headline as an argument; without one, the first line of stdin
     /// is the headline and the rest the body.
     pub headline: Option<String>,
-    /// The message this answers, closes (`done`) or lifts (`release`).
+    /// The message this answers, or lifts (`release`).
     pub re: Option<Id>,
     pub scope: Option<String>,
     /// `--as <name>`: a sub-agent signs as `<mailbox>/<name>`, so replies
@@ -98,7 +98,7 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
     validate(a)?;
     let draft = compose(ctx, a)?;
     let r = route(ctx, a)?;
-    check_state(ctx, a, &r.sender)?;
+    check_state(ctx, a)?;
     let plan = decide(ctx, a, &r)?;
     let w = write(ctx, a, &r, &draft, plan.quiet)?;
     let outcome = if plan.quiet {
@@ -169,9 +169,7 @@ fn write(ctx: &Ctx, a: &SendArgs, r: &Route, draft: &Draft, quiet: bool) -> Resu
         }
         None => (sender.from(), sender.boxes.primary.to_string()),
     };
-    // An obligation's default lapse is not news to its reader; a hold's is.
-    let until = (a.kind.is_hold() || (a.kind.lapses() && a.hold_for.is_some()))
-        .then(|| time::iso(expires_at(a, now)));
+    let until = a.kind.is_hold().then(|| time::iso(expires_at(a, now)));
     let head = Head {
         kind: a.kind,
         from: &from,
@@ -381,9 +379,8 @@ pub fn headline_and_body(headline: Option<&str>) -> Result<(String, Option<Strin
     ))
 }
 
-/// Releases and `done` must refer to something real before anything is
-/// written or typed.
-fn check_state(ctx: &Ctx, a: &SendArgs, sender: &Sender) -> Result<()> {
+/// A release must refer to a real hold before anything is written or typed.
+fn check_state(ctx: &Ctx, a: &SendArgs) -> Result<()> {
     match (a.kind, &a.re) {
         (Kind::Release, Some(re)) => match ctx.store.hold(re) {
             None => Err(Error::State(format!(
@@ -400,19 +397,13 @@ fn check_state(ctx: &Ctx, a: &SendArgs, sender: &Sender) -> Result<()> {
                 Ok(())
             }
         },
-        (Kind::Done, Some(re)) if !sender.boxes.iter().any(|b| ctx.store.has_owed(b, re)) => {
-            Err(Error::State(format!(
-                "no open obligation {re} on {}; hail brief lists yours",
-                sender.boxes.primary
-            )))
-        }
         _ => Ok(()),
     }
 }
 
-/// When a hold, block or obligation sent now lapses.
+/// When a hold or block sent now lapses.
 fn expires_at(a: &SendArgs, now: Timestamp) -> Timestamp {
-    time::after(now, a.hold_for.unwrap_or_else(|| lapse_default(a.kind)))
+    time::after(now, a.hold_for.unwrap_or_else(|| hold_default(a.kind)))
 }
 
 fn record_state(
@@ -432,18 +423,12 @@ fn record_state(
         scope: a.scope.clone(),
         time: Some(now),
         re: a.re.clone(),
-        expires: a.kind.lapses().then(|| expires_at(a, now)),
+        expires: Some(expires_at(a, now)),
         headline: headline.to_string(),
     };
     match (a.kind, &a.re) {
         (k, _) if k.is_hold() => ctx.store.put_hold(&entry())?,
         (Kind::Release, Some(re)) => ctx.store.remove_hold(re)?,
-        (k, _) if k.creates_obligation() => ctx.store.put_owed(&entry())?,
-        (Kind::Done, Some(re)) => {
-            for b in sender.boxes.iter() {
-                ctx.store.remove_owed(b, re)?;
-            }
-        }
         _ => {}
     }
     Ok(())
