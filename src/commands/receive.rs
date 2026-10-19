@@ -8,7 +8,7 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use crate::ctx::Ctx;
-use crate::envelope::{self, Head, Kind};
+use crate::envelope::{self, Head};
 use crate::error::{Error, Result};
 use crate::hooks;
 use crate::input;
@@ -100,17 +100,11 @@ fn deliver_inner(ctx: &Ctx, format: Option<&str>, event: &str) -> Result<()> {
 
 /// The one-line envelope a message was (or would have been) typed as.
 fn envelope_line(m: &Message) -> Option<String> {
-    let head = Head {
-        kind: Kind::parse(m.get("kind")?)?,
-        from: m.get("from")?,
-        reply: m.get("reply")?,
-        id: m.get("id")?,
-        for_: m.get("for"),
-        until: m.get("until"),
-        re: m.get("re"),
-        scope: m.get("scope"),
-    };
-    Some(envelope::render(&head, m.get("ask")?, false))
+    Some(envelope::render(
+        &Head::from_message(m)?,
+        m.get("ask")?,
+        false,
+    ))
 }
 
 /// The claims one delivery made. Dropped without [`Claims::keep`] (an error,

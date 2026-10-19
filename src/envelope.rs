@@ -3,6 +3,8 @@
 
 use std::fmt::Display;
 
+use crate::store::message::Message;
+
 /// What a message asks of its recipient. Control kinds are complete in the
 /// envelope and never sit behind a fetch (DESIGN.md principle 5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,6 +110,41 @@ pub struct Head<'a> {
     pub scope: Option<&'a str>,
     /// When a hold or block lapses.
     pub until: Option<&'a str>,
+}
+
+impl<'a> Head<'a> {
+    /// The stored message: the head's fields as headers, `time:` after
+    /// `id:`, and the headline as `ask:`. [`Head::from_message`] reads it
+    /// back, so the typed envelope and the stored mail carry the same head.
+    pub fn message(&self, time: &str, headline: &str, body: &str) -> Message {
+        Message::default()
+            .header("from", self.from)
+            .header("reply", self.reply)
+            .header("kind", self.kind.as_str())
+            .header("id", self.id)
+            .header("time", time)
+            .header_opt("for", self.for_)
+            .header_opt("re", self.re)
+            .header_opt("scope", self.scope)
+            .header_opt("until", self.until)
+            .header("ask", headline)
+            .with_body(body)
+    }
+
+    /// The head of a stored message; `None` when a required header is
+    /// missing or the kind is unknown.
+    pub fn from_message(m: &'a Message) -> Option<Self> {
+        Some(Self {
+            kind: Kind::parse(m.get("kind")?)?,
+            from: m.get("from")?,
+            reply: m.get("reply")?,
+            id: m.get("id")?,
+            for_: m.get("for"),
+            re: m.get("re"),
+            scope: m.get("scope"),
+            until: m.get("until"),
+        })
+    }
 }
 
 /// `[hail <kind> key:value …] text`: the head of an envelope (fields named,
@@ -247,6 +284,31 @@ mod tests {
             render(&head, "convert at the receipt", true),
             "[hail kind:ruling from:api-1a/%5 reply:api-1a id:0905T171200-a3f1 scope:commit] convert at the receipt — hail inbox"
         );
+    }
+
+    #[test]
+    fn the_stored_message_reads_back_as_the_same_envelope() {
+        let head = Head {
+            kind: Kind::Ask,
+            from: "web-1b/scout",
+            reply: "web-1b/scout",
+            id: "0905T171200-a3f1",
+            for_: Some("scout"),
+            re: Some("0905T170000-0001"),
+            scope: None,
+            until: Some("2026-09-06T01:12:00Z"),
+        };
+        let m = head.message("2026-09-05T17:12:00Z", "check the port", "the body");
+        assert_eq!(
+            m.render(),
+            "from: web-1b/scout\nreply: web-1b/scout\nkind: ask\nid: 0905T171200-a3f1\ntime: 2026-09-05T17:12:00Z\nfor: scout\nre: 0905T170000-0001\nuntil: 2026-09-06T01:12:00Z\nask: check the port\n\nthe body\n"
+        );
+        let back = Head::from_message(&m).expect("a complete head");
+        assert_eq!(
+            render(&back, "check the port", false),
+            render(&head, "check the port", false)
+        );
+        assert!(Head::from_message(&Message::default().header("kind", "ask")).is_none());
     }
 
     #[test]

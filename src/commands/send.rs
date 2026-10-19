@@ -18,7 +18,6 @@ use crate::policy::QUIET_HOOKS_SEEN;
 use crate::route::{self, Mail, Sender};
 use crate::seat::Addr;
 use crate::store::ids::{self, Id};
-use crate::store::message::Message;
 use crate::store::records::{Entry, Pending, lapse_default};
 use crate::time;
 use crate::transport::pane_map::PaneMap;
@@ -113,18 +112,17 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
     // An obligation's default lapse is not news to its reader; a hold's is.
     let until = (a.kind.is_hold() || (a.kind.lapses() && a.hold_for.is_some()))
         .then(|| time::iso(expires_at(a, now)));
-    let msg = Message::default()
-        .header("from", &from)
-        .header("reply", &reply)
-        .header("kind", a.kind.as_str())
-        .header("id", id.as_str())
-        .header("time", time::iso(now))
-        .header_opt("for", mail.for_.as_deref())
-        .header_opt("re", re)
-        .header_opt("scope", a.scope.as_deref())
-        .header_opt("until", until.as_deref())
-        .header("ask", &draft.headline)
-        .with_body(&draft.body);
+    let head = Head {
+        kind: a.kind,
+        from: &from,
+        reply: &reply,
+        id: id.as_str(),
+        for_: mail.for_.as_deref(),
+        re,
+        scope: a.scope.as_deref(),
+        until: until.as_deref(),
+    };
+    let msg = head.message(&time::iso(now), &draft.headline, &draft.body);
     ctx.store
         .mailbox(&mail.to)
         .post(&id, &msg.render(), a.kind.is_control())?;
@@ -142,16 +140,6 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         ctx.store.put_pending(&sender.boxes.primary, &pending)?;
     }
 
-    let head = Head {
-        kind: a.kind,
-        from: &from,
-        reply: &reply,
-        id: id.as_str(),
-        for_: mail.for_.as_deref(),
-        re,
-        scope: a.scope.as_deref(),
-        until: until.as_deref(),
-    };
     let envelope = envelope::render(
         &head,
         &draft.headline,
