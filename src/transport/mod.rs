@@ -148,7 +148,7 @@ pub fn guard_dialog(tmux: &Tmux, pane: &Pane) -> Result<()> {
 /// in the composer. The probe must therefore be text only this send put on
 /// the screen: an envelope's `id:` token. The opening characters
 /// (`[hail kind:fyi from:… reply:…`) repeat in every envelope from one seat,
-/// and an earlier one still on screen matched at once (hail-lha).
+/// and an earlier one still on screen would match at once.
 pub fn type_verified(tmux: &Tmux, pane: &Pane, text: &str) -> Result<Woken> {
     let probe = probe(text);
     tmux.type_text(&pane.id, text, pane.in_mode)?;

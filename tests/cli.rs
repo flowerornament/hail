@@ -104,8 +104,8 @@ fn send_deliver_receipt() {
 
 #[test]
 fn a_headline_only_message_goes_in_as_its_envelope() {
-    // hail-2en: the hook used to treat every headline-only message as already
-    // typed, so mail to a seat with no pane was marked injected and never shown.
+    // A headline-only message reaches the agent even when no pane was woken:
+    // the hook must not assume the typed envelope was seen.
     let w = World::new();
     let id = w.send("the build is green");
     let d = stdout(&w.run("worker", &["deliver"]));
@@ -489,7 +489,7 @@ fn an_fyi_is_quiet_once_the_recipients_hooks_have_run() {
     // with no tmux), and the send is pending.
     let id = w.send("before hooks");
     assert!(w.state().join(format!("seats/boss/pending/{id}")).exists());
-    // A deliver run by hand is not a hook (hail-zb5).
+    // A deliver run by hand is not a hook.
     assert!(w.run("worker", &["deliver"]).status.success());
     assert!(!w.state().join("seats/worker/hooked").exists());
     assert!(
@@ -595,8 +595,8 @@ fn sub_agent_names_and_near_misses_are_explained() {
 
 #[test]
 fn exit_5_says_whether_anything_will_deliver_it() {
-    // hail-2xl: mail to a mailbox no hook reads was promised "on their next
-    // prompt" and sat for hours.
+    // Mail to a mailbox no hook reads must not be promised "on their next
+    // prompt": the sender is told where it waits.
     let w = World::new();
     let out = w.run("boss", &["worker", "ask", "check x", "--no-wake"]);
     assert_eq!(out.status.code(), Some(5));

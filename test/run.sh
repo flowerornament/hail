@@ -666,7 +666,7 @@ s50() { # quiet fyi: nothing typed once the recipient's hook has run; it arrives
   out=$(as "$RECV" deliver)
   expect "next prompt carries it" contains "$out" "] quiet progress" || ok=1
   rm -f "$SEATS/worker/hooked"    # hooks never ran: typed as before
-  as "$RECV" deliver >/dev/null   # a hand-run deliver does not count as a hook (hail-zb5)
+  as "$RECV" deliver >/dev/null   # a hand-run deliver does not count as a hook
   expect "hand-run deliver leaves no mark" missing "$SEATS/worker/hooked" || ok=1
   send "$SENDER" worker "typed progress" --kind fyi; id=$(last_id)
   expect "typed when hooks have not run" contains "$(envelope_line "id:$id")" "] typed progress" || ok=1
@@ -910,7 +910,7 @@ s49() { # sub-agents: seat/name reaches the parent, marked for: in the envelope;
   reset_recv; reset_sender; return "$ok"
 }
 
-s52() { # hail-lha: Enter only after the agent has read the text, though an earlier envelope's prefix is on screen
+s52() { # Enter only after the agent has read the text, though an earlier envelope's prefix is on screen
   local ok=0 id stale
   local -x HAIL_AGENT_COMMANDS="$HAIL_AGENT_COMMANDS,python3,Python"
   # An earlier envelope from boss, with the same kind, still on screen: its
@@ -925,7 +925,7 @@ s52() { # hail-lha: Enter only after the agent has read the text, though an earl
   reset_recv; return "$ok"
 }
 
-s53() { # hail-qx4: after Enter, a Codex pane is read for where the envelope went; one Enter retry; held input is reported
+s53() { # after Enter, a Codex pane is read for where the envelope went; one Enter retry; held input is reported
   local ok=0 bin="$SCRATCH/codexbin" mode want note
   local -x HAIL_AGENT_COMMANDS=codex   # the stand-in is bash run as codex: only its process name may count
   mkdir -p "$bin"; [ -e "$bin/codex" ] || ln -s /bin/bash "$bin/codex"
@@ -1044,8 +1044,8 @@ scenario 48 "migration of pane keys, old labels and a backlog; deliver caps per 
 scenario 49 "sub-agents: seat/name via the parent with for:, --as signs; seat/%N is the pane, checked" s49
 scenario 50 "quiet fyi once hooks run; typed where they have not" s50
 scenario 51 "a pane sending from another seat's directory is warned" s51
-scenario 52 "Enter waits until the agent has read this envelope, not an older one on screen (hail-lha)" s52
-scenario 53 "Codex: after Enter, where the envelope went; one retry; held input reported (hail-qx4)" s53
+scenario 52 "Enter waits until the agent has read this envelope, not an older one on screen" s52
+scenario 53 "Codex: after Enter, where the envelope went; one retry; held input reported" s53
 
 echo "---"
 echo "passed $PASS, failed $FAIL"
