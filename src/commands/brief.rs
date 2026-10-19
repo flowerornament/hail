@@ -42,10 +42,6 @@ struct Section {
 }
 
 fn brief(ctx: &Ctx, all: bool, hook: bool) -> Result<()> {
-    if ctx.store.legacy_present() {
-        outln!("hail 0.4 is installed but the 0.3 state is not migrated yet: run hail migrate");
-        return Ok(());
-    }
     let seat = match ctx.seat_here()? {
         Some(s) => s,
         None if hook => return Ok(()),

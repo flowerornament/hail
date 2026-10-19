@@ -10,7 +10,7 @@ pub mod setup;
 use crate::cli::Cmd;
 use crate::ctx::Ctx;
 use crate::error::{Error, Result};
-use crate::{help, migrate, store};
+use crate::{help, store};
 
 pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<u8> {
     match cmd {
@@ -32,8 +32,9 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<u8> {
         Cmd::Keys { target, keys } => panes::keys(ctx, &target, &keys),
         Cmd::Setup { check, yes } => setup::setup(check, yes),
         Cmd::Doctor => Ok(doctor::run(ctx)),
-        Cmd::Migrate { revert: false } => migrate::migrate(ctx),
-        Cmd::Migrate { revert: true } => migrate::revert(ctx),
+        Cmd::Migrate { .. } => Err(Error::Usage(
+            "hail migrate is gone in 0.6: 0.3 state can be migrated only by hail 0.5.x (nix run github:flowerornament/hail/v0.5.5 -- migrate)".into(),
+        )),
         Cmd::Gc { days } => gc(ctx, days),
         Cmd::Help { topic } => help(topic.as_deref().unwrap_or("")),
         Cmd::Version { json } => Ok(version(json)),

@@ -55,7 +55,7 @@ hail deliver [--format claude|codex] [--event E]   # for hooks
 hail whoami                       # seat and how it was derived (filesystem only)
 hail seats                        # every seat: wake pane, agent, unread, last activity
 hail read <pane|seat> [N]  ·  hail type <pane|seat> <text>  ·  hail keys <pane|seat> <key>...
-hail setup [--check] [--yes]  ·  hail doctor  ·  hail migrate [--revert]  ·  hail gc [--days N]
+hail setup [--check] [--yes]  ·  hail doctor  ·  hail migrate [--revert]  ·  hail gc [--days N]   # migrate: amended for 0.6, a usage error naming 0.5.x
 hail help [topic]  ·  hail --version
 # hook-only: hail deliver --format <h>   ·   hail brief --hook (silent on error)
 # test/automation: --no-wake on send writes the message and skips the transport
@@ -285,7 +285,7 @@ Closing stays explicit (`done --re`). A reply of another kind with `--re` does n
 - the hooks installed in each harness, and their current form;
 - the state root writable, with sizes;
 - whether gc is due;
-- legacy state present but not migrated;
+- legacy state present but not migrated (amended for 0.6: removed);
 - for each seat: its root binding, a shared marker with live panes, orphaned sub-seats, and a verb-named seat.
 
 ## 9. Speed
@@ -334,7 +334,7 @@ src/
     setup.rs           settings.json / config.toml merge (pure over text, then fs)
   commands/            one file per verb: send, receive (deliver, inbox, show), receipts
                        (sent, await), brief, seats, panes (read, type, keys), setup, doctor, gc
-  migrate.rs           0.3 → 0.4 state import (§11)
+  migrate.rs           0.3 → 0.4 state import (§11; removed in 0.6)
 ```
 
 ### 10.2 Rules
@@ -369,6 +369,8 @@ Not used, on purpose:
 ## 11. Migration and rollout
 
 ### 11.1 Migration (`hail migrate`, explicit, once)
+
+(Amended for 0.6.) 0.6 removes the import, its revert and the checks below. `hail migrate [--revert]` exits 1 and names the last release that migrates (0.5.x); a 0.3 `inbox/` tree is ignored. This section describes 0.4 and 0.5.
 
 Migration is a step of its own, not a side effect. The first command after an upgrade is usually a hook, and importing a store of thousands of files there risks the hook timeout and a killed import holding the lock.
 - **Until it runs:** hooks are silent, and every other verb exits 1 with `run: hail migrate`.

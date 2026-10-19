@@ -4,6 +4,13 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+- **`hail migrate` is gone.** The one-time import of 0.3 state, its
+  `--revert`, and the checks that made hooks wait and other verbs refuse
+  until it ran are removed. hail now ignores a 0.3 `inbox/` tree. To import
+  one, run hail 0.5.x once before upgrading:
+  `nix run github:flowerornament/hail/v0.5.5 -- migrate`. `hail migrate`
+  now exits 1 and says so.
+
 ## v0.5.5 - 2026-10-18
 
 Internal restructuring, released on its own before 0.6 removes old

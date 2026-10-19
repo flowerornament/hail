@@ -24,11 +24,6 @@ pub fn run(ctx: &Ctx) -> u8 {
         env!("CARGO_PKG_VERSION"),
         ctx.store.root().display()
     ))];
-    if ctx.store.legacy_present() {
-        checks.push(Check::Fix(
-            "0.3 state is not migrated: run hail migrate".into(),
-        ));
-    }
     checks.push(match &seat {
         // Only compare: doctor is often run from the wrong directory, and
         // must not claim a seat name there.

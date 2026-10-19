@@ -858,36 +858,9 @@ s43() { # setup in a scratch HOME: installs both harnesses' hooks, replaces 0.3 
   return "$ok"
 }
 
-s44() { # migrate a 0.3 tree: unread lands in the seat, receipts keep their kind and time, hooks wait for it
-  local ok=0 st="$SCRATCH/state44" out
-  mkdir -p "$st/hail/inbox/worker" "$st/hail/obligations/worker" "$st/hail/identity"
-  printf 'from: boss/%%0\nreply: %%0\nkind: ask\nid: 0101T000000-aaaa\ntime: 2026-01-01T00:00:00Z\nask: old unread\n\nold body\n' > "$st/hail/inbox/worker/0101T000000-aaaa.md"
-  printf 'from: boss/%%0\nreply: %%0\nkind: fyi\nid: 0101T000001-bbbb\ntime: 2026-01-01T00:00:01Z\nask: old read\n\nx\n' > "$st/hail/inbox/worker/0101T000001-bbbb.md"
-  echo "injected 2026-01-02T03:04:05Z" > "$st/hail/inbox/worker/0101T000001-bbbb.read"
-  printf 'id: 0101T000000-aaaa\nkind: ask\nissuer: boss\nto: worker\n' > "$st/hail/obligations/worker/0101T000000-aaaa"
-  out=$(cd "$WORKER_DIR" && XDG_STATE_HOME="$st" "$HAIL" deliver)
-  expect "hook silent before migrate" empty "$out" || ok=1
-  out=$(cd "$WORKER_DIR" && XDG_STATE_HOME="$st" "$HAIL" inbox 2>&1); RC=$?
-  expect "other verbs ask for migrate" contains "$out" "hail migrate" || ok=1
-  XDG_STATE_HOME="$st" "$HAIL" migrate >/dev/null 2>&1; RC=$?
-  expect "migrate rc=0" eq "$RC" 0 || ok=1
-  expect "receipt kept" eq "$(cd "$BOSS_DIR" && XDG_STATE_HOME="$st" "$HAIL" sent 0101T000001-bbbb)" "injected 2026-01-02T03:04:05Z" || ok=1
-  expect "unread still unread" eq "$(cd "$BOSS_DIR" && XDG_STATE_HOME="$st" "$HAIL" sent 0101T000000-aaaa)" "delivered" || ok=1
-  out=$(cd "$WORKER_DIR" && XDG_STATE_HOME="$st" "$HAIL" brief)
-  # A 0.3 obligation has no time:, so it has lapsed: counted, still closable.
-  expect "brief counts the migrated obligation as lapsed" contains "$out" "1 obligation(s) on me lapsed" || ok=1
-  expect "old tree archived" exists "$st/hail/archive/0.3/inbox" || ok=1
-  XDG_STATE_HOME="$st" "$HAIL" migrate --revert >/dev/null 2>&1; RC=$?
-  expect "revert rc=0" eq "$RC" 0 || ok=1
-  expect "revert restores 0.3 files" exists "$st/hail/inbox/worker/0101T000000-aaaa.md" || ok=1
-  expect "revert writes 0.3 receipts" eq "$(cat "$st/hail/inbox/worker/0101T000001-bbbb.read")" "injected 2026-01-02T03:04:05Z" || ok=1
-  return "$ok"
-}
-
 scenario 41 "heredoc send: shell syntax in headline and body arrives byte-identical" s41
 scenario 42 "a headline argument never reads stdin; no headline anywhere is refused" s42
 scenario 43 "setup installs hooks for both harnesses, replaces 0.3 lines, idempotent" s43
-scenario 44 "migrate imports 0.3 state; hooks wait; revert restores it" s44
 
 s49() { # sub-agents: seat/name reaches the parent, marked for: in the envelope; seat/%N is the pane, checked
   local ok=0 id f
@@ -1009,38 +982,25 @@ EOF
   reset_recv; return "$ok"
 }
 
-s48() { # migrating messy real-world state; a backlog is delivered a few bodies per prompt
-  local ok=0 st="$SCRATCH/state48" out i m
-  mkdir -p "$st/hail/inbox/$RECV" "$st/hail/inbox/%999" "$st/hail/inbox/oldlabel" "$st/hail/inbox/worker" "$st/hail/obligations/$RECV"
-  m() { printf 'from: boss/%%0\nreply: %%0\nkind: fyi\nid: %s\ntime: 2026-10-01T00:00:00Z\nask: %s\n\n%s\n' "$1" "$2" "$3"; }
-  m 1001T000000-aaa1 "to a live pane" "fresh pane mail" > "$st/hail/inbox/$RECV/1001T000000-aaa1.md"
-  m 1001T000000-aaa2 "old pane mail" "stale" > "$st/hail/inbox/$RECV/1001T000000-aaa2.md"; touch -t 202601010000 "$st/hail/inbox/$RECV/1001T000000-aaa2.md"
-  m 1001T000000-aaa3 "dead pane" "x" > "$st/hail/inbox/%999/1001T000000-aaa3.md"
-  m 1001T000000-aaa4 "old label" "x" > "$st/hail/inbox/oldlabel/1001T000000-aaa4.md"
-  for i in 1 2 3 4 5 6 7 8; do m "1001T00000$i-bbb$i" "backlog $i" "backlog body $i" > "$st/hail/inbox/worker/1001T00000$i-bbb$i.md"; done
-  printf 'id: x\nkind: ask\n' > "$st/hail/obligations/$RECV/1001T000000-ccc1"
-  out=$(XDG_STATE_HOME="$st" "$HAIL" migrate 2>&1); RC=$?
-  expect "migrate rc=0" eq "$RC" 0 || ok=1
-  expect "reports mail no agent will read" contains "$out" "oldlabel: 1 unread" || ok=1
-  expect "recent unread pane mail goes to the pane's seat" exists "$st/hail/seats/worker/new/1001T000000-aaa1.md" || ok=1
-  expect "old pane mail is parked" exists "$st/hail/seats/legacy-$RECV/new/1001T000000-aaa2.md" || ok=1
-  expect "dead pane parked" exists "$st/hail/seats/legacy-%999/new/1001T000000-aaa3.md" || ok=1
-  expect "pane-keyed obligations parked" exists "$st/hail/seats/legacy-$RECV/owed/1001T000000-ccc1" || ok=1
+s48() { # a backlog is delivered a few bodies per prompt
+  local ok=0 st="$SCRATCH/state48" out i
+  mkdir -p "$st/hail/seats/worker/new"
+  for i in 1 2 3 4 5 6 7 8 9; do
+    printf 'from: boss/%%0\nreply: %%0\nkind: fyi\nid: %s\ntime: 2026-10-01T00:00:0%sZ\nask: backlog %s\n\nbacklog body %s\n' \
+      "1001T00000$i-bbb$i" "$i" "$i" "$i" > "$st/hail/seats/worker/new/1001T00000$i-bbb$i.md"
+  done
   out=$(cd "$WORKER_DIR" && XDG_STATE_HOME="$st" TMUX_PANE="$RECV" "$HAIL" deliver)
   expect "first prompt: five bodies" eq "$(printf '%s\n' "$out" | grep -c '^ask: ')" 5 || ok=1
   expect "and how many wait" contains "$out" "4 more unread" || ok=1
   out=$(cd "$WORKER_DIR" && XDG_STATE_HOME="$st" TMUX_PANE="$RECV" "$HAIL" deliver)
   expect "next prompt: the rest" eq "$(printf '%s\n' "$out" | grep -c '^ask: ')" 4 || ok=1
-  XDG_STATE_HOME="$st" "$HAIL" migrate --revert >/dev/null 2>&1
-  expect "revert puts legacy pane mail back under its pane id" exists "$st/hail/inbox/$RECV/1001T000000-aaa2.md" || ok=1
-  expect "and pane-keyed obligations" exists "$st/hail/obligations/$RECV/1001T000000-ccc1" || ok=1
   return "$ok"
 }
 
 scenario 45 "real agent detection: root, child of the root shell, none" s45
 scenario 46 "sharing ends: sub-seat mail and obligations stay reachable; Codex never reads one" s46
 scenario 47 "a headline argument with a heredoc or a late pipe: that is the body" s47
-scenario 48 "migration of pane keys, old labels and a backlog; deliver caps per prompt" s48
+scenario 48 "a backlog: deliver caps the bodies per prompt" s48
 scenario 49 "sub-agents: seat/name via the parent with for:, --as signs; seat/%N is the pane, checked" s49
 scenario 50 "quiet fyi once hooks run; typed where they have not" s50
 scenario 51 "a pane sending from another seat's directory is warned" s51

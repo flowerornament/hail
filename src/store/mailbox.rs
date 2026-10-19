@@ -117,21 +117,6 @@ impl Mailbox {
         Ok(dest)
     }
 
-    /// Place an existing file (migration) as unread or claimed at a time.
-    pub fn import(&self, id: &Id, from: &Path, receipt: Option<Receipt>) -> Result<()> {
-        let dest = match receipt {
-            None => self.new_path(id),
-            Some(r) => self.cur_path(id, r.how),
-        };
-        let dir = dest.parent().unwrap_or(&self.dir).to_path_buf();
-        fs::create_dir_all(&dir).map_err(Error::at(&dir))?;
-        fs::rename(from, &dest).map_err(Error::at(&dest))?;
-        if let Some(r) = receipt {
-            set_mtime(&dest, r.at);
-        }
-        Ok(())
-    }
-
     /// Unread ids, oldest first. Ids sort by time only to the second, and two
     /// sends in one second would then sort by their random suffix; the
     /// file's arrival time (nanoseconds) orders them as they were sent.

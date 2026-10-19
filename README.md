@@ -159,14 +159,17 @@ comments. The commands it installs:
 
 ### Upgrading from 0.3
 
-Run `hail migrate` once after upgrading:
-- It moves the 0.3 inboxes, receipts, obligations and pending sends into the
-  0.4 layout, and parks the old tree in `~/.local/state/hail/archive/0.3`.
-- Recent unread mail keyed by a live pane id goes to that pane's seat.
-  Everything else keyed by pane id is kept apart as `legacy-%N`.
-- It lists unread mail that no agent will pick up.
-- Until it runs, hooks are silent and other verbs ask for it. `hail migrate
-  --revert` goes back.
+hail 0.6 no longer imports 0.3 state. Migrate with hail 0.5.x first, then
+upgrade:
+
+```bash
+nix run github:flowerornament/hail/v0.5.5 -- migrate
+```
+
+It moves the 0.3 inboxes, receipts, obligations and pending sends into the
+current layout and parks the old tree in `archive/0.3`; seats it could not
+match to a live pane are kept apart as `legacy-%N`. Without it, 0.6 ignores
+the 0.3 tree and its mail.
 
 Labels are gone: a seat is named by its directory, and `hail name` is a no-op.
 
@@ -299,7 +302,7 @@ just land      # gate the described jj change, then move main to it and push
 
 **The gate:**
 - **Lints:** clippy runs pedantic, with `unwrap` and `expect` denied.
-- **Scenarios:** `test/run.sh` runs 48 scenarios on a scratch tmux server and
+- **Scenarios:** `test/run.sh` runs 49 scenarios on a scratch tmux server and
   a scratch state root, so it never touches yours. It needs bash 4 or later.
 - **On a loaded machine,** set `HAIL_TEST_DELIVER_MS=100`.
 - **CI** runs the gate on Linux and macOS with the toolchain pinned in

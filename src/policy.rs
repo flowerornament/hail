@@ -4,9 +4,8 @@
 use std::time::Duration;
 
 /// Bodies a hook injects per prompt, and roughly how many bytes. The rest
-/// stay unread for the next prompt or `hail inbox`: a backlog (66 unread on
-/// one seat at migration) would otherwise be cut by the harness's hook output
-/// limit after it was claimed.
+/// stay unread for the next prompt or `hail inbox`: a backlog would otherwise
+/// be cut by the harness's hook output limit after it was claimed.
 pub const DELIVER_BODIES: usize = 5;
 pub const DELIVER_BYTES: usize = 8 * 1024;
 
@@ -38,11 +37,6 @@ pub const HOLD_MAX: Duration = Duration::from_hours(168);
 /// days has almost always been superseded, and a brief full of them hides the
 /// few that are owed. A lapsed one can still be closed with `done --re`.
 pub const OBLIGATION_DEFAULT: Duration = Duration::from_hours(72);
-
-/// At migration, unread mail keyed by a live pane id goes to that pane's
-/// seat only when it is this recent: older mail may have been meant for an
-/// agent that has since left the pane.
-pub const MIGRATE_RECENT: Duration = Duration::from_hours(48);
 
 /// `hail gc` archives read mail older than this many days by default, and
 /// `doctor` suggests it past this many read messages in one seat.

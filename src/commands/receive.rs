@@ -30,7 +30,7 @@ pub fn deliver(ctx: &Ctx, format: Option<&str>, event: &str) -> u8 {
 }
 
 fn deliver_inner(ctx: &Ctx, format: Option<&str>, event: &str) -> Result<()> {
-    if ctx.store.legacy_present() || !hooks::stdout_reaches_anyone() {
+    if !hooks::stdout_reaches_anyone() {
         return Ok(());
     }
     if event == "PostToolUse" && !hooks::from_the_agent_itself(input::hook_payload().as_ref()) {

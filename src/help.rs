@@ -30,7 +30,6 @@ Panes (for shells and processes, not agents):
 Tool:
   setup [--check] [--yes]         Install the Claude Code and Codex hooks
   doctor                          Check everything; each problem names its fix
-  migrate [--revert]              One-time import of 0.3 state
   gc [--days N]                   Archive read mail older than N days (default 90)
   help [topic] · version          Topics: send kinds receive seats panes setup state
 
@@ -188,6 +187,9 @@ State ($XDG_STATE_HOME/hail, default ~/.local/state/hail):
   holds/lapsed/<id>                 lapsed ones, after their issuer's brief said so
   ids/<id> -> <seat>                the id index
   archive/                          gc'd mail and the 0.3 tree
+
+A 0.3 state tree (inbox/ in the root) is imported only by hail 0.5.x:
+  nix run github:flowerornament/hail/v0.5.5 -- migrate
 
 Environment:
   HAIL_ENVELOPE_MAX     headline cap (default 400)

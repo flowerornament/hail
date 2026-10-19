@@ -103,8 +103,8 @@ fn name<'a>(
         }
         return Ok(Named::Sub(addr.clone(), p));
     }
-    // A seat is known once it has a mailbox (an agent ran hail there, or mail
-    // was migrated to it), or while a pane sits in it.
+    // A seat is known once it has a mailbox (an agent ran hail there), or
+    // while a pane sits in it.
     let known =
         ctx.store.seat_dir(&addr).is_dir() || pm.is_some_and(|pm| !pm.in_seat(arg).is_empty());
     if known {

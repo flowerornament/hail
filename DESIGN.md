@@ -111,7 +111,7 @@ The numbers are the steps in Shape above. Files under `store/`, `envelope`,
 `transport/dialog` and `hooks/setup` do no process or tmux I/O.
 
 ```
-main.rs            argv -> early help/version -> clap -> migration gate -> commands::run
+main.rs            argv -> early help/version -> clap -> commands::run
 cli.rs, help.rs    the argument grammar (0.3 forms normalised) and the help pages
 ctx.rs             where this process runs: store, cwd, home, its seat and mailboxes
 seat.rs            identity: seat_of(dir) from .hail-seat, jj or git root; Addr
@@ -131,7 +131,6 @@ transport/         tmux (tmux.rs), which panes run agents (agent.rs), panes to
                    and verifying the envelope (mod.rs)                          (2)
 policy.rs          every limit and timeout, in one place
 input.rs, out.rs   stdin that never hangs; stdout that ends quietly; tables
-migrate.rs         the one-time import of 0.3 state, and its revert
 ```
 
 ## Verbs
@@ -142,7 +141,7 @@ hail sent <id> · await <id>... [--timeout s] [--any]                  receipts
 hail brief · inbox [--peek] [--all] · show <id> · deliver --format h  receiving
 hail whoami · seats · list                                            seats and panes
 hail read <pane|seat> [n] · type … · keys …                           non-agent panes only
-hail setup · doctor · migrate · gc · help · version                   the tool
+hail setup · doctor · gc · help · version                             the tool
 ```
 
 `stop hold block release announce` type the full headline inline, with no body
@@ -177,3 +176,7 @@ were owed. A lapsed one leaves the count; `brief` says how many lapsed,
 panes finish their conversations; the old `message` verb is an alias of `send`.
 The envelope prefix is `[hail ...]`; the skill tells agents to treat `[tb ...]`
 and `[tmux-bridge ...]` the same way during the alias week.
+
+hail does not read 0.3 state. Only hail 0.5.x imports it (`hail migrate`);
+in later releases `migrate` is a usage error that names that release, and a
+0.3 `inbox/` tree in the state root is ignored.

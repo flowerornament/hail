@@ -69,16 +69,6 @@ pub fn reserve(store: &Store, to: &Addr, at: Timestamp) -> Result<Id> {
     )))
 }
 
-/// Index an existing id (migration). An entry already present is left alone.
-pub fn index(store: &Store, id: &Id, to: &Addr) -> Result<()> {
-    let dir = store.ids_dir();
-    fs::create_dir_all(&dir).map_err(Error::at(&dir))?;
-    match symlink(to.to_string(), dir.join(id.as_str())) {
-        Err(e) if e.kind() != ErrorKind::AlreadyExists => Err(Error::at(&dir.join(id.as_str()))(e)),
-        _ => Ok(()),
-    }
-}
-
 /// The mailbox a message id was sent to.
 pub fn lookup(store: &Store, id: &Id) -> Option<Addr> {
     let target = fs::read_link(store.ids_dir().join(id.as_str())).ok()?;

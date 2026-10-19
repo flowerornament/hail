@@ -214,27 +214,6 @@ pub fn clap_message(e: &clap::Error) -> String {
     )
 }
 
-impl Cmd {
-    /// Verbs that read or write mail refuse to run on unmigrated 0.3 state;
-    /// hooks stay silent instead (they check for themselves).
-    pub const fn needs_migrated_state(&self) -> bool {
-        !matches!(
-            self,
-            Self::Deliver { .. }
-                | Self::Brief { .. }
-                | Self::Migrate { .. }
-                | Self::Help { .. }
-                | Self::Version { .. }
-                | Self::Doctor
-                | Self::Setup { .. }
-                | Self::Name { .. }
-                | Self::List
-                | Self::Whoami
-                | Self::Id
-        )
-    }
-}
-
 impl SendCli {
     /// The new form is `<seat> <kind> [headline]`; with `--kind`, the 0.3
     /// form `<target> <headline>`.

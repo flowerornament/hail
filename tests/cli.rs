@@ -483,6 +483,25 @@ fn bd_is_gone_but_its_flags_say_so() {
 }
 
 #[test]
+fn migrate_points_at_the_release_that_can_run_it() {
+    let w = World::new();
+    for args in [&["migrate"][..], &["migrate", "--revert"]] {
+        let out = w.run("worker", args);
+        assert_eq!(out.status.code(), Some(1), "{out:?}");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("hail 0.5.x"),
+            "{out:?}"
+        );
+    }
+    // A 0.3 tree left in the state root no longer stops verbs or hooks.
+    fs::create_dir_all(w.state().join("inbox/%1")).unwrap();
+    let id = w.send("after an old tree");
+    let out = w.run("worker", &["deliver", "--format", "claude"]);
+    assert!(stdout(&out).contains(&id), "{out:?}");
+    assert_eq!(w.run("worker", &["brief"]).status.code(), Some(0));
+}
+
+#[test]
 fn an_fyi_is_quiet_once_the_recipients_hooks_have_run() {
     let w = World::new();
     // Hooks never ran in worker: the fyi is typed as before (exit 5 here,

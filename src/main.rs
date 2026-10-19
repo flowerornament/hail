@@ -35,7 +35,6 @@ mod error;
 mod help;
 mod hooks;
 mod input;
-mod migrate;
 mod policy;
 mod route;
 mod seat;
@@ -68,10 +67,5 @@ fn run(args: Vec<String>) -> Result<u8> {
     };
     let cli = Cli::try_parse_from(&args).map_err(|e| Error::Usage(cli::clap_message(&e)))?;
     let ctx = Ctx::from_env();
-    if ctx.store.legacy_present() && cli.cmd.needs_migrated_state() {
-        return Err(Error::State(
-            "hail 0.4 needs a one-time import of the 0.3 state first: run hail migrate".into(),
-        ));
-    }
     commands::run(&ctx, cli.cmd)
 }
