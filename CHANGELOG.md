@@ -4,6 +4,21 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.5.5 - 2026-10-18
+
+Internal restructuring, released on its own before 0.6 removes old
+interfaces, so 0.5.x stays a fallback with the same behaviour.
+
+- **One envelope head.** The stored message and the typed envelope are built
+  from one value, and the receiving side reads the envelope back from the
+  stored message with the same conversion, so they cannot disagree.
+- **Sends tell the sender in one place.** `hail send` is split into named
+  steps (route, decide, write, wake), and every line it prints about the
+  outcome, with its exit code, comes from one function. The wording is
+  unchanged; the note that Codex took an envelope as a steer now prints after
+  the `id=` line, like the quiet-fyi note.
+- The CPU benchmark reads hyperfine 2's JSON as well as 1's.
+
 ## v0.5.4 - 2026-10-18
 
 Stale obligations stop piling up.
