@@ -92,7 +92,7 @@ EOF
 - The target is parsed at one boundary (`seat::Address`): `/` is split first, then `@`, and every part must name exactly one directory entry. An empty part, `.`, `..`, `/` or NUL is refused (exit 1).
 - An unknown seat is an error that lists the near names (exit 1). One whose prefix is a known seat plus `-`, `_` or `.` also suggests the sub-agent address: `send to web-1b/scout (its parent relays)`.
 
-**Quiet `fyi` (0.5, docs/2026-10-08-quiet-mail-design.md §1):** an `fyi` is not typed when the recipient mailbox's `hooked` file (touched by every `deliver`) is under 7 days old. It arrives with the recipient's next prompt, exits 0, prints `quiet: arrives with <seat>'s next prompt` on stderr, and writes no pending record. Every other kind types as before, and so does an `fyi` to a mailbox whose hooks have not run.
+**Quiet `fyi` (0.5, docs/2026-10-08-quiet-mail-design.md §1):** an `fyi` is not typed when the recipient mailbox's `hooked` file (touched by every `deliver`) is under 7 days old. It arrives with the recipient's next prompt, exits 0, prints `quiet: arrives with <seat>'s next prompt` on stderr, and writes no pending record. Every other kind types as before, and so does an `fyi` to a mailbox whose hooks have not run. *(Amended for 0.6.)* An `fyi` that answers a question is typed too: when its `--re` names a `ruling`, `go` or `ask` in one of the sender's own mailboxes, the asker is waiting for it. Before 0.6 that answer was a `done`, which was always typed. An `fyi --re` to any other kind stays quiet.
 
 **Output:**
 - `id=<id>` on stdout, on exit 0 and on exit 5.

@@ -15,6 +15,7 @@ use crate::policy::QUIET_HOOKS_SEEN;
 use crate::route::{self, Mail, Sender};
 use crate::seat::Addr;
 use crate::store::ids::{self, Id};
+use crate::store::message::Message;
 use crate::store::records::{Entry, Pending, hold_default};
 use crate::time;
 use crate::transport::pane_map::PaneMap;
@@ -139,12 +140,13 @@ fn route(ctx: &Ctx, a: &SendArgs) -> Result<Route> {
 fn decide<'a>(ctx: &Ctx, a: &SendArgs, r: &'a Route) -> Result<Plan<'a>> {
     // An fyi never interrupts a seat whose hooks run: it rides in with the
     // recipient's next prompt. Where hooks have not run, typing is the only
-    // way it would be seen, so it is typed as before.
+    // way it would be seen, so it is typed as before. An fyi that answers a
+    // question is typed too: the asker is waiting for it.
     let hooked = ctx
         .store
         .mailbox(&r.mail.to)
         .hooked_within(QUIET_HOOKS_SEEN);
-    let quiet = a.kind == Kind::Fyi && hooked;
+    let quiet = a.kind == Kind::Fyi && hooked && !answers_a_question(ctx, a, &r.sender);
     let pane = r.mail.wake.as_ref().filter(|_| a.delivery.wake && !quiet);
     if let (Some(t), Some(p), false) = (&r.tmux, pane, a.delivery.force) {
         transport::guard_dialog(t, p)?;
@@ -154,6 +156,20 @@ fn decide<'a>(ctx: &Ctx, a: &SendArgs, r: &'a Route) -> Result<Plan<'a>> {
         quiet,
         pane,
     })
+}
+
+/// `--re` names a ruling, go or ask that the sender received.
+fn answers_a_question(ctx: &Ctx, a: &SendArgs, sender: &Sender) -> bool {
+    let Some(re) = &a.re else {
+        return false;
+    };
+    sender
+        .boxes
+        .iter()
+        .find_map(|b| ctx.store.mailbox(b).find(re))
+        .and_then(|f| std::fs::read_to_string(f.path).ok())
+        .and_then(|text| Kind::parse(Message::parse(&text).get("kind")?))
+        .is_some_and(Kind::asks_for_reply)
 }
 
 /// Write the message durably and record the state it changes, before

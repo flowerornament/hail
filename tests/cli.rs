@@ -549,6 +549,41 @@ fn an_fyi_is_quiet_once_the_recipients_hooks_have_run() {
     assert_eq!(out.status.code(), Some(5), "{out:?}");
 }
 
+#[test]
+fn an_fyi_that_answers_a_question_is_typed() {
+    let w = World::new();
+    let ask = id_of(&w.run("boss", &["worker", "ask", "which port?", "--no-wake"]));
+    let fyi = w.send("for the record");
+    // boss's hooks run, so an fyi to it would be quiet.
+    assert!(
+        w.run("boss", &["deliver", "--format", "claude"])
+            .status
+            .success()
+    );
+
+    // The answer to an ask worker received is typed: boss is waiting.
+    let out = w.run(
+        "worker",
+        &["boss", "fyi", "port 8080", "--re", &ask, "--no-wake"],
+    );
+    assert_eq!(out.status.code(), Some(5), "{out:?}");
+    assert!(
+        !String::from_utf8_lossy(&out.stderr).contains("quiet:"),
+        "{out:?}"
+    );
+
+    // A reply to an fyi stays quiet.
+    let out = w.run(
+        "worker",
+        &["boss", "fyi", "noted", "--re", &fyi, "--no-wake"],
+    );
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("quiet:"),
+        "{out:?}"
+    );
+}
+
 fn header(path: &Path, key: &str) -> Option<String> {
     let text = fs::read_to_string(path).unwrap();
     text.lines()

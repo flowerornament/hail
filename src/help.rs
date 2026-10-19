@@ -76,8 +76,9 @@ Envelope typed into the recipient's pane:
 Reply to the reply: value. for:<name> marks mail for your sub-agent: relay it.
 
 An fyi is quiet: it is not typed, and arrives with the recipient's next prompt
-(typed as before where their hooks have never run). Progress belongs in your
-issue tracker, not in someone's prompt.
+(typed as before where their hooks have never run). An fyi that answers a
+ruling, go or ask (--re to one you received) is typed: the asker is waiting.
+Progress belongs in your issue tracker, not in someone's prompt.
 
 Exit: 0 typed and submitted, or a quiet fyi; 5 written to the inbox but not
 typed (no agent pane, or typing not confirmed): do NOT resend. It arrives on
@@ -100,8 +101,10 @@ hail kinds — what each kind means and does
   nogo  announce  stop
                       No state.
   fyi                 No state, and quiet: not typed; it arrives with the
-                      recipient's next prompt. For outcomes read later;
-                      progress belongs in the issue tracker.
+                      recipient's next prompt. Unless it answers a ruling,
+                      go or ask: then it is typed, because the asker is
+                      waiting. For outcomes read later; progress belongs in
+                      the issue tracker.
 
 stop hold block release announce are control kinds: typed in full, no body,
 act on them at once. A message with no body is complete in its envelope.

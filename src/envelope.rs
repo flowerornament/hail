@@ -90,6 +90,11 @@ impl Kind {
     pub const fn is_hold(self) -> bool {
         matches!(self, Self::Hold | Self::Block)
     }
+
+    /// Its sender waits for the answer: any message with `--re` to it.
+    pub const fn asks_for_reply(self) -> bool {
+        matches!(self, Self::Ruling | Self::Go | Self::Ask)
+    }
 }
 
 impl std::fmt::Display for Kind {

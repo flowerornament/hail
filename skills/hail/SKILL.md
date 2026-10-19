@@ -2,7 +2,7 @@
 name: hail
 description: "Messages between coding agents on one machine with hail. Use this skill whenever the user mentions sending a message to another agent, seat or pane, a `[hail ...]` envelope appears in your prompt, you need to know whether another agent has read something, you must answer a ruling, go or ask, or release a hold or block, or you must drive a non-agent tmux pane (a shell, a running process). Covers the hail CLI: send, sent, await, brief, inbox, show, whoami, seats, kinds with state, and pane driving."
 metadata:
-  { "version": "0.5.0", "openclaw": { "emoji": "📯", "os": ["darwin", "linux"], "requires": { "bins": ["tmux", "hail"] } } }
+  { "version": "0.6.0", "openclaw": { "emoji": "📯", "os": ["darwin", "linux"], "requires": { "bins": ["tmux", "hail"] } } }
 ---
 
 # hail
@@ -70,7 +70,8 @@ someone must act on.
 
 **An `fyi` never interrupts.** It is not typed into the recipient's pane: it
 arrives with their next prompt (where their hooks run; otherwise it is typed
-as before). An agent idle until a scheduled wakeup sees it only then, so a
+as before). An `fyi` that answers a ruling, go or ask is typed: the asker is
+waiting for it. An agent idle until a scheduled wakeup sees it only then, so a
 time-critical fact is never an `fyi`. Use `ask` when you need the answer, and
 `announce` when everyone must know now.
 
@@ -125,7 +126,7 @@ hail keeps no record of asks. Keep open work in your issue tracker.
 | `hold` `block` | In effect, in every brief, until `release --re <id>` or it lapses: a hold after 8h, a block after 7d, or `--for 30m`/`3d` (at most 7d). Its envelope says `until:`. |
 | `release` | Lifts one hold: `--re <id>`. |
 | `nogo` `stop` `announce` | No state. |
-| `fyi` | No state, and quiet: arrives with the next prompt. For outcomes the reader acts on later; progress belongs in the issue tracker. |
+| `fyi` | No state, and quiet: arrives with the next prompt, unless it answers a ruling, go or ask (`--re` to one you received): then it is typed, because the asker is waiting. For outcomes the reader acts on later; progress belongs in the issue tracker. |
 
 There is no `done` kind (it went in 0.6): answer with `--re`, and keep what is
 still owed in your issue tracker, not in hail.

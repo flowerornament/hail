@@ -147,7 +147,9 @@ hail setup · doctor · gc · help · version                             the to
 `stop hold block release announce` type the full headline inline, with no body
 and no fetch hint. The other kinds type the envelope and keep the body in the
 inbox, except `fyi`: it is quiet wherever the recipient's hooks run, and
-arrives with their next prompt. A typed message costs its reader a turn, so
+arrives with their next prompt. An `fyi` that answers a ruling, go or ask is
+typed all the same, since the asker is waiting for it: its `--re` names one of
+those kinds in the sender's own mailboxes. A typed message costs its reader a turn, so
 progress belongs in the issue tracker, which hail does not touch.
 
 Holds and blocks lapse (8h and 7d by default, `--for` up to 7d): a hold is a
