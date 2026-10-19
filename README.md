@@ -115,7 +115,7 @@ than compiled; accept the flake config, or add the substituter yourself.
 - `nix build github:flowerornament/hail?ref=refs/heads/release`, or
   `nix run github:flowerornament/hail -- --help`.
 - **A release tarball** from GitHub (aarch64 and x86_64, macOS and Linux). It
-  holds `hail`, the `tmux-bridge` alias, and the skill under
+  holds `hail` and the skill under
   `share/hail/skills/hail`.
 - `cargo install --path .` from a checkout. The pinned toolchain is in
   `rust-toolchain.toml`.
@@ -171,7 +171,7 @@ current layout and parks the old tree in `archive/0.3`; seats it could not
 match to a live pane are kept apart as `legacy-%N`. Without it, 0.6 ignores
 the 0.3 tree and its mail.
 
-Labels are gone: a seat is named by its directory, and `hail name` is a no-op.
+Labels are gone: a seat is named by its directory.
 
 ## Use
 
@@ -275,7 +275,7 @@ after two minutes. It drops a send that has lapsed after seven days.
 | variable | default | what it does |
 |---|---|---|
 | `HAIL_ENVELOPE_MAX` | 400 | headline cap in characters |
-| `HAIL_SOCKET` | `$TMUX`, else the default server | tmux socket (`TMUX_BRIDGE_SOCKET` is accepted too) |
+| `HAIL_SOCKET` | `$TMUX`, else the default server | tmux socket |
 | `HAIL_SEAT` | — | a seat name, used only where the directory names none |
 | `HAIL_AGENT_COMMANDS` | `claude,codex` | commands that count as agents |
 | `XDG_STATE_HOME` | `~/.local/state` | the state root |
@@ -286,11 +286,10 @@ before Enter so the agent's composer does not treat the text as a paste.
 
 ## Compatibility
 
-- `tmux-bridge` is installed as an alias of `hail`, and `message` and `msg`
-  are aliases of `send`.
-- The 0.3 send form still works: `hail <target> '<headline>' --kind <k> [--body text|file|-]`.
-- `name`, `hello`, `who`, `resolve` and `id` remain as shims through 0.4.
-- Envelopes tagged `[tb …]` or `[tmux-bridge …]` mean the same as `[hail …]`.
+`hail` is the one binary and `send` the one send verb: there are no aliases.
+A send is `hail <seat> <kind> [headline]` with the body on stdin; `--kind`
+and `--body` are refused with a usage error that shows that form. 0.6 removed
+the 0.3 spellings, and the CHANGELOG names what replaces each.
 
 ## Develop
 

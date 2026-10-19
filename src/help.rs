@@ -54,9 +54,10 @@ hail send — deliver a message to a seat
 <seat> is a workspace name (api-1b), a sub-seat in a shared directory
 (hail@%28), a pane (%7, or api-1a/%5 as from: prints it), or a sub-agent
 (web-1b/scout), whose mail goes to its parent marked for: and is relayed.
-'hail seats' lists them. With a headline argument
-stdin is never read. In a heredoc, quote the delimiter (<<'EOF') so nothing
-in the body is expanded.
+'hail seats' lists them. With a headline argument,
+whatever stdin carries is the body; a pipe that sends nothing within 2 s is
+not waited on. In a heredoc, quote the delimiter (<<'EOF') so nothing in the
+body is expanded.
 
 Options:
   --re <id>       The message this answers, closes (done) or lifts (release)
@@ -83,8 +84,6 @@ typed (no agent pane, or typing not confirmed): do NOT resend. It arrives on
 their next prompt, unless hail says no hook reads that seat (then check hail
 seats for where its agent works); 3 seat problem; 4 the target shows a
 permission dialog.
-
-The 0.3 form still works: hail <target> '<headline>' --kind <k> [--body text|file|-]
 ";
 
 pub const KINDS: &str = "\
@@ -193,7 +192,7 @@ A 0.3 state tree (inbox/ in the root) is imported only by hail 0.5.x:
 
 Environment:
   HAIL_ENVELOPE_MAX     headline cap (default 400)
-  HAIL_SOCKET           tmux socket (TMUX_BRIDGE_SOCKET accepted)
+  HAIL_SOCKET           tmux socket
   HAIL_SEAT             a seat name, only where the directory names none
   HAIL_AGENT_COMMANDS   commands that count as agents (default claude,codex)
   XDG_STATE_HOME        state root
@@ -205,11 +204,10 @@ Exit codes: 0 ok · 1 usage or state · 2 control headline over cap ·
 /// The page for a topic or verb, or None.
 pub fn page(topic: &str) -> Option<&'static str> {
     Some(match topic {
-        "send" | "message" | "msg" | "sent" | "await" => SEND,
+        "send" | "sent" | "await" => SEND,
         "kinds" | "kind" => KINDS,
         "receive" | "deliver" | "brief" | "inbox" | "show" => RECEIVE,
-        "seats" | "seat" | "whoami" | "list" | "identity" | "name" | "hello" | "who"
-        | "resolve" | "id" => SEATS,
+        "seats" | "seat" | "whoami" | "list" | "identity" => SEATS,
         "panes" | "pane" | "read" | "type" | "keys" => PANES,
         "setup" | "doctor" | "hooks" => SETUP,
         "state" | "env" | "environment" | "exit" | "migrate" | "gc" => STATE,

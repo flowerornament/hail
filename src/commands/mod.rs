@@ -15,9 +15,6 @@ use crate::{help, store};
 pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<u8> {
     match cmd {
         Cmd::Send(s) => send::run(ctx, &s.into_args()?),
-        Cmd::Note { .. } => Err(Error::Usage(
-            "hail note is gone: hail no longer talks to bd. Post progress with bd itself: bd comments add <bead> '<text>'".into(),
-        )),
         Cmd::Sent { id } => Ok(receive::sent(ctx, &id)),
         Cmd::Await { ids, timeout, any } => Ok(receive::await_ids(ctx, &ids, timeout, any)),
         Cmd::Deliver { format, event } => Ok(receive::deliver(ctx, format.as_deref(), &event)),
@@ -38,15 +35,6 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<u8> {
         Cmd::Gc { days } => gc(ctx, days),
         Cmd::Help { topic } => help(topic.as_deref().unwrap_or("")),
         Cmd::Version { json } => Ok(version(json)),
-        // Old identity verbs: shims that never fail (see panes.rs).
-        Cmd::Name { args } => Ok(panes::name_shim(ctx, args.first().map(String::as_str))),
-        Cmd::Hello => panes::hello_shim(ctx),
-        Cmd::Who { seat } => {
-            let here = ctx.seat_here()?.map(|s| s.name);
-            panes::seats(ctx, seat.as_deref().or(here.as_deref()))
-        }
-        Cmd::Resolve { seat } => panes::resolve_shim(ctx, &seat),
-        Cmd::Id => panes::id_shim(ctx),
     }
 }
 

@@ -10,6 +10,25 @@ All notable changes to `hail` are documented in this file.
   one, run hail 0.5.x once before upgrading:
   `nix run github:flowerornament/hail/v0.5.5 -- migrate`. `hail migrate`
   now exits 1 and says so.
+- **Breaking: the 0.3 send form is gone.** `hail <target> '<headline>'
+  --kind <k> [--body …]` no longer sends. Use `hail <seat> <kind>
+  '<headline>'`, with any body on stdin (a heredoc whose first line is the
+  headline, or a pipe). `--kind` and `--body` now fail with a usage error
+  that shows that form.
+- **Breaking: `message` and `msg` are no longer aliases of `send`.** Use
+  `hail send <seat> …` or just `hail <seat> …`.
+- **Breaking: the old identity verbs are gone.** `name`, `hello`, `who`,
+  `resolve` and `id` no longer exist; a seat is named by its directory. Use
+  `hail whoami` for this directory's seat, `hail seats [seat]` for a seat's
+  panes, and `hail list` for pane ids. A launcher that still runs `hail name`
+  from a hook must drop that line.
+- **Breaking: `hail note` and `--bead` are gone.** Post progress with your
+  issue tracker directly, and name an issue in the headline if it matters.
+- **Breaking: the `tmux-bridge` alias is gone.** The Nix package and the
+  release tarballs install only `hail`, and `TMUX_BRIDGE_SOCKET` is no longer
+  read: set `HAIL_SOCKET`. Run `hail setup` to replace any hook that still
+  calls `tmux-bridge deliver`. The skill no longer mentions `[tb …]` or
+  `[tmux-bridge …]` envelopes.
 
 ## v0.5.5 - 2026-10-18
 

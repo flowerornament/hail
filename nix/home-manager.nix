@@ -12,7 +12,7 @@ in
       type = lib.types.package;
       default = defaultPackage;
       defaultText = lib.literalExpression "hail package from this flake";
-      description = "The hail package to install (provides `hail` and the `tmux-bridge` alias).";
+      description = "The hail package to install (provides `hail` and the agent skill).";
     };
 
     envelopeMax = lib.mkOption {

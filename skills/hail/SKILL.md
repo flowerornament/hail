@@ -1,6 +1,6 @@
 ---
 name: hail
-description: "Messages between coding agents on one machine with hail. Use this skill whenever the user mentions sending a message to another agent, seat or pane, a `[hail ...]` (or `[tb ...]`/`[tmux-bridge ...]`) envelope appears in your prompt, you need to know whether another agent has read something, you must answer or close a ruling, go, ask, hold or block, or you must drive a non-agent tmux pane (a shell, a running process). Covers the hail CLI: send, sent, await, brief, inbox, show, whoami, seats, kinds with state, and pane driving."
+description: "Messages between coding agents on one machine with hail. Use this skill whenever the user mentions sending a message to another agent, seat or pane, a `[hail ...]` envelope appears in your prompt, you need to know whether another agent has read something, you must answer or close a ruling, go, ask, hold or block, or you must drive a non-agent tmux pane (a shell, a running process). Covers the hail CLI: send, sent, await, brief, inbox, show, whoami, seats, kinds with state, and pane driving."
 metadata:
   { "version": "0.5.0", "openclaw": { "emoji": "📯", "os": ["darwin", "linux"], "requires": { "bins": ["tmux", "hail"] } } }
 ---

@@ -1,7 +1,6 @@
 # hail: messages between coding agents on one machine (envelope + inbox +
 # receipts + await). Flake-free; consume with `callPackage ./path/to/hail/package.nix { }`.
-# Installs bin/hail, a `tmux-bridge` compatibility symlink to it, and the agent
-# skill under share/hail/skills/hail.
+# Installs bin/hail and the agent skill under share/hail/skills/hail.
 { lib, rustPlatform }:
 
 let
@@ -30,7 +29,6 @@ rustPlatform.buildRustPackage {
   doCheck = true;
 
   postInstall = ''
-    ln -s hail $out/bin/tmux-bridge
     mkdir -p $out/share/hail/skills
     cp -r skills/hail $out/share/hail/skills/hail
   '';
@@ -39,7 +37,6 @@ rustPlatform.buildRustPackage {
   installCheckPhase = ''
     runHook preInstallCheck
     [ "$($out/bin/hail --version)" = "hail ${version}" ]
-    [ "$($out/bin/tmux-bridge version)" = "hail ${version}" ]
     $out/bin/hail --help >/dev/null
     runHook postInstallCheck
   '';

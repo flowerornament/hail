@@ -112,7 +112,7 @@ The numbers are the steps in Shape above. Files under `store/`, `envelope`,
 
 ```
 main.rs            argv -> early help/version -> clap -> commands::run
-cli.rs, help.rs    the argument grammar (0.3 forms normalised) and the help pages
+cli.rs, help.rs    the argument grammar and the help pages
 ctx.rs             where this process runs: store, cwd, home, its seat and mailboxes
 seat.rs            identity: seat_of(dir) from .hail-seat, jj or git root; Addr
 route.rs           what a target names, and where mail for it goes and who to wake
@@ -172,10 +172,13 @@ were owed. A lapsed one leaves the count; `brief` says how many lapsed,
 
 ## Compatibility
 
-`tmux-bridge` stays as a symlink to `hail` for one week from install so live
-panes finish their conversations; the old `message` verb is an alias of `send`.
-The envelope prefix is `[hail ...]`; the skill tells agents to treat `[tb ...]`
-and `[tmux-bridge ...]` the same way during the alias week.
+There is one binary, `hail`, one send verb, and one send form:
+`hail <seat> <kind> [headline]`, the body on stdin. A removed spelling fails
+with a usage error rather than a guess: `--kind` and `--body` are parsed only
+to answer with that form, and a word that is no longer a verb (`note`, `name`,
+`msg`) is read as a seat, so the send fails on its kind. `hail setup` still
+recognises hook lines that ran `tmux-bridge deliver`, so it replaces them
+rather than adding a second hook beside one that no longer runs.
 
 hail does not read 0.3 state. Only hail 0.5.x imports it (`hail migrate`);
 in later releases `migrate` is a usage error that names that release, and a

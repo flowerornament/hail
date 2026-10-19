@@ -59,7 +59,6 @@ jobs:
           name="hail-${GITHUB_REF_NAME}-${{ matrix.target }}"
           mkdir -p "$name/share/hail/skills"
           cp target/release/hail "$name/"
-          ln -s hail "$name/tmux-bridge"
           cp -r skills/hail "$name/share/hail/skills/hail"
           tar -czf "$name.tar.gz" "$name"
           gh release upload "$GITHUB_REF_NAME" "$name.tar.gz" --clobber

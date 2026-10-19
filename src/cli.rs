@@ -3,7 +3,7 @@
 
 use clap::{Args, Parser, Subcommand};
 
-use crate::commands::send::{Delivery, Form, SendArgs};
+use crate::commands::send::{Delivery, SendArgs};
 use crate::envelope::Kind;
 use crate::error::{Error, Result};
 use crate::store::ids::Id;
@@ -22,14 +22,7 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Cmd {
-    #[command(alias = "message", alias = "msg")]
     Send(SendCli),
-    /// Removed in 0.5.1; says what to use instead. Drop it in 0.6.
-    #[command(hide = true)]
-    Note {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
     Sent {
         id: String,
     },
@@ -103,37 +96,22 @@ pub enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    // Old identity verbs: shims that never fail (see commands/panes.rs).
-    Name {
-        #[arg(allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
-    Hello,
-    Who {
-        seat: Option<String>,
-    },
-    Resolve {
-        seat: String,
-    },
-    Id,
 }
 
 #[derive(Args, Debug)]
 pub struct SendCli {
     pub target: String,
-    /// New form: `<kind> [headline]`. With --kind (0.3 form): `<headline>`.
+    /// `<kind> [headline]`.
     #[arg(num_args = 0..=2)]
     pub rest: Vec<String>,
-    #[arg(long)]
+    /// Not an option: parsed only to answer with the form to use.
+    #[arg(long, hide = true, allow_hyphen_values = true)]
     pub kind: Option<String>,
-    #[arg(long, allow_hyphen_values = true)]
+    /// Not an option: parsed only to answer with the form to use.
+    #[arg(long, hide = true, allow_hyphen_values = true)]
     pub body: Option<String>,
     #[arg(long)]
     pub re: Option<String>,
-    /// Accepted and ignored: hail no longer talks to bd. Kept so sends from
-    /// sessions taught the flag still go through; drop it in 0.6.
-    #[arg(long, hide = true)]
-    pub bead: Option<String>,
     #[arg(long, allow_hyphen_values = true)]
     pub scope: Option<String>,
     #[arg(long)]
@@ -166,9 +144,8 @@ fn parse_hold_for(s: &str) -> Result<std::time::Duration> {
 }
 
 pub const VERBS: &[&str] = &[
-    "send", "message", "msg", "note", "sent", "await", "deliver", "brief", "inbox", "show",
-    "whoami", "seats", "list", "read", "type", "keys", "setup", "doctor", "migrate", "gc", "help",
-    "version", "name", "hello", "who", "resolve", "id",
+    "send", "sent", "await", "deliver", "brief", "inbox", "show", "whoami", "seats", "list",
+    "read", "type", "keys", "setup", "doctor", "migrate", "gc", "help", "version",
 ];
 
 /// What to do before clap sees the arguments.
@@ -215,44 +192,28 @@ pub fn clap_message(e: &clap::Error) -> String {
 }
 
 impl SendCli {
-    /// The new form is `<seat> <kind> [headline]`; with `--kind`, the 0.3
-    /// form `<target> <headline>`.
+    /// `<seat> <kind> [headline]`, the body on stdin.
     pub fn into_args(self) -> Result<SendArgs> {
+        if self.kind.is_some() || self.body.is_some() {
+            let flag = if self.kind.is_some() {
+                "--kind"
+            } else {
+                "--body"
+            };
+            return Err(Error::Usage(format!(
+                "{flag} is gone: hail {} <kind> '<headline>', body on stdin (hail help send)",
+                self.target
+            )));
+        }
         let mut rest = self.rest.into_iter();
-        let (kind, form) = if let Some(k) = self.kind {
-            let headline = rest.next().ok_or_else(|| {
-                Error::Usage(
-                    "missing headline: hail <seat> <kind> '<headline>' (or the 0.3 form: hail <target> '<headline>' --kind <k>)".into(),
-                )
-            })?;
-            (
-                k,
-                Form::Legacy {
-                    headline,
-                    body: self.body,
-                },
-            )
-        } else {
-            if self.body.is_some() {
-                return Err(Error::Usage(
-                    "--body belongs to the 0.3 form; put the body on stdin after the headline line"
-                        .into(),
-                ));
-            }
-            let k = rest.next().ok_or_else(|| {
-                Error::Usage(format!(
-                    "--kind is missing: hail {} <kind> '<headline>' ({}). If you meant a command, 'hail help' lists them",
-                    self.target,
-                    Kind::list()
-                ))
-            })?;
-            (
-                k,
-                Form::Current {
-                    headline: rest.next(),
-                },
-            )
-        };
+        let kind = rest.next().ok_or_else(|| {
+            Error::Usage(format!(
+                "the kind is missing: hail {} <kind> '<headline>' ({}). If you meant a command, 'hail help' lists them",
+                self.target,
+                Kind::list()
+            ))
+        })?;
+        let headline = rest.next();
         if let Some(extra) = rest.next() {
             return Err(Error::Usage(format!(
                 "unexpected argument '{extra}' after the headline"
@@ -285,15 +246,10 @@ impl SendCli {
                 "--for applies to hold, block, ruling, go and ask, not {kind}"
             )));
         }
-        if let Some(b) = &self.bead {
-            eprintln!(
-                "hail: --bead is ignored now (hail no longer posts to bd); name {b} in the headline if it matters"
-            );
-        }
         Ok(SendArgs {
             target: self.target,
             kind,
-            form,
+            headline,
             re,
             scope: self.scope,
             as_name: self.as_name,

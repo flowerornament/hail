@@ -13,9 +13,10 @@ hail send — deliver a message to a seat
 <seat> is a workspace name (api-1b), a sub-seat in a shared directory
 (hail@%28), a pane (%7, or api-1a/%5 as from: prints it), or a sub-agent
 (web-1b/scout), whose mail goes to its parent marked for: and is relayed.
-'hail seats' lists them. With a headline argument
-stdin is never read. In a heredoc, quote the delimiter (<<'EOF') so nothing
-in the body is expanded.
+'hail seats' lists them. With a headline argument,
+whatever stdin carries is the body; a pipe that sends nothing within 2 s is
+not waited on. In a heredoc, quote the delimiter (<<'EOF') so nothing in the
+body is expanded.
 
 Options:
   --re <id>       The message this answers, closes (done) or lifts (release)
@@ -42,5 +43,3 @@ typed (no agent pane, or typing not confirmed): do NOT resend. It arrives on
 their next prompt, unless hail says no hook reads that seat (then check hail
 seats for where its agent works); 3 seat problem; 4 the target shows a
 permission dialog.
-
-The 0.3 form still works: hail <target> '<headline>' --kind <k> [--body text|file|-]

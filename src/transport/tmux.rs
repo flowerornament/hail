@@ -7,8 +7,8 @@ use std::process::Command;
 use super::agent::{self, Agent};
 use crate::error::{Error, Result};
 
-/// Which server to talk to: `HAIL_SOCKET` (or `TMUX_BRIDGE_SOCKET`), else the
-/// socket in a live `$TMUX`, else the default server.
+/// Which server to talk to: `HAIL_SOCKET`, else the socket in a live `$TMUX`,
+/// else the default server.
 #[derive(Debug, Clone)]
 pub struct Tmux {
     socket: Option<PathBuf>,
@@ -31,24 +31,18 @@ pub struct Pane {
 
 impl Tmux {
     pub fn detect() -> Result<Self> {
-        for var in ["HAIL_SOCKET", "TMUX_BRIDGE_SOCKET"] {
-            if let Some(v) = std::env::var_os(var).filter(|v| !v.is_empty()) {
-                let p = PathBuf::from(&v);
-                if !is_socket(&p) {
-                    return Err(Error::Usage(format!(
-                        "{var}={} is not a tmux socket; unset it or point it at a live server",
-                        p.display()
-                    )));
-                }
-                return Ok(Self {
-                    socket: Some(p),
-                    source: if var == "HAIL_SOCKET" {
-                        "HAIL_SOCKET"
-                    } else {
-                        "TMUX_BRIDGE_SOCKET"
-                    },
-                });
+        if let Some(v) = std::env::var_os("HAIL_SOCKET").filter(|v| !v.is_empty()) {
+            let p = PathBuf::from(&v);
+            if !is_socket(&p) {
+                return Err(Error::Usage(format!(
+                    "HAIL_SOCKET={} is not a tmux socket; unset it or point it at a live server",
+                    p.display()
+                )));
             }
+            return Ok(Self {
+                socket: Some(p),
+                source: "HAIL_SOCKET",
+            });
         }
         if let Some(t) = std::env::var_os("TMUX") {
             let s = t.to_string_lossy();

@@ -34,7 +34,7 @@ These are the conditions the design has to survive:
 | D2 | A directory holding more than one agent pane is a **shared seat**. Each Claude pane in it gets a checked sub-seat `<seat>@<pane>`. Sends to the bare shared seat are refused, with the sub-seats listed (exit 3). | In practice, several directories held more than one agent. A shared mailbox would be drained by whichever agent prompts first: misdelivery with a receipt that says "injected". |
 | D3 | Store: `seats/<seat>/{tmp,new,cur}`. The claim is `rename(new → cur)`. The receipt is the claimed file: its name says how it was claimed, and its mtime says when. | One claimer wins, so a body is never injected twice. The receipt cannot exist before the claim. |
 | D4 | `ids/<id>` is a symlink to the seat name, created exclusively. | Lookups take O(1) stats. Id uniqueness holds under any concurrency, and ids may keep their short format. |
-| D5 | Send takes the body from stdin; the headline is the first line. The legacy `--kind`/`--body` form is still accepted. | It removes the sender-shell class: backticks, `$()` and apostrophes. It is one action per send. |
+| D5 | Send takes the body from stdin; the headline is the first line. The legacy `--kind`/`--body` form is still accepted (amended for 0.6: no longer). | It removes the sender-shell class: backticks, `$()` and apostrophes. It is one action per send. |
 | D6 | Send needs no prior `hail read`. `type` and `keys` still do. | Sending to a seat is not driving a pane. The guard cost one call and one pane read per message, which DESIGN.md set out to remove. |
 | D7 | The transport keeps today's behaviour: leave copy mode, refuse a dialog by its structure, type, verify, Enter. | This keeps scope to the language and the store. S3 replaces it later. |
 | D8 | Hot paths spawn no subprocess. `deliver`, `brief`, `sent`, `show`, `await`, `whoami` and `inbox` touch only the filesystem. | Speed (§9), and hooks must not depend on tmux. |
@@ -73,13 +73,15 @@ EOF
 ```
 
 **Headline and body:**
-- With a positional headline (`hail api-1b fyi 'gate green'`), stdin is never read and there is no body. An agent's tool runner often leaves stdin as an open pipe that never reaches EOF, so reading it could hang a send forever.
-- Without one, stdin is read only when data arrives within 50 ms (the hooks' test, §8), then to EOF. The first line is the headline and the rest is the body. One blank line between them is customary and stripped. With no data: exit 1, `no headline: pass it as an argument or on stdin (heredoc)`.
+- With a positional headline (`hail api-1b fyi 'gate green'`), whatever stdin carries is the body. An agent's tool runner often leaves stdin as an open pipe that never reaches EOF, so a send must not hang on it: a terminal is never read, a pipe gets 2 s for its first byte and 30 s in all, and a pipe that sends nothing means no body.
+- Without one, stdin is read the same way. The first line is the headline and the rest is the body. One blank line between them is customary and stripped. With no data: exit 1, `no headline: pass it as an argument or on stdin (heredoc)`.
 - Control characters (C0 and C1, ESC especially) are stripped from the headline before it is typed. The body file keeps every byte.
 - A headline over `HAIL_ENVELOPE_MAX` (400) is folded at a sentence boundary into the body, as in 0.3. A control kind over the cap is refused (exit 2).
 - `--scope` stays a one-line flag.
 
 **Legacy form, accepted for all of 0.4:** `hail <target> '<headline>' --kind k [--body X]` and the `send|message|msg` prefixes. It is recognised by `--kind` being present. `--body X` keeps 0.3's meaning exactly: `-` is stdin, an existing readable file is read, anything else is literal text. It prints no deprecation noise, because agents learn from the skill and not from warnings.
+
+*(Amended for 0.6.)* The legacy form and the `message`/`msg` aliases are gone. `--kind` and `--body` are refused (exit 1) with `--kind is gone: hail <seat> <kind> '<headline>', body on stdin`; they are parsed only to give that answer.
 
 **Targets:**
 - A seat name, which is the normal case, or a sub-seat (`api-1a@%3`).
@@ -126,6 +128,8 @@ Exit 5 is new. Today these cases die with exit 1 after the message is written, w
 - `who [seat]`: the `seats` row for that seat.
 - `resolve <seat>`: prints the wake pane.
 - `id`: prints the pane id when known, else exits 1.
+
+*(Amended for 0.6.)* These shims are gone, and none of the five is a verb: `hail who ask '…'` sends to a seat named `who`. `whoami`, `seats` and `read` cover what they did.
 
 ## 5. Identity
 
@@ -236,7 +240,7 @@ Closing stays explicit (`done --re`). A reply of another kind with `--re` does n
 ## 7. Transport (tmux)
 
 **Socket detection is unchanged:**
-1. `HAIL_SOCKET`, or `TMUX_BRIDGE_SOCKET`;
+1. `HAIL_SOCKET` (`TMUX_BRIDGE_SOCKET` too, until 0.6);
 2. a live `$TMUX`;
 3. a scan of `/tmp/tmux-$UID`, `/private/tmp/tmux-$UID` for the server that owns the target;
 4. the default server.
@@ -435,7 +439,7 @@ Migration is a step of its own, not a side effect. The first command after an up
 **Version:**
 - `Cargo.toml` is the one version source.
 - `release.py` reads it and checks that `hail --version`, the CHANGELOG and the Nix build agree.
-- `package.nix` becomes `rustPlatform.buildRustPackage` (`cargoLock.lockFile`), and still installs the `tmux-bridge` symlink and `share/hail/skills/hail`.
+- `package.nix` becomes `rustPlatform.buildRustPackage` (`cargoLock.lockFile`), and still installs the `tmux-bridge` symlink and `share/hail/skills/hail`. *(Amended for 0.6: the symlink is gone.)*
 
 **CI:**
 - Linux and macOS: the cargo gate plus the scenarios.
@@ -548,7 +552,7 @@ Also fixed:
   for the `ps` table is unit-tested, and scenario 45 runs real detection with
   no stand-in agent list.
 
-**Amended 2026-10-08 (0.5.1): hail no longer talks to bd.** Posting bodies to beads, bead-id detection, the `bead:` header and `hail note` are gone: the coupling tied hail to another moving target (bd's versions, its Dolt server, its timeouts) for little gain, since an agent posts to its tracker itself. `--bead` is accepted and ignored with a notice, and `hail note` says what to use, until 0.6. Old files keep their `bead:` header; nothing reads it.
+**Amended 2026-10-08 (0.5.1): hail no longer talks to bd.** Posting bodies to beads, bead-id detection, the `bead:` header and `hail note` are gone: the coupling tied hail to another moving target (bd's versions, its Dolt server, its timeouts) for little gain, since an agent posts to its tracker itself. `--bead` is accepted and ignored with a notice, and `hail note` says what to use, until 0.6. *(Amended for 0.6.)* Both are gone: `--bead` is an unknown flag, and `note` is no longer a verb. Old files keep their `bead:` header; nothing reads it.
 
 **Format change, amending §6 (superseded by the amendment above):** the message file cites `bead: <id>`. The
 comment number goes to the sender's stdout (`bead=<id> comment=<n>`), and the

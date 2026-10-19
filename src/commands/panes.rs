@@ -204,38 +204,3 @@ pub fn keys(ctx: &Ctx, arg: &str, keys: &[String]) -> Result<u8> {
     mark.consume();
     Ok(0)
 }
-
-// --- old identity verbs: shims that never fail ------------------------------
-
-/// `name` must not fail: seat.sh calls it from a `SessionStart` hook.
-pub fn name_shim(ctx: &Ctx, target: Option<&str>) -> u8 {
-    let here = ctx
-        .seat_here()
-        .ok()
-        .flatten()
-        .map_or_else(|| "(none here)".into(), |s| s.name);
-    eprintln!(
-        "hail: labels are gone in 0.4; {} is seat {here}, named by its directory (hail whoami)",
-        target.unwrap_or("this pane")
-    );
-    0
-}
-
-pub fn hello_shim(ctx: &Ctx) -> Result<u8> {
-    outln!("{}", ctx.require_seat()?.name);
-    Ok(0)
-}
-
-pub fn resolve_shim(ctx: &Ctx, seat: &str) -> Result<u8> {
-    let (t, pm) = tmux_and_panes(ctx)?;
-    outln!("{}", route::drive(ctx, seat, &pm, &t)?.id);
-    Ok(0)
-}
-
-pub fn id_shim(ctx: &Ctx) -> Result<u8> {
-    let pane = ctx.tmux_pane.as_ref().ok_or_else(|| {
-        Error::State("not running inside a tmux pane ($TMUX_PANE is unset)".into())
-    })?;
-    outln!("{pane}");
-    Ok(0)
-}

@@ -456,30 +456,36 @@ fn hail_seat_cannot_name_a_directory_outside_the_store() {
 }
 
 #[test]
-fn bd_is_gone_but_its_flags_say_so() {
+fn removed_send_spellings_fail_with_the_form_to_use() {
     let w = World::new();
-    // --bead is accepted and ignored, with a notice, so older sessions' sends
-    // still go through.
-    let out = w.run(
-        "boss",
-        &[
-            "worker",
-            "ask",
-            "check x",
-            "--bead",
-            "hail-abc1",
-            "--no-wake",
-        ],
+    for (args, want) in [
+        (
+            &["worker", "check x", "--kind", "ask", "--no-wake"][..],
+            "--kind is gone: hail worker <kind> '<headline>', body on stdin",
+        ),
+        (
+            &["worker", "ask", "check x", "--body", "detail", "--no-wake"][..],
+            "--body is gone: hail worker <kind> '<headline>', body on stdin",
+        ),
+        (
+            &["worker", "ask", "check x", "--bead", "web-41", "--no-wake"][..],
+            "unexpected argument '--bead'",
+        ),
+        (
+            &["msg", "worker", "fyi", "--no-wake"][..],
+            "'worker' is not a kind",
+        ),
+    ] {
+        let out = w.run("boss", args);
+        assert_eq!(out.status.code(), Some(1), "{args:?}: {out:?}");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains(want), "{args:?}: {err}");
+    }
+    // Nothing was written: each was refused before the send.
+    assert_eq!(
+        files_under(&w.state().join("seats/worker/new")),
+        Vec::<PathBuf>::new()
     );
-    assert_eq!(out.status.code(), Some(5), "{out:?}");
-    assert!(String::from_utf8_lossy(&out.stderr).contains("--bead is ignored"));
-    let id = stdout(&out).trim().strip_prefix("id=").unwrap().to_string();
-    let msg = fs::read_to_string(w.state().join(format!("seats/worker/new/{id}.md"))).unwrap();
-    assert!(!msg.contains("bead:"), "{msg}");
-    // note says what to use instead.
-    let out = w.run("worker", &["note", "hail-abc1", "progress"]);
-    assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("bd comments add"));
 }
 
 #[test]

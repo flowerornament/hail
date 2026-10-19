@@ -1,13 +1,9 @@
-//! `hail <seat> <kind> [headline]` (body on stdin), and the legacy form
-//! `hail <target> '<headline>' --kind k [--body X]`.
+//! `hail <seat> <kind> [headline]`, the body on stdin.
 //!
 //! A send is: compose the message, find who is sending and where it goes
 //! (`route`), check the state it changes, decide whether to type, write it
 //! durably, wake the recipient, and tell the sender what became of it
 //! (`Outcome::tell`).
-
-use std::io::Read;
-use std::path::Path;
 
 use jiff::Timestamp;
 
@@ -29,7 +25,9 @@ use crate::transport::{self, TypedEnvelope, Wake, Woken};
 pub struct SendArgs {
     pub target: String,
     pub kind: Kind,
-    pub form: Form,
+    /// The headline as an argument; without one, the first line of stdin
+    /// is the headline and the rest the body.
+    pub headline: Option<String>,
     /// The message this answers, closes (`done`) or lifts (`release`).
     pub re: Option<Id>,
     pub scope: Option<String>,
@@ -39,21 +37,6 @@ pub struct SendArgs {
     /// `--for`: when a hold or block lapses; its kind's default otherwise.
     pub hold_for: Option<std::time::Duration>,
     pub delivery: Delivery,
-}
-
-/// Where the headline and body come from.
-#[derive(Debug)]
-pub enum Form {
-    /// The headline as an argument, or as the first line of stdin with the
-    /// body after it.
-    Current { headline: Option<String> },
-    /// The legacy form: the headline as an argument, and `--body`: `-` is
-    /// stdin, a readable file is read, anything else is literal text. Kept
-    /// while agents still type it; remove it with its scenarios.
-    Legacy {
-        headline: String,
-        body: Option<String>,
-    },
 }
 
 /// How far the transport goes.
@@ -320,10 +303,7 @@ impl Outcome {
 
 fn validate(a: &SendArgs) -> Result<()> {
     if a.kind.needs_re() && a.re.is_none() {
-        return Err(Error::Usage(format!(
-            "--kind {} requires --re <id>",
-            a.kind
-        )));
+        return Err(Error::Usage(format!("a {} requires --re <id>", a.kind)));
     }
     if a.scope.as_deref().is_some_and(|s| s.contains('\n')) {
         return Err(Error::Usage("--scope must be one line".into()));
@@ -333,7 +313,7 @@ fn validate(a: &SendArgs) -> Result<()> {
 
 /// The headline (sanitized, folded over the cap) and the body.
 fn compose(ctx: &Ctx, a: &SendArgs) -> Result<Draft> {
-    let (raw, body) = headline_and_body(&a.form)?;
+    let (raw, body) = headline_and_body(a.headline.as_deref())?;
     let headline = envelope::sanitize_headline(&raw);
     if headline.is_empty() {
         return Err(Error::Usage(
@@ -374,54 +354,31 @@ fn compose(ctx: &Ctx, a: &SendArgs) -> Result<Draft> {
     })
 }
 
-pub fn headline_and_body(form: &Form) -> Result<(String, Option<String>)> {
-    match form {
-        Form::Legacy { headline, body } => Ok((
-            headline.clone(),
-            body.as_deref().map(legacy_body).transpose()?,
-        )),
-        Form::Current { headline: Some(h) } => {
-            // Whatever stdin holds is the body: dropping it would lose what
-            // the sender wrote.
-            let body = input::read()?
-                .map(|b| String::from_utf8_lossy(&b).trim_matches('\n').to_string())
-                .filter(|b| !b.trim().is_empty());
-            Ok((h.clone(), body))
-        }
-        Form::Current { headline: None } => {
-            let Some(bytes) = input::read()? else {
-                return Err(Error::Usage(
-                    "no headline: pass it as an argument, or the headline then the body on stdin (heredoc)".into(),
-                ));
-            };
-            let text = String::from_utf8_lossy(&bytes);
-            let (first, rest) = text.split_once('\n').unwrap_or((&text, ""));
-            let rest = rest
-                .strip_prefix('\n')
-                .unwrap_or(rest)
-                .trim_end_matches('\n');
-            Ok((
-                first.to_string(),
-                (!rest.is_empty()).then(|| rest.to_string()),
-            ))
-        }
+pub fn headline_and_body(headline: Option<&str>) -> Result<(String, Option<String>)> {
+    if let Some(h) = headline {
+        // Whatever stdin holds is the body: dropping it would lose what the
+        // sender wrote.
+        let body = input::read()?
+            .map(|b| String::from_utf8_lossy(&b).trim_matches('\n').to_string())
+            .filter(|b| !b.trim().is_empty());
+        return Ok((h.to_string(), body));
     }
-}
-
-/// 0.3's `--body`: `-` is stdin, an existing file is read, else literal text.
-fn legacy_body(src: &str) -> Result<String> {
-    if src == "-" {
-        let mut s = String::new();
-        std::io::stdin()
-            .read_to_string(&mut s)
-            .map_err(|e| Error::State(format!("reading stdin: {e}")))?;
-        return Ok(s.trim_end_matches('\n').to_string());
-    }
-    let path = Path::new(src);
-    Ok(match std::fs::read_to_string(path) {
-        Ok(s) if path.is_file() => s.trim_end_matches('\n').to_string(),
-        _ => src.to_string(),
-    })
+    let Some(bytes) = input::read()? else {
+        return Err(Error::Usage(
+            "no headline: pass it as an argument, or the headline then the body on stdin (heredoc)"
+                .into(),
+        ));
+    };
+    let text = String::from_utf8_lossy(&bytes);
+    let (first, rest) = text.split_once('\n').unwrap_or((&text, ""));
+    let rest = rest
+        .strip_prefix('\n')
+        .unwrap_or(rest)
+        .trim_end_matches('\n');
+    Ok((
+        first.to_string(),
+        (!rest.is_empty()).then(|| rest.to_string()),
+    ))
 }
 
 /// Releases and `done` must refer to something real before anything is
