@@ -4,6 +4,18 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.6.0 - 2026-10-18
+
+A breaking release that removes obligations and the 0.3 compatibility
+layer. hail is now only messages, receipts and holds.
+
+**Upgrading:** reply to a `ruling`, `go` or `ask` with any kind and
+`--re <id>` instead of `done`; keep open work in your issue tracker. Send in
+the current form, `hail <seat> <kind> '<headline>'` with any body on stdin.
+Run `hail setup` once, to replace any hook that still calls `tmux-bridge`,
+and `hail gc` to delete the obligation records older versions left. A
+machine still holding 0.3 state must migrate with 0.5.5 first.
+
 - **`hail migrate` is gone.** The one-time import of 0.3 state, its
   `--revert`, and the checks that made hooks wait and other verbs refuse
   until it ran are removed. hail now ignores a 0.3 `inbox/` tree. To import
@@ -32,8 +44,7 @@ All notable changes to `hail` are documented in this file.
 - **Obligations are removed (breaking).** `ruling`, `go` and `ask` stay, and
   are delivered as before (typed, with the body hint), but they no longer
   leave a record on the recipient. They ask for a reply, and the reply is any
-  message with `--re <id>`: an `fyi --re <id>` for an outcome. Such an `fyi`
-  is typed, not quiet, because the asker is waiting for it. The record of
+  message with `--re <id>`: an `fyi --re <id>` for an outcome. The record of
   what each seat owed had become a second work tracker that agents rarely
   closed: seats carried hundreds of stale obligations, a record left on a
   sub-seat whose pane had gone could not be closed at all, and the 0.5.4
@@ -46,6 +57,13 @@ All notable changes to `hail` are documented in this file.
     `OWED` column.
   - `--for` applies to `hold` and `block` only again.
   - `hail gc` deletes the `seats/*/owed/` directories older versions left.
+- **An fyi that answers a question is typed.** A quiet fyi waits for its
+  reader's next prompt, but the sender of a `ruling`, `go` or `ask` is
+  usually waiting for the answer, so an `fyi --re <id>` naming one the
+  sender received wakes its recipient. Other fyis stay quiet.
+- The Home Manager smoke test (CI) takes the checkout from its own location
+  and lists files with jj in a jj workspace. It used `git rev-parse`, which in
+  a workspace without `.git` answers for an enclosing repository.
 
 ## v0.5.5 - 2026-10-18
 
