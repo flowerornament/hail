@@ -2,8 +2,9 @@
 //! `hail <target> '<headline>' --kind k [--body X]`.
 //!
 //! A send is: compose the message, find who is sending and where it goes
-//! (`route`), check the state it changes, write it durably, then wake the
-//! recipient.
+//! (`route`), check the state it changes, decide whether to type, write it
+//! durably, wake the recipient, and tell the sender what became of it
+//! (`Outcome::tell`).
 
 use std::io::Read;
 use std::path::Path;
@@ -74,9 +75,69 @@ struct Draft {
     has_body: bool,
 }
 
+/// Who is sending, where it goes, and the tmux that can wake it.
+struct Route {
+    tmux: Option<Tmux>,
+    sender: Sender,
+    mail: Mail,
+}
+
+/// Whether the send types anything, decided before anything is written.
+struct Plan<'a> {
+    /// A hook has read the recipient's mailbox lately.
+    hooked: bool,
+    /// An fyi to a hooked seat: written, never typed.
+    quiet: bool,
+    /// The pane the envelope is typed into.
+    pane: Option<&'a Pane>,
+}
+
+/// The message as written: its id, and the envelope to type.
+struct Written {
+    id: Id,
+    envelope: String,
+}
+
+/// What became of the envelope after the message was written.
+#[derive(Debug)]
+enum Outcome {
+    /// A quiet fyi: nothing typed.
+    Quiet,
+    /// Nothing typed, and why.
+    NotTyped(String),
+    /// Typed into `pane`, and what the transport saw there.
+    Typed { pane: String, woken: Woken },
+    /// Typing into `pane` failed.
+    Failed { pane: String, error: String },
+}
+
 pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
     validate(a)?;
     let draft = compose(ctx, a)?;
+    let r = route(ctx, a)?;
+    check_state(ctx, a, &r.sender)?;
+    let plan = decide(ctx, a, &r)?;
+    let w = write(ctx, a, &r, &draft, plan.quiet)?;
+    let outcome = if plan.quiet {
+        Outcome::Quiet
+    } else {
+        wake(r.tmux.as_ref(), plan.pane, &w.envelope, a.delivery, &r.mail)
+    };
+    let unread_where = (!plan.hooked).then(|| {
+        ctx.store
+            .seat_root(r.mail.to.seat())
+            .map_or_else(|| "its seat".into(), |p| p.display().to_string())
+    });
+    outln!("id={}", w.id);
+    let (line, code) = outcome.tell(&r.mail.to, unread_where.as_deref());
+    if let Some(line) = line {
+        eprintln!("hail: {line}");
+    }
+    Ok(code)
+}
+
+/// Find who is sending and where the message goes.
+fn route(ctx: &Ctx, a: &SendArgs) -> Result<Route> {
     let me = ctx.require_seat()?;
     let tmux = Tmux::detect().ok();
     let panes = tmux
@@ -87,18 +148,35 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         eprintln!("hail: warning: {w}");
     }
     let mail = route::mail(ctx, &a.target, panes.as_ref(), tmux.as_ref())?;
-    check_state(ctx, a, &sender)?;
+    Ok(Route { tmux, sender, mail })
+}
+
+/// Decide whether to type the envelope, and refuse a pane showing a dialog
+/// before anything is written.
+fn decide<'a>(ctx: &Ctx, a: &SendArgs, r: &'a Route) -> Result<Plan<'a>> {
     // An fyi never interrupts a seat whose hooks run: it rides in with the
     // recipient's next prompt. Where hooks have not run, typing is the only
     // way it would be seen, so it is typed as before.
-    let hooked = ctx.store.mailbox(&mail.to).hooked_within(QUIET_HOOKS_SEEN);
+    let hooked = ctx
+        .store
+        .mailbox(&r.mail.to)
+        .hooked_within(QUIET_HOOKS_SEEN);
     let quiet = a.kind == Kind::Fyi && hooked;
-    let wake_pane = mail.wake.as_ref().filter(|_| a.delivery.wake && !quiet);
-    if let (Some(t), Some(p), false) = (&tmux, wake_pane, a.delivery.force) {
+    let pane = r.mail.wake.as_ref().filter(|_| a.delivery.wake && !quiet);
+    if let (Some(t), Some(p), false) = (&r.tmux, pane, a.delivery.force) {
         transport::guard_dialog(t, p)?;
     }
+    Ok(Plan {
+        hooked,
+        quiet,
+        pane,
+    })
+}
 
-    // The message is durable before anything is typed.
+/// Write the message durably and record the state it changes, before
+/// anything is typed; return the envelope to type.
+fn write(ctx: &Ctx, a: &SendArgs, r: &Route, draft: &Draft, quiet: bool) -> Result<Written> {
+    let (sender, mail) = (&r.sender, &r.mail);
     let now = time::now();
     let id = ids::reserve(&ctx.store, &mail.to, now)?;
     let (from, reply) = match &a.as_name {
@@ -108,7 +186,6 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         }
         None => (sender.from(), sender.boxes.primary.to_string()),
     };
-    let re = a.re.as_ref().map(Id::as_str);
     // An obligation's default lapse is not news to its reader; a hold's is.
     let until = (a.kind.is_hold() || (a.kind.lapses() && a.hold_for.is_some()))
         .then(|| time::iso(expires_at(a, now)));
@@ -118,7 +195,7 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         reply: &reply,
         id: id.as_str(),
         for_: mail.for_.as_deref(),
-        re,
+        re: a.re.as_ref().map(Id::as_str),
         scope: a.scope.as_deref(),
         until: until.as_deref(),
     };
@@ -126,7 +203,7 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
     ctx.store
         .mailbox(&mail.to)
         .post(&id, &msg.render(), a.kind.is_control())?;
-    record_state(ctx, a, &id, &sender, &mail, &draft.headline, now)?;
+    record_state(ctx, a, &id, sender, mail, &draft.headline, now)?;
     // A quiet fyi is received whenever its reader next works: a missing
     // receipt after two minutes would be noise in the sender's brief.
     if !a.kind.is_control() && !quiet {
@@ -139,58 +216,106 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
         };
         ctx.store.put_pending(&sender.boxes.primary, &pending)?;
     }
-
     let envelope = envelope::render(
         &head,
         &draft.headline,
         draft.has_body && !a.kind.is_control(),
     );
-    let not_woken = (!quiet)
-        .then(|| wake(tmux.as_ref(), wake_pane, &envelope, a.delivery, &mail))
-        .flatten();
-
-    let unread_where = (!hooked).then(|| {
-        ctx.store
-            .seat_root(mail.to.seat())
-            .map_or_else(|| "its seat".into(), |r| r.display().to_string())
-    });
-    Ok(report(
-        &id,
-        quiet,
-        &mail.to,
-        not_woken,
-        unread_where.as_deref(),
-    ))
+    Ok(Written { id, envelope })
 }
 
-/// Tell the sender what happened: the id, and how the recipient will see it.
-/// `unread_where` is set when no hook has read the mailbox lately: then
-/// nothing will deliver the message until someone runs `hail inbox` there.
-fn report(
-    id: &Id,
-    quiet: bool,
-    to: &Addr,
-    not_woken: Option<String>,
-    unread_where: Option<&str>,
-) -> u8 {
-    outln!("id={id}");
-    if quiet {
-        eprintln!(
-            "hail: quiet: arrives with {to}'s next prompt (an fyi never interrupts; an ask or announce does)"
-        );
-    }
-    let Some(reason) = not_woken else {
-        return 0;
+/// Type the envelope into the wake pane, when there is one.
+fn wake(
+    tmux: Option<&Tmux>,
+    pane: Option<&Pane>,
+    envelope: &str,
+    d: Delivery,
+    mail: &Mail,
+) -> Outcome {
+    let (Some(t), Some(p)) = (tmux, pane) else {
+        return Outcome::NotTyped(if d.wake {
+            mail.no_wake
+                .clone()
+                .unwrap_or_else(|| "no pane to wake".into())
+        } else {
+            "--no-wake".into()
+        });
     };
-    match unread_where {
-        None => eprintln!(
-            "hail: delivered to {to}'s inbox; not submitted ({reason}); do not resend: it arrives on their next prompt"
-        ),
-        Some(root) => eprintln!(
-            "hail: delivered to {to}'s inbox; not submitted ({reason}). No hook has read {to} lately, so it waits until someone runs hail inbox in {root}. If its agent works from another directory, hail seats shows where; do not resend."
-        ),
+    let pane = p.id.clone();
+    match (TypedEnvelope { tmux: t }).wake(p, envelope, d.submit) {
+        Ok(woken) => Outcome::Typed { pane, woken },
+        Err(e) => Outcome::Failed {
+            pane,
+            error: e.to_string(),
+        },
     }
-    EXIT_NOT_WOKEN
+}
+
+impl Outcome {
+    /// What the sender is told on stderr after the `id=` line, and the exit
+    /// code: 5 when the recipient's agent has not been given the message.
+    /// `unread_where` is set when no hook has read the mailbox lately: then
+    /// nothing will deliver it until someone runs `hail inbox` there.
+    fn tell(&self, to: &Addr, unread_where: Option<&str>) -> (Option<String>, u8) {
+        let Some(reason) = self.not_woken() else {
+            let note = match self {
+                Self::Quiet => Some(format!(
+                    "quiet: arrives with {to}'s next prompt (an fyi never interrupts; an ask or announce does)"
+                )),
+                Self::Typed {
+                    pane,
+                    woken: Woken::Steer,
+                } => Some(format!(
+                    "Codex in {pane} took it as a steer: the agent gets it at its next tool call"
+                )),
+                _ => None,
+            };
+            return (note, 0);
+        };
+        let line = match unread_where {
+            None => format!(
+                "delivered to {to}'s inbox; not submitted ({reason}); do not resend: it arrives on their next prompt"
+            ),
+            Some(root) => format!(
+                "delivered to {to}'s inbox; not submitted ({reason}). No hook has read {to} lately, so it waits until someone runs hail inbox in {root}. If its agent works from another directory, hail seats shows where; do not resend."
+            ),
+        };
+        (Some(line), EXIT_NOT_WOKEN)
+    }
+
+    /// Why the agent has not been given the message, when it has not.
+    fn not_woken(&self) -> Option<String> {
+        let (pane, woken) = match self {
+            Self::Quiet => return None,
+            Self::NotTyped(reason) => return Some(reason.clone()),
+            Self::Failed { pane, error } => {
+                return Some(format!("typing into {pane} failed: {error}"));
+            }
+            Self::Typed { pane, woken } => (pane, woken),
+        };
+        match woken {
+            Woken::Typed | Woken::Steer => None,
+            Woken::Held { queued, goal } => Some(format!(
+                "typed into {pane}, but Codex holds it {}{}. The agent has not seen it; to send it now, press Esc in {pane}, which interrupts its turn",
+                if *queued {
+                    "until no turn is running"
+                } else {
+                    "until its turn ends"
+                },
+                if *goal {
+                    ", and while it pursues a goal turns follow each other, so that may be long"
+                } else {
+                    ""
+                }
+            )),
+            Woken::NotSubmitted => Some(format!(
+                "typed into {pane}, but it is still in the composer after Enter, twice: press Enter in {pane}"
+            )),
+            Woken::NotConfirmed => Some(format!(
+                "typed into {pane} but not seen there after 10 s, so not submitted; hail read {pane} 10 to check, then hail keys {pane} Enter"
+            )),
+        }
+    }
 }
 
 fn validate(a: &SendArgs) -> Result<()> {
@@ -367,55 +492,61 @@ fn record_state(
     Ok(())
 }
 
-/// Type the envelope into the wake pane. `None` when it was typed (and
-/// submitted, unless asked not to); otherwise the reason it was not.
-fn wake(
-    tmux: Option<&Tmux>,
-    pane: Option<&Pane>,
-    envelope: &str,
-    d: Delivery,
-    mail: &Mail,
-) -> Option<String> {
-    let (Some(t), Some(p)) = (tmux, pane) else {
-        return Some(if d.wake {
-            mail.no_wake
-                .clone()
-                .unwrap_or_else(|| "no pane to wake".into())
-        } else {
-            "--no-wake".into()
-        });
-    };
-    match (TypedEnvelope { tmux: t }).wake(p, envelope, d.submit) {
-        Ok(Woken::Typed) => None,
-        Ok(Woken::Steer) => {
-            eprintln!(
-                "hail: Codex in {} took it as a steer: the agent gets it at its next tool call",
-                p.id
-            );
-            None
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tell(o: &Outcome, unread_where: Option<&str>) -> (Option<String>, u8) {
+        o.tell(&Addr::parse("web-1b").expect("an address"), unread_where)
+    }
+
+    fn typed(woken: Woken) -> Outcome {
+        Outcome::Typed {
+            pane: "%3".into(),
+            woken,
         }
-        Ok(Woken::Held { queued, goal }) => Some(format!(
-            "typed into {0}, but Codex holds it {1}{2}. The agent has not seen it; to send it now, press Esc in {0}, which interrupts its turn",
-            p.id,
-            if queued {
-                "until no turn is running"
-            } else {
-                "until its turn ends"
-            },
-            if goal {
-                ", and while it pursues a goal turns follow each other, so that may be long"
-            } else {
-                ""
-            }
-        )),
-        Ok(Woken::NotSubmitted) => Some(format!(
-            "typed into {0}, but it is still in the composer after Enter, twice: press Enter in {0}",
-            p.id
-        )),
-        Ok(Woken::NotConfirmed) => Some(format!(
-            "typed into {0} but not seen there after 10 s, so not submitted; hail read {0} 10 to check, then hail keys {0} Enter",
-            p.id
-        )),
-        Err(e) => Some(format!("typing into {} failed: {e}", p.id)),
+    }
+
+    #[test]
+    fn woken_is_exit_0() {
+        assert_eq!(tell(&typed(Woken::Typed), None), (None, 0));
+        let (steer, code) = tell(&typed(Woken::Steer), Some("/x"));
+        assert_eq!(code, 0);
+        assert_eq!(
+            steer.as_deref(),
+            Some("Codex in %3 took it as a steer: the agent gets it at its next tool call")
+        );
+        let (quiet, code) = tell(&Outcome::Quiet, None);
+        assert_eq!(code, 0);
+        assert!(quiet.is_some_and(|q| q.starts_with("quiet: arrives with web-1b's next prompt")));
+    }
+
+    #[test]
+    fn not_woken_is_exit_5_with_the_reason() {
+        let held = typed(Woken::Held {
+            queued: true,
+            goal: true,
+        });
+        let (line, code) = tell(&held, None);
+        assert_eq!(code, EXIT_NOT_WOKEN);
+        assert_eq!(
+            line.as_deref(),
+            Some(
+                "delivered to web-1b's inbox; not submitted (typed into %3, but Codex holds it until no turn is running, and while it pursues a goal turns follow each other, so that may be long. The agent has not seen it; to send it now, press Esc in %3, which interrupts its turn); do not resend: it arrives on their next prompt"
+            )
+        );
+        let (line, code) = tell(&Outcome::NotTyped("--no-wake".into()), Some("/w"));
+        assert_eq!(code, EXIT_NOT_WOKEN);
+        assert!(line.is_some_and(|l| l.starts_with(
+            "delivered to web-1b's inbox; not submitted (--no-wake). No hook has read web-1b lately, so it waits until someone runs hail inbox in /w."
+        )));
+        let failed = Outcome::Failed {
+            pane: "%3".into(),
+            error: "boom".into(),
+        };
+        assert_eq!(
+            failed.not_woken().as_deref(),
+            Some("typing into %3 failed: boom")
+        );
     }
 }
