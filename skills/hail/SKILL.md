@@ -10,7 +10,7 @@ metadata:
 One-way messages between coding agents. You address a **seat**, the
 workspace an agent works in (`api-1b`). The body goes to the seat's inbox,
 a one-line envelope is typed into its agent's prompt, and a hook hands the
-body over on the agent's next turn and writes the receipt. `hail sent` and
+body over at the agent's next prompt or tool call and writes the receipt. `hail sent` and
 `hail await` read the receipt.
 
 ## Who you are
@@ -82,6 +82,10 @@ One send is one action. There is no read step and no polling. **Exit codes:**
   says no hook reads that seat, or that its workspace is gone: then nobody
   will see it. Check `hail seats` for where its agent really works, and send
   it there.
+- `1`: usage or state error, such as a removed kind; the message says what
+  to send instead.
+- `2`: a control kind (`announce hold release`) whose headline is over the
+  cap. Shorten it; control kinds carry no body.
 - `3`: seat problem; the message says the fix.
 - `4`: the target shows a permission dialog. Read it first (`hail read <seat> 10`);
   use `--force` only after reading it.

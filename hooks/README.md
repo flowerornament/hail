@@ -1,10 +1,10 @@
 # hail hooks — Claude Code & Codex integration
 
 With the hooks installed, a message body reaches the recipient on the turn its
-envelope lands, as hook context, with no tool call; the receipt says
-`injected <time>`. At session start the agent gets its brief: unread
-envelopes, sends without receipt, holds and blocks in effect, open
-obligations, five per section.
+envelope lands, or after its next tool call when it is busy, as hook context;
+the receipt says `injected <time>`. At session start the agent gets its brief:
+unread envelopes, sends without receipt and holds in effect, five per
+section.
 
 hail keeps no per-project state, so install the hooks once at user level and
 every directory works without setup. `hail setup` does it for both harnesses
@@ -32,6 +32,13 @@ complete in the envelope either way.
       {
         "hooks": [
           { "type": "command", "command": "hail deliver --format claude" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "hail deliver --format claude --event PostToolUse" }
         ]
       }
     ],
@@ -66,7 +73,7 @@ hooks = [{ type = "command", command = "hail brief --hook" }]
 
 The `[[hooks.<Event>]]` tables carry the same `hooks = [...]` array as the
 JSON form; event names are the same as in `hooks.json` (`UserPromptSubmit`,
-`SessionStart`). Codex still gates every command hook behind trust: run
+`PostToolUse`, `SessionStart`). Codex still gates every command hook behind trust: run
 `/hooks` in the Codex CLI once to review and trust them, even at user level.
 Trust is recorded against the hash of the hook text, so it holds until the
 command changes. Non-interactive automation can pass
@@ -84,6 +91,13 @@ The same blocks in a project's `.claude/settings.json` (or
       {
         "hooks": [
           { "type": "command", "command": "hail deliver --format codex" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "hail deliver --format codex --event PostToolUse" }
         ]
       }
     ],
@@ -107,8 +121,8 @@ needs its own review. A layer carrying both `.codex/hooks.json` and
 
 | event | command | output |
 |---|---|---|
-| `UserPromptSubmit` | `hail deliver --format <harness>` | `{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"<unread bodies>"}}`, or nothing. Marks each body `injected <UTC time>`. Control kinds are complete in the envelope and are not injected. |
-| `PostToolUse` (Codex only) | `hail deliver --format codex --event PostToolUse` | The same, as `PostToolUse` context. It reaches an agent that is busy: a turn that never ends (Codex goal mode) submits no prompt, and the harness may hold typed text, but every tool call runs this hook. A sub-agent's tool calls (the payload carries `agent_id`) are skipped, so mail is never claimed into a sub-agent's context. Nothing unread costs a few milliseconds. Not installed for Claude Code, whose sub-agents' tool calls would take the parent's mail. |
+| `UserPromptSubmit` | `hail deliver --format <harness>` | `{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"<unread mail>"}}`, or nothing. The mail opens with one line naming the seat and the count, and each message sits between `[hail message <id> begins]` and `[hail message <id> ends]`. Marks each body `injected <UTC time>`. Control kinds are complete in the envelope and are not injected. |
+| `PostToolUse` | `hail deliver --format <harness> --event PostToolUse` | The same, as `PostToolUse` context. It reaches an agent that is busy: a turn that never ends (Codex goal mode) submits no prompt, and the harness may hold typed text, but every tool call runs this hook. A sub-agent's tool calls (the payload carries `agent_id`, in both harnesses) are skipped, so mail is never claimed into a sub-agent's context. Nothing unread costs a few milliseconds. |
 | `SessionStart` | `hail brief --hook` | The brief as plain text (injected as context), or nothing. |
 
 `deliver` claims each body once (a Maildir rename) and takes a few

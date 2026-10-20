@@ -5,8 +5,8 @@ machine and one tmux server.
 
 An agent sends a message to another agent's **seat** (its workspace). hail
 writes the message to that seat's inbox and types a one-line envelope into the
-recipient's prompt. The recipient's prompt hook puts the body in its context,
-and that writes a receipt the sender can check or wait on. No daemon, no
+recipient's prompt. The recipient's hook puts the body in its context at its
+next prompt or tool call, and that writes a receipt the sender can check or wait on. No daemon, no
 database, no pane-reading.
 
 ```
@@ -52,9 +52,10 @@ and types only a short triage line.
    leaves copy mode, refuses a pane showing a permission dialog, types,
    checks the text appeared, and presses Enter. If no agent is running there,
    the message waits in the inbox and the send exits 5.
-3. **The hook delivers.** On the recipient's next prompt, its hook (`hail
-   deliver`) claims the body by renaming the file, so exactly one reader
-   wins, and adds it to the agent's context.
+3. **The hook delivers.** On the recipient's next prompt, or after its next
+   tool call when it is busy, its hook (`hail deliver`) claims the body by
+   renaming the file, so exactly one reader wins, and adds it to the agent's
+   context, framed so a body cannot pass for another message.
 4. **The sender checks.** The claimed file is the receipt: `hail sent` and
    `hail await` read it, and nobody reads a pane.
 
@@ -94,7 +95,7 @@ body, to act on at once. Why five: [docs/2026-10-19-five-kinds.md](docs/2026-10-
 
 ```nix
 # flake inputs — the `release` branch always points at the latest tag
-hail = { url = "github:flowerornament/hail?ref=refs/heads/release"; inputs.nixpkgs.follows = "nixpkgs"; };
+hail.url = "github:flowerornament/hail?ref=refs/heads/release";
 
 # home-manager
 imports = [ inputs.hail.homeManagerModules.default ];
@@ -109,6 +110,8 @@ programs.hail = {
 The flake advertises the `flowerornament` Cachix cache. Builds for
 `aarch64-darwin`, `aarch64-linux` and `x86_64-linux` are substituted rather
 than compiled; accept the flake config, or add the substituter yourself.
+Leave hail's `nixpkgs` input alone: `inputs.nixpkgs.follows` changes the
+build, so the cached one no longer matches and hail compiles from source.
 
 ### Other ways
 
@@ -149,9 +152,9 @@ comments. The commands it installs:
 **Things to know about hooks:**
 - **Codex trust:** Codex runs a changed hook only after you trust it with
   `/hooks`, in each session.
-- **0.3 lines still work:** the 0.3 form (`[ -n "$TMUX_PANE" ] || exit 0;
-  hail deliver --format codex`) works unchanged under 0.4, so you can leave it
-  and keep its trust.
+- **After an upgrade,** run `hail setup --check`: a release can add a hook
+  (0.7 added `PostToolUse` for Claude Code), and `hail setup` replaces older
+  hail lines, including the `[ -n "$TMUX_PANE" ] || exit 0;` form, in place.
 - **New sessions only:** both harnesses read hooks when a session starts.
 - **Hooks are optional.** Without them the envelope still arrives, and the
   agent runs `hail inbox` for the body. Hooks never fail a session: errors go
@@ -212,12 +215,12 @@ hail show 1006T171200-a3f1                    # one message by id, from any seat
 
 | code | meaning |
 |---|---|
-| 0 | typed and submitted |
+| 0 | typed and submitted, or a quiet `fyi` |
 | 1 | usage or state error; the message says what to run |
 | 2 | control-kind headline over the cap |
 | 3 | seat problem: no seat here, a shared seat addressed bare, or a name bound elsewhere |
 | 4 | the target shows a permission dialog |
-| 5 | in the inbox but not submitted (no agent running, typing not confirmed, or Codex is holding it). Do not resend: it arrives on their next prompt |
+| 5 | in the inbox but not submitted (no agent running, typing not confirmed, or Codex is holding it). Do not resend: it arrives on their next prompt, unless hail says no hook reads that seat or its workspace is gone |
 
 `read`, `type` and `keys` drive panes that are not agents: a shell, a gate
 run, a prompt waiting for `y`. Read before typing; the guard enforces it.
@@ -249,7 +252,7 @@ Start with `hail doctor`. It checks:
 | A send exits 3 "no seat here" | You are outside a workspace. `cd` to it, or add a `.hail-seat` file naming it. |
 | A send exits 4 | The target shows a permission dialog. Read it (`hail read <seat> 10`), resolve it, and resend. |
 | Nothing arrives in a session | The hooks are read at session start, so start a new session after `hail setup`. Check `~/.local/state/hail/hook-errors.log`. |
-| The brief lists "unread mail waits" in an old seat | Mail sent to a name no agent uses any more. Read it with `hail show <id>`. |
+| `doctor` notes unread mail in a seat no hook reads | Mail sent to a name no agent uses any more. Read it with `hail show <id>`; once that seat's workspace is deleted, `hail gc` archives it. |
 
 ## State and environment
 
@@ -267,7 +270,8 @@ Everything lives under `$XDG_STATE_HOME/hail` (default
 
 Read mail is kept until `hail gc` archives it (by default, mail older than
 90 days); `doctor` says when gc is due. `gc` also archives the mailboxes of
-seats whose workspace was deleted, once no hook has read them for as long. Each prompt gets at most five bodies,
+seats whose workspace was deleted, once no hook has read them for as long.
+Each prompt gets at most five bodies,
 about 8 KB, and the rest arrive on later prompts. The brief shows five
 entries per section (`--all` for everything) and a send without a receipt
 after two minutes. It drops a send that has lapsed after seven days.
@@ -301,14 +305,14 @@ just land      # gate the described jj change, then move main to it and push
 
 **The gate:**
 - **Lints:** clippy runs pedantic, with `unwrap` and `expect` denied.
-- **Scenarios:** `test/run.sh` runs 49 scenarios on a scratch tmux server and
+- **Scenarios:** `test/run.sh` runs its scenarios on a scratch tmux server and
   a scratch state root, so it never touches yours. It needs bash 4 or later.
 - **On a loaded machine,** set `HAIL_TEST_DELIVER_MS=100`.
 - **CI** runs the gate on Linux and macOS with the toolchain pinned in
   `rust-toolchain.toml`.
 
 Work happens in jj, with one workspace per agent, and `just land` is the only way to publish. [AGENTS.md](AGENTS.md) has that workflow and the rules for working on hail;
-[DESIGN.md](DESIGN.md) has the principles; the 0.4 spec and studies are in
+[DESIGN.md](DESIGN.md) has the principles; the spec, design notes and studies are in
 [docs/](docs/); the hook blocks for a hand install are in
 [hooks/README.md](hooks/README.md).
 
@@ -318,14 +322,14 @@ The version lives in one place, `Cargo.toml`.
 
 ```bash
 # in a jj workspace
-just release-bump 0.4.1   # set Cargo.toml and Cargo.lock; scaffold the CHANGELOG entry
-$EDITOR CHANGELOG.md      # replace the TODO bullet with what changed
-jj describe -m "0.4.1" && just land
+just release-bump X.Y.Z   # set Cargo.toml and Cargo.lock; scaffold the CHANGELOG entry
+$EDITOR CHANGELOG.md      # move Unreleased under the new heading; replace the TODO bullet
+jj describe -m "X.Y.Z: <summary>" && just land
                           # wait for the Nix Cache workflow on that commit to succeed
-# in the colocated checkout, ~/code/hail
+# in the colocated checkout
 jj git fetch && jj new main
 just release-verify       # versions agree, changelog filled, clean tree, the gate, Nix build
-just release-tag 0.4.1    # checks every system's build is in Cachix, tags, moves origin/release
+just release-tag X.Y.Z    # asks to confirm; checks every system's build is in Cachix, tags, moves origin/release
 ```
 
 Every push to `main` builds the package for each system, pushes it to Cachix
