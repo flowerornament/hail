@@ -10,6 +10,14 @@ All notable changes to `hail` are documented in this file.
   typed envelope to be submitted when the turn ends. A sub-agent's tool calls
   still never take their parent's mail: Claude Code marks them with
   `agent_id`, as Codex does. Run `hail setup` to install it.
+- **Delivered mail is framed.** `hail deliver` opens with one plain line,
+  `hail: N new messages for <seat> (…)`, then puts each message between
+  `[hail message <id> begins]` and `[hail message <id> ends]` instead of
+  joining them with `---`. A body line that would start with `[hail` is
+  shown as `> [hail…`, so a body holding `---` and header lines (a forged
+  `kind: stop` from another seat) is no longer read as a second message, and
+  a body can never close its frame. `hail inbox` frames each message the
+  same way. Stored messages and `hail show` are unchanged.
 
 ## v0.6.0 - 2026-10-18
 

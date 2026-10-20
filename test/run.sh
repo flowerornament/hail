@@ -345,7 +345,9 @@ s21() { # deliver: plain text, receipt says injected, silent afterwards, inbox -
   expect "rc=0" eq "$RC" 0 || ok=1
   expect "prints first body" contains "$out" "id: $a" || ok=1
   expect "prints second body" contains "$out" "second for deliver body" || ok=1
-  expect "bodies separated" contains "$out" "---" || ok=1
+  expect "opens with what it is" re "$(printf '%s\n' "$out" | head -1)" '^hail: [0-9]+ new messages for worker \(each between' || ok=1
+  expect "first framed" contains "$out" "$(printf '[hail message %s begins]\nfrom: boss/%s' "$a" "$SENDER")" || ok=1
+  expect "second framed" contains "$out" "$(printf 'second for deliver body\n[hail message %s ends]' "$b")" || ok=1
   expect "claimed as injected" exists "$SEATS/worker/cur/$a.injected.md" || ok=1
   expect "sent -> injected <time>" re "$(as "$SENDER" sent "$a")" '^injected [0-9]{4}-.*Z$' || ok=1
   out=$(as "$RECV" deliver); RC=$?
@@ -375,7 +377,7 @@ s22() { # deliver --format codex / claude: exact hook JSON, properly escaped
   fi
   send_body "$SCRATCH/body22" "$SENDER" worker fyi "claude format"; id=$(last_id)
   out=$(as "$RECV" deliver --format claude)
-  expect "claude format is the same JSON" contains "$out" "\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"from: boss/$SENDER" || ok=1
+  expect "claude format is the same JSON" contains "$out" "\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"hail: 1 new message for worker (between" || ok=1
   expect "silent when empty (codex)" empty "$(as "$RECV" deliver --format codex)" || ok=1
   expect "silent when empty (claude)" empty "$(as "$RECV" deliver --format claude)" || ok=1
   expect "bad format rejected" eq "$(as "$RECV" deliver --format vim >/dev/null 2>&1; echo $?)" 1 || ok=1

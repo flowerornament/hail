@@ -2,6 +2,7 @@
 //! None of these runs a subprocess, because hooks run them on every prompt
 //! and one fork costs more than the whole budget; keep tmux out.
 
+use std::fmt::Write as _;
 use std::fs;
 use std::io::Write;
 use std::thread::sleep;
@@ -52,38 +53,44 @@ fn deliver_inner(ctx: &Ctx, format: Option<&str>, event: &str) -> Result<()> {
         store: &ctx.store,
         made: Vec::new(),
     };
-    let mut parts = Vec::new();
-    let (mut bytes, mut more) = (0, 0);
+    // One buffer, framed as it is read: the opener goes in front once the
+    // count is known.
+    let mut text = String::new();
+    let (mut shown, mut more) = (0, 0);
     for addr in boxes.iter() {
         for id in ctx.store.mailbox(addr).unread() {
-            if parts.len() >= DELIVER_BODIES || bytes >= DELIVER_BYTES {
+            if shown >= DELIVER_BODIES || text.len() >= DELIVER_BYTES {
                 more += 1;
                 continue;
             }
-            let Some(text) = claims.claim(addr, &id)? else {
+            let Some(stored) = claims.claim(addr, &id)? else {
                 continue;
             };
-            let msg = Message::parse(&text);
+            let msg = Message::parse(&stored);
             // A headline-only message goes in as its envelope line, whether or
             // not the envelope was typed: the composer can lose typed text (a
             // dialog, a cleared prompt), and a repeated line costs less than
             // a lost message.
-            let text = match envelope_line(&msg) {
-                Some(line) if msg.body_is_headline() => line,
-                _ => text.trim_end_matches('\n').to_string(),
-            };
-            bytes += text.len();
-            parts.push(text);
+            if shown > 0 {
+                text.push('\n');
+            }
+            match envelope_line(&msg) {
+                Some(line) if msg.body_is_headline() => {
+                    envelope::frame(&mut text, id.as_str(), Some(&line), "");
+                }
+                _ => envelope::frame(&mut text, id.as_str(), None, &stored),
+            }
+            shown += 1;
         }
     }
-    if parts.is_empty() {
+    if shown == 0 {
         claims.keep();
         return Ok(());
     }
     if more > 0 {
-        parts.push(format!("({more} more unread: hail inbox prints them)"));
+        let _ = write!(text, "\n({more} more unread: hail inbox prints them)");
     }
-    let text = parts.join("\n---\n");
+    let text = format!("{}\n{text}", envelope::delivery_opener(&seat.name, shown));
     let out = match format {
         Some(_) => hooks::hook_json(event, &text),
         None => text,
@@ -153,9 +160,16 @@ pub fn inbox(ctx: &Ctx, peek: bool, all: bool) -> Result<u8> {
         for id in ids {
             let Some(found) = mb.find(&id) else { continue };
             if shown > 0 {
-                outln!("---");
+                outln!();
             }
-            print_found(&found)?;
+            let mut text = String::new();
+            if let Some(r) = found.receipt {
+                let _ = writeln!(text, "receipt: {r}");
+            }
+            text.push_str(&read(&found)?);
+            let mut framed = String::new();
+            envelope::frame(&mut framed, id.as_str(), None, &text);
+            outln!("{framed}");
             shown += 1;
             if !peek && found.receipt.is_none() {
                 mb.claim(&id, How::Read)?;
@@ -168,27 +182,26 @@ pub fn inbox(ctx: &Ctx, peek: bool, all: bool) -> Result<u8> {
     Ok(0)
 }
 
-fn print_found(found: &Found) -> Result<()> {
-    if let Some(r) = found.receipt {
-        outln!("receipt: {r}");
-    }
-    let text = fs::read_to_string(&found.path).map_err(Error::at(&found.path))?;
-    out!("{text}");
-    Ok(())
+fn read(found: &Found) -> Result<String> {
+    fs::read_to_string(&found.path).map_err(Error::at(&found.path))
 }
 
 fn parse_id(id: &str) -> Result<Id> {
     Id::parse(id).ok_or_else(|| Error::Usage(format!("'{id}' is not a message id")))
 }
 
-/// A message by id from any seat, without claiming it.
+/// A message by id from any seat, without claiming it. Printed as stored,
+/// unframed: one message, asked for by id, is the whole output.
 pub fn show(ctx: &Ctx, id: &str) -> Result<u8> {
     let found = ctx.store.find(&parse_id(id)?).ok_or_else(|| {
         Error::State(format!(
             "no message with id {id}; check the id (hail brief lists recent ones)"
         ))
     })?;
-    print_found(&found)?;
+    if let Some(r) = found.receipt {
+        outln!("receipt: {r}");
+    }
+    out!("{}", read(&found)?);
     Ok(0)
 }
 

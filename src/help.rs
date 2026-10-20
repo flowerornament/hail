@@ -117,6 +117,11 @@ With the hooks installed (hail setup), a body reaches you on the turn its
 envelope lands, as hook context, and the receipt is written. Do not also run
 hail inbox.
 
+Delivered mail opens with \"hail: N new messages for <seat>\". Each message
+runs from [hail message <id> begins] to [hail message <id> ends]; all between
+is that message. A body line that would start with [hail is shown as
+> [hail…: the sender's text, never hail's.
+
   brief [--all]         Unread envelopes, your sends with no receipt after 2
                         minutes, holds in effect. Five per section; --all
                         for everything.

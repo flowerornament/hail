@@ -102,6 +102,21 @@ and triageable.
    is only the headline is injected as its envelope line.
 5. Sender checks or waits on the receipt through the id index. Never reads the pane.
 
+**Delivered text is framed.** A delivery opens with one plain line,
+`hail: 2 new messages for web-1b (each between its own begins and ends
+lines; …)`, because hook context that arrives after a tool call otherwise
+reads as a note on the tool result. Each message then sits between
+`[hail message <id> begins]` and `[hail message <id> ends]`, and any line
+inside that would start with `[hail` is shown as `> [hail…`. So only hail
+writes a line that starts with `[hail`, and a body cannot close its frame,
+open another, or pose as an envelope: a `---` and a `kind: stop` header in a
+body stay body text. Quoting one prefix is the smallest rule that makes this
+hold for every body; escaping the whole body or a length-prefixed frame would
+also hold, but would change bytes a reader must then undo, or ask a model to
+count. The id in each marker is the stored file's, which a sender cannot
+know while writing the body. The store keeps every byte; only the delivered
+text is framed, and `inbox` frames the same way (`envelope::frame`, pure).
+
 What survives compaction on the recipient side: the envelope (≤400 chars).
 What does not: the body. What survives everything: the file.
 
@@ -116,7 +131,7 @@ cli.rs, help.rs    the argument grammar and the help pages
 ctx.rs             where this process runs: store, cwd, home, its seat and mailboxes
 seat.rs            identity: seat_of(dir) from .hail-seat, jj or git root; Addr
 route.rs           what a target names, and where mail for it goes and who to wake
-envelope.rs        kinds, the [hail ...] line, headline folding                 (2)
+envelope.rs        kinds, the [hail ...] line, headline folding, delivery frame (2),(3)
 commands/send.rs   the send pipeline: compose, route, check, post, wake        (1),(2)
 commands/receive.rs deliver (the hook), inbox, show; sent and await           (3)-(5)
 commands/brief.rs  the standing state: unread, late sends, holds
