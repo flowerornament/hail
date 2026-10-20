@@ -4,10 +4,15 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+## v0.7.0 - 2026-10-19
+
+Five kinds, and mail that reaches a busy agent sooner and reads unambiguously.
+
 **Upgrading:** send `ask` where you sent `ruling`, `go` or `nogo`, with the
 verdict first in the headline (`GO: land it, send the sha`); `announce` for
 `stop`; `hold --for <span>` for `block`. Tools that match on kind names need
-the new list.
+the new list. Run `hail setup` once for the Claude Code `PostToolUse` hook,
+and `hail gc` to archive the mailboxes of deleted workspaces.
 
 - **Breaking: five kinds.** The kinds are `ask`, `fyi`, `announce`, `hold`
   and `release`. The kind now says whether the sender wants a reply, and
