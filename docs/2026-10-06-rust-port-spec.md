@@ -98,7 +98,7 @@ EOF
 
 **Output:**
 - `id=<id>` on stdout, on exit 0 and on exit 5.
-- On exit 5, stderr says `delivered to <seat>'s inbox; not typed (<reason>); do not resend; it arrives on their next prompt`. *(Amended 0.5.1:)* when the mailbox has no `hooked` mark from the last 7 days, it says instead that no hook reads it, so it waits until someone runs `hail inbox` in the seat's root, and points to `hail seats`.
+- On exit 5, stderr says `delivered to <seat>'s inbox; not typed (<reason>); do not resend; it arrives on their next prompt`. *(Amended for 0.7.)* When the seat's workspace is gone (§6.7), it says instead `<seat>'s workspace <root> is gone, so nothing will read this message`, and points to `hail seats`. Such a seat never gets a quiet `fyi`, however recently its hooks ran. *(Amended 0.5.1:)* when the mailbox has no `hooked` mark from the last 7 days, it says instead that no hook reads it, so it waits until someone runs `hail inbox` in the seat's root, and points to `hail seats`.
 - *(0.5.1)* When the sending pane is a Claude pane whose own directory is another seat, stderr warns that replies to the sending seat will not reach that pane. A warning only: the working directory still decides who sends.
 - Warnings go to stderr, one line each, and say what to do.
 
@@ -242,6 +242,8 @@ Closing stays explicit (`done --re`). A reply of another kind with `--re` does n
 
 `hail gc [--days N]` (default 90) moves `cur/` messages older than N days into `archive/<yyyy-mm>/<seat>/`, removes their `ids/` entries, and appends `<id> <yyyy-mm> <seat>` to `archive/index` (one line per message, append-only). `sent` and `show` consult that index only when `ids/` misses. It never runs implicitly in 0.4. `doctor` reports when gc is due (`cur/` over 5,000 files).
 
+*(Amended for 0.7.)* A seat whose workspace is gone is one whose recorded root (`seats/<seat>/root`) no longer exists (`NotFound`; any other error counts as present). `gc` also moves the mailboxes of such seats, sub-seats included, to `archive/gone-<epoch>/<mailbox>/` when no hook has read them within N days, appends an index line `<id> gone-<epoch> <mailbox>` for each message, unread or claimed, and drops their `ids/` entries; `sent` and `show` still find them. It prints `archived <n> mailboxes (<m> unread) of seats whose workspace is gone …`. The seat name is then unbound, and a send to it fails as for any unknown seat. `doctor` adds one note listing those mailboxes, with their unread counts and old roots, and leaves them out of its unread-but-unhooked notes.
+
 ## 7. Transport (tmux)
 
 **Socket detection is unchanged:**
@@ -296,7 +298,8 @@ Closing stays explicit (`done --re`). A reply of another kind with `--re` does n
 - the state root writable, with sizes;
 - whether gc is due;
 - legacy state present but not migrated (amended for 0.6: removed);
-- for each seat: its root binding, a shared marker with live panes, orphaned sub-seats, and a verb-named seat.
+- for each seat: its root binding, a shared marker with live panes, orphaned sub-seats, and a verb-named seat;
+- *(0.7)* mailboxes of seats whose workspace is gone, which `gc` archives.
 
 ## 9. Speed
 

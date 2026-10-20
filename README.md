@@ -237,7 +237,8 @@ Start with `hail doctor`. It checks:
 - the seat for this directory and its root;
 - tmux, the agent panes, and this seat's wake pane or sub-seats;
 - the hooks in each harness config;
-- unread mail waiting in seats where no agent sits;
+- unread mail waiting in seats where no agent sits, and seats whose workspace
+  was deleted;
 - whether the state is due for `hail gc`.
 
 | symptom | cause and fix |
@@ -265,7 +266,8 @@ Everything lives under `$XDG_STATE_HOME/hail` (default
 | `archive/` | `hail gc` output and the 0.3 tree |
 
 Read mail is kept until `hail gc` archives it (by default, mail older than
-90 days); `doctor` says when gc is due. Each prompt gets at most five bodies,
+90 days); `doctor` says when gc is due. `gc` also archives the mailboxes of
+seats whose workspace was deleted, once no hook has read them for as long. Each prompt gets at most five bodies,
 about 8 KB, and the rest arrive on later prompts. The brief shows five
 entries per section (`--all` for everything) and a send without a receipt
 after two minutes. It drops a send that has lapsed after seven days.

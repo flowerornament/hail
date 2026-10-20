@@ -79,8 +79,9 @@ One send is one action. There is no read step and no polling. **Exit codes:**
 - `0`: typed and submitted, or a quiet `fyi` (it says so).
 - `5`: written to the inbox but not typed (no agent pane, or typing not
   confirmed). **Do not resend.** It arrives on their next prompt, unless hail
-  says no hook reads that seat: then nobody will see it until someone runs
-  `hail inbox` there. Check `hail seats` for where its agent really works.
+  says no hook reads that seat, or that its workspace is gone: then nobody
+  will see it. Check `hail seats` for where its agent really works, and send
+  it there.
 - `3`: seat problem; the message says the fix.
 - `4`: the target shows a permission dialog. Read it first (`hail read <seat> 10`);
   use `--force` only after reading it.

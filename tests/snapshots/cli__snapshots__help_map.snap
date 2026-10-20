@@ -30,7 +30,8 @@ Panes (for shells and processes, not agents):
 Tool:
   setup [--check] [--yes]         Install the Claude Code and Codex hooks
   doctor                          Check everything; each problem names its fix
-  gc [--days N]                   Archive read mail older than N days (default 90)
+  gc [--days N]                   Archive read mail older than N days (default 90),
+                                  and seats whose workspace is gone
   help [topic] · version          Topics: send kinds receive seats panes setup state
 
 Examples:

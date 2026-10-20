@@ -22,6 +22,12 @@ the new list.
 - **A hold lasts 8h unless `--for` says otherwise,** at most 7d. The 7-day
   default that `block` had is gone with it; brief's section is now
   "holds on me".
+- **Mail to a deleted workspace says so.** A send to a seat whose workspace
+  directory no longer exists still exits 5, but says nothing will read the
+  message and points to `hail seats`; an `fyi` to it is never quiet.
+  `hail gc` archives the mailboxes of such seats once no hook has read them
+  for `--days`, and says how many; `show` and `sent` still find their
+  messages. `hail doctor` lists them.
 - **A busy Claude Code agent gets its mail at its next tool call.** `hail
   setup` now installs the `PostToolUse` hook for Claude Code as well as
   Codex, so a message reaches an agent mid-turn instead of waiting for the

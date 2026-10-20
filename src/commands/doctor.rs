@@ -45,6 +45,7 @@ pub fn run(ctx: &Ctx) -> u8 {
     checks.extend(tmux_checks(ctx, seat.ok().flatten().as_ref()));
     checks.extend(hook_checks());
     checks.extend(size_checks(ctx));
+    checks.extend(gone_checks(ctx));
     checks.extend(unread_checks(ctx));
 
     let mut problems = 0;
@@ -144,6 +145,33 @@ fn size_checks(ctx: &Ctx) -> Vec<Check> {
         .collect()
 }
 
+/// Mailboxes of seats whose workspace was deleted: nothing will read them,
+/// and `hail gc` archives them once no hook has read them for its `--days`.
+fn gone_checks(ctx: &Ctx) -> Vec<Check> {
+    const SHOWN: usize = 8;
+    let gone = ctx.store.gone_mailboxes();
+    if gone.is_empty() {
+        return Vec::new();
+    }
+    let unread = |addr: &Addr| ctx.store.mailbox(addr).unread().len();
+    let mut names: Vec<String> = gone
+        .iter()
+        .take(SHOWN)
+        .map(|(addr, root)| format!("{addr} ({} unread, was {})", unread(addr), root.display()))
+        .collect();
+    if gone.len() > SHOWN {
+        names.push(format!("and {} more", gone.len() - SHOWN));
+    }
+    let total: usize = gone.iter().map(|(a, _)| unread(a)).sum();
+    // A note: the mail is safe on disk, and nothing about this install is
+    // broken.
+    vec![Check::Note(format!(
+        "{} mailboxes ({total} unread) belong to seats whose workspace is gone, so nothing will read them; hail gc archives them once no hook has read them for --days: {}",
+        gone.len(),
+        names.join(", ")
+    ))]
+}
+
 /// Unread mail that nothing will deliver: no prompt hook has read the mailbox
 /// lately, so it waits until someone runs `hail inbox` there. The usual cause
 /// is an agent whose session runs in another directory than the seat it was
@@ -157,7 +185,8 @@ fn unread_checks(ctx: &Ctx) -> Vec<Check> {
         .filter_map(|addr| {
             let mb = ctx.store.mailbox(&addr);
             let n = mb.unread().len();
-            (n > 0 && !mb.hooked_within(QUIET_HOOKS_SEEN)).then_some((n, addr))
+            let gone = ctx.store.gone_root(addr.seat()).is_some();
+            (n > 0 && !gone && !mb.hooked_within(QUIET_HOOKS_SEEN)).then_some((n, addr))
         })
         .collect();
     stranded.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
@@ -168,8 +197,7 @@ fn unread_checks(ctx: &Ctx) -> Vec<Check> {
             let root = ctx
                 .store
                 .seat_root(addr.seat())
-                .filter(|r| r.is_dir())
-                .map_or_else(|| "its directory, which is gone".into(), |r| r.display().to_string());
+                .map_or_else(|| "its directory".into(), |r| r.display().to_string());
             // A note, not a fault of this install: doctor still exits 0.
             Check::Note(format!(
                 "{addr} has {n} unread and no hook has read it lately: if its agent works elsewhere, tell senders its address; else run hail inbox in {root}"

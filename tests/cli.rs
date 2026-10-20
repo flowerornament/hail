@@ -388,6 +388,59 @@ fn a_done_from_an_older_hail_is_still_delivered_and_shown() {
 }
 
 #[test]
+fn a_seat_whose_workspace_is_gone_is_told_and_archived() {
+    let w = World::new();
+    let old = w.root.join("old");
+    fs::create_dir_all(&old).unwrap();
+    fs::write(old.join(".hail-seat"), "old").unwrap();
+    assert!(w.run("old", &["whoami"]).status.success());
+    // Its hooks ran, so an fyi would be quiet while the workspace exists.
+    assert!(
+        w.run("old", &["deliver", "--format", "claude"])
+            .status
+            .success()
+    );
+    assert!(w.state().join("seats/old/hooked").exists());
+    let first = id_of(&w.run("boss", &["old", "ask", "review this", "--no-wake"]));
+    fs::remove_dir_all(&old).unwrap();
+
+    // Not quiet, and the sender is told nobody will read it.
+    let out = w.run("boss", &["old", "fyi", "for the record", "--no-wake"]);
+    assert_eq!(out.status.code(), Some(5), "{out:?}");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains(&format!(
+            "old's workspace {} is gone, so nothing will read this message",
+            old.display()
+        )),
+        "{err}"
+    );
+
+    let doctor = stdout(&w.run("boss", &["doctor"]));
+    assert!(
+        doctor.contains("1 mailboxes (2 unread) belong to seats whose workspace is gone")
+            && doctor.contains("old (2 unread, was "),
+        "{doctor}"
+    );
+
+    // A hook ran today, so the default gc leaves it; --days 0 does not.
+    let gc = stdout(&w.run("boss", &["gc"]));
+    assert!(gc.contains("archived 0 mailboxes (0 unread)"), "{gc}");
+    let gc = stdout(&w.run("boss", &["gc", "--days", "0"]));
+    assert!(gc.contains("archived 1 mailboxes (2 unread)"), "{gc}");
+    assert!(!w.state().join("seats/old").exists());
+    assert!(w.state().join("seats/worker").is_dir(), "live seats stay");
+    // Still found by id.
+    let shown = w.run("boss", &["show", &first]);
+    assert!(stdout(&shown).contains("ask: review this"), "{shown:?}");
+    assert_eq!(
+        stdout(&w.run("boss", &["sent", &first])).trim(),
+        "delivered"
+    );
+    assert!(!stdout(&w.run("boss", &["doctor"])).contains("workspace is gone"));
+}
+
+#[test]
 fn gc_removes_obligation_directories_from_older_versions() {
     let w = World::new();
     let owed = w.state().join("seats/worker/owed");

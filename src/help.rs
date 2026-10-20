@@ -30,7 +30,8 @@ Panes (for shells and processes, not agents):
 Tool:
   setup [--check] [--yes]         Install the Claude Code and Codex hooks
   doctor                          Check everything; each problem names its fix
-  gc [--days N]                   Archive read mail older than N days (default 90)
+  gc [--days N]                   Archive read mail older than N days (default 90),
+                                  and seats whose workspace is gone
   help [topic] · version          Topics: send kinds receive seats panes setup state
 
 Examples:
@@ -82,9 +83,9 @@ belongs in your issue tracker, not in someone's prompt.
 
 Exit: 0 typed and submitted, or a quiet fyi; 5 written to the inbox but not
 typed (no agent pane, or typing not confirmed): do NOT resend. It arrives on
-their next prompt, unless hail says no hook reads that seat (then check hail
-seats for where its agent works); 3 seat problem; 4 the target shows a
-permission dialog.
+their next prompt, unless hail says no hook reads that seat or its workspace
+is gone (then check hail seats for where its agent works); 3 seat problem; 4
+the target shows a permission dialog.
 ";
 
 pub const KINDS: &str = "\
@@ -190,7 +191,8 @@ State ($XDG_STATE_HOME/hail, default ~/.local/state/hail):
   holds/<id>                        holds and blocks (expires: says when each lapses)
   holds/lapsed/<id>                 lapsed ones, after their issuer's brief said so
   ids/<id> -> <seat>                the id index
-  archive/                          gc'd mail and the 0.3 tree
+  archive/                          gc'd mail, the mailboxes of seats whose
+                                    workspace is gone (gone-<t>/), the 0.3 tree
 
 A 0.3 state tree (inbox/ in the root) is imported only by hail 0.5.x:
   nix run github:flowerornament/hail/v0.5.5 -- migrate

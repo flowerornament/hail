@@ -5,6 +5,8 @@
 //! durably, wake the recipient, and tell the sender what became of it
 //! (`Outcome::tell`).
 
+use std::path::PathBuf;
+
 use jiff::Timestamp;
 
 use crate::ctx::Ctx;
@@ -70,6 +72,8 @@ struct Route {
 struct Plan<'a> {
     /// A hook has read the recipient's mailbox lately.
     hooked: bool,
+    /// The recipient seat's workspace, when it has been deleted.
+    gone: Option<PathBuf>,
     /// An fyi to a hooked seat: written, never typed.
     quiet: bool,
     /// The pane the envelope is typed into.
@@ -107,13 +111,18 @@ pub fn run(ctx: &Ctx, a: &SendArgs) -> Result<u8> {
     } else {
         wake(r.tmux.as_ref(), plan.pane, &w.envelope, a.delivery, &r.mail)
     };
-    let unread_where = (!plan.hooked).then(|| {
-        ctx.store
-            .seat_root(r.mail.to.seat())
-            .map_or_else(|| "its seat".into(), |p| p.display().to_string())
-    });
+    let unread = match plan.gone {
+        Some(root) => Some(Unread::Gone(root.display().to_string())),
+        None => (!plan.hooked).then(|| {
+            Unread::NoHook(
+                ctx.store
+                    .seat_root(r.mail.to.seat())
+                    .map_or_else(|| "its seat".into(), |p| p.display().to_string()),
+            )
+        }),
+    };
     outln!("id={}", w.id);
-    let (line, code) = outcome.tell(&r.mail.to, unread_where.as_deref());
+    let (line, code) = outcome.tell(&r.mail.to, unread.as_ref());
     if let Some(line) = line {
         eprintln!("hail: {line}");
     }
@@ -142,17 +151,22 @@ fn decide<'a>(ctx: &Ctx, a: &SendArgs, r: &'a Route) -> Result<Plan<'a>> {
     // recipient's next prompt. Where hooks have not run, typing is the only
     // way it would be seen, so it is typed as before. An fyi that answers a
     // question is typed too: the asker is waiting for it.
+    // A seat whose workspace was deleted has no one to read it, however
+    // recently its hooks ran.
     let hooked = ctx
         .store
         .mailbox(&r.mail.to)
         .hooked_within(QUIET_HOOKS_SEEN);
-    let quiet = a.kind == Kind::Fyi && hooked && !answers_a_question(ctx, a, &r.sender);
+    let gone = ctx.store.gone_root(r.mail.to.seat());
+    let quiet =
+        a.kind == Kind::Fyi && hooked && gone.is_none() && !answers_a_question(ctx, a, &r.sender);
     let pane = r.mail.wake.as_ref().filter(|_| a.delivery.wake && !quiet);
     if let (Some(t), Some(p), false) = (&r.tmux, pane, a.delivery.force) {
         transport::guard_dialog(t, p)?;
     }
     Ok(Plan {
         hooked,
+        gone,
         quiet,
         pane,
     })
@@ -248,12 +262,21 @@ fn wake(
     }
 }
 
+/// Why mail left unwoken may never be read, and where it sits.
+#[derive(Debug)]
+enum Unread {
+    /// No hook has read the mailbox lately: it waits until someone runs
+    /// `hail inbox` in this root.
+    NoHook(String),
+    /// The seat's workspace, this root, was deleted: nothing will read it.
+    Gone(String),
+}
+
 impl Outcome {
     /// What the sender is told on stderr after the `id=` line, and the exit
     /// code: 5 when the recipient's agent has not been given the message.
-    /// `unread_where` is set when no hook has read the mailbox lately: then
-    /// nothing will deliver it until someone runs `hail inbox` there.
-    fn tell(&self, to: &Addr, unread_where: Option<&str>) -> (Option<String>, u8) {
+    /// `unread` is set when nothing is likely to deliver it.
+    fn tell(&self, to: &Addr, unread: Option<&Unread>) -> (Option<String>, u8) {
         let Some(reason) = self.not_woken() else {
             let note = match self {
                 Self::Quiet => Some(format!(
@@ -269,11 +292,14 @@ impl Outcome {
             };
             return (note, 0);
         };
-        let line = match unread_where {
+        let line = match unread {
             None => format!(
                 "delivered to {to}'s inbox; not submitted ({reason}); do not resend: it arrives on their next prompt"
             ),
-            Some(root) => format!(
+            Some(Unread::Gone(root)) => format!(
+                "delivered to {to}'s inbox; not submitted ({reason}). {to}'s workspace {root} is gone, so nothing will read this message. hail seats shows where its agent works now; send it there."
+            ),
+            Some(Unread::NoHook(root)) => format!(
                 "delivered to {to}'s inbox; not submitted ({reason}). No hook has read {to} lately, so it waits until someone runs hail inbox in {root}. If its agent works from another directory, hail seats shows where; do not resend."
             ),
         };
@@ -454,8 +480,8 @@ fn record_state(
 mod tests {
     use super::*;
 
-    fn tell(o: &Outcome, unread_where: Option<&str>) -> (Option<String>, u8) {
-        o.tell(&Addr::parse("web-1b").expect("an address"), unread_where)
+    fn tell(o: &Outcome, unread: Option<&Unread>) -> (Option<String>, u8) {
+        o.tell(&Addr::parse("web-1b").expect("an address"), unread)
     }
 
     fn typed(woken: Woken) -> Outcome {
@@ -468,7 +494,7 @@ mod tests {
     #[test]
     fn woken_is_exit_0() {
         assert_eq!(tell(&typed(Woken::Typed), None), (None, 0));
-        let (steer, code) = tell(&typed(Woken::Steer), Some("/x"));
+        let (steer, code) = tell(&typed(Woken::Steer), Some(&Unread::NoHook("/x".into())));
         assert_eq!(code, 0);
         assert_eq!(
             steer.as_deref(),
@@ -493,11 +519,23 @@ mod tests {
                 "delivered to web-1b's inbox; not submitted (typed into %3, but Codex holds it until no turn is running, and while it pursues a goal turns follow each other, so that may be long. The agent has not seen it; to send it now, press Esc in %3, which interrupts its turn); do not resend: it arrives on their next prompt"
             )
         );
-        let (line, code) = tell(&Outcome::NotTyped("--no-wake".into()), Some("/w"));
+        let (line, code) = tell(
+            &Outcome::NotTyped("--no-wake".into()),
+            Some(&Unread::NoHook("/w".into())),
+        );
         assert_eq!(code, EXIT_NOT_WOKEN);
         assert!(line.is_some_and(|l| l.starts_with(
             "delivered to web-1b's inbox; not submitted (--no-wake). No hook has read web-1b lately, so it waits until someone runs hail inbox in /w."
         )));
+        let gone = Unread::Gone("/w".into());
+        let (line, code) = tell(&Outcome::NotTyped("no pane to wake".into()), Some(&gone));
+        assert_eq!(code, EXIT_NOT_WOKEN);
+        assert!(
+            line.as_deref()
+                .is_some_and(|l| l
+                    .contains("web-1b's workspace /w is gone, so nothing will read this message")),
+            "{line:?}"
+        );
         let failed = Outcome::Failed {
             pane: "%3".into(),
             error: "boom".into(),

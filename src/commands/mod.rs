@@ -44,6 +44,12 @@ fn gc(ctx: &Ctx, days: u64) -> Result<u8> {
         "archived {moved} read messages older than {days} days into {}",
         ctx.store.archive_dir().display()
     );
+    let gone = store::gc::archive_gone(&ctx.store, days)?;
+    outln!(
+        "archived {} mailboxes ({} unread) of seats whose workspace is gone and that no hook read in {days} days",
+        gone.mailboxes,
+        gone.unread
+    );
     let now = crate::time::now();
     let cutoff = crate::time::before(
         now,

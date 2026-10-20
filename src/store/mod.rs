@@ -108,6 +108,23 @@ impl Store {
             .ok()
             .map(|s| PathBuf::from(s.trim_end()))
     }
+
+    /// The root a seat is bound to, when that directory no longer exists:
+    /// the workspace was deleted, so no agent will read the seat's mail.
+    /// `None` when the root exists, cannot be checked, or was never recorded.
+    pub fn gone_root(&self, name: &str) -> Option<PathBuf> {
+        self.seat_root(name)
+            .filter(|r| fs::metadata(r).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound))
+    }
+
+    /// Mailboxes of seats whose workspace is gone ([`Store::gone_root`]),
+    /// sub-seats included.
+    pub fn gone_mailboxes(&self) -> Vec<(Addr, PathBuf)> {
+        self.mailboxes()
+            .into_iter()
+            .filter_map(|a| self.gone_root(a.seat()).map(|r| (a, r)))
+            .collect()
+    }
 }
 
 /// Where a message stands, as `hail sent` prints it.
