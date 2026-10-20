@@ -188,7 +188,7 @@ State ($XDG_STATE_HOME/hail, default ~/.local/state/hail):
   seats/<seat>/new/<id>.md          unread
   seats/<seat>/cur/<id>.<how>.md    claimed (how: injected, read, inline; mtime = when)
   seats/<seat>/pending/<id>         sends with no receipt yet
-  holds/<id>                        holds and blocks (expires: says when each lapses)
+  holds/<id>                        holds in effect (expires: says when each lapses)
   holds/lapsed/<id>                 lapsed ones, after their issuer's brief said so
   ids/<id> -> <seat>                the id index
   archive/                          gc'd mail, the mailboxes of seats whose
