@@ -1,6 +1,6 @@
 //! Standing state as small header-only records, typed here so the header
 //! names live in one place:
-//! - `holds/<id>`: holds and blocks in effect, global ([`Entry`]);
+//! - `holds/<id>`: holds in effect, global ([`Entry`]);
 //! - `seats/<mailbox>/pending/<id>`: my sends with no receipt yet ([`Pending`]).
 
 use std::fs;
@@ -13,15 +13,15 @@ use super::message::Message;
 use super::{Store, list_names, write_atomic};
 use crate::envelope::Kind;
 use crate::error::{Error, Result};
-use crate::policy::{BLOCK_DEFAULT, HOLD_DEFAULT};
+use crate::policy::HOLD_DEFAULT;
 use crate::seat::Addr;
 use crate::time;
 
-/// A hold or block: what was asked, by whom, of whom.
+/// A hold: what was asked, by whom, of whom.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub id: Id,
-    /// `None` when a 0.3 record names a kind this version does not know.
+    /// `None` when a record names a kind this version does not know.
     pub kind: Option<Kind>,
     pub issuer: Addr,
     pub to: Addr,
@@ -32,14 +32,6 @@ pub struct Entry {
     /// (see [`Entry::lapses_at`]).
     pub expires: Option<Timestamp>,
     pub headline: String,
-}
-
-/// How long a hold or block lasts when `--for` does not say.
-pub const fn hold_default(kind: Kind) -> std::time::Duration {
-    match kind {
-        Kind::Block => BLOCK_DEFAULT,
-        _ => HOLD_DEFAULT,
-    }
 }
 
 /// A send not yet received.
@@ -66,14 +58,11 @@ impl Entry {
             .header("headline", &self.headline)
     }
 
-    /// When this lapses: its `expires:`, else its kind's default after it
-    /// was sent. A record with neither has already lapsed.
+    /// When this lapses: its `expires:`, else the default after it was
+    /// sent. A record with neither has already lapsed.
     pub fn lapses_at(&self) -> Timestamp {
         self.expires
-            .or_else(|| {
-                self.time
-                    .map(|t| time::after(t, hold_default(self.kind.unwrap_or(Kind::Hold))))
-            })
+            .or_else(|| self.time.map(|t| time::after(t, HOLD_DEFAULT)))
             .unwrap_or(Timestamp::UNIX_EPOCH)
     }
 
@@ -81,7 +70,7 @@ impl Entry {
     fn from_message(id: Id, m: &Message) -> Self {
         Self {
             id,
-            kind: m.get("kind").and_then(Kind::parse),
+            kind: m.get("kind").and_then(Kind::parse_stored),
             issuer: header_addr(m, "issuer"),
             to: header_addr(m, "to"),
             scope: m.get("scope").filter(|s| !s.is_empty()).map(str::to_string),
@@ -111,7 +100,7 @@ impl Pending {
     pub fn from_message(id: Id, m: &Message) -> Self {
         Self {
             id,
-            kind: m.get("kind").and_then(Kind::parse),
+            kind: m.get("kind").and_then(Kind::parse_stored),
             to: header_addr(m, "to"),
             sent: m
                 .get("epoch")
@@ -272,7 +261,7 @@ mod tests {
         let store = Store::at(t.path());
         let e = Entry {
             id: Id::parse("1007T000000-aaaa").unwrap(),
-            kind: Some(Kind::Go),
+            kind: Some(Kind::Hold),
             issuer: Addr::parse("boss").unwrap(),
             to: Addr::parse("hail@%28").unwrap(),
             scope: Some("commit".into()),
@@ -306,7 +295,7 @@ mod tests {
             headline: id.into(),
         };
         // Lapsed by its own expires:; in effect; an old record with no
-        // expires: (8h default for a hold, 7d for a block); an orphan.
+        // expires: (8h default); an orphan.
         let gone = hold(
             "1008T000000-aaaa",
             Kind::Hold,
@@ -322,16 +311,12 @@ mod tests {
             Some(now + jiff::SignedDuration::from_hours(1)),
         );
         let old_hold = hold("1001T000000-cccc", Kind::Hold, "boss", hours(9), None);
-        let old_block = hold("1001T000000-dddd", Kind::Block, "boss", hours(9), None);
         let orphan = hold("0905T000000-eeee", Kind::Hold, "%2", hours(500), None);
-        for e in [&gone, &live, &old_hold, &old_block, &orphan] {
+        for e in [&gone, &live, &old_hold, &orphan] {
             store.put_hold(e).unwrap();
         }
         let ids = |v: Vec<Entry>| v.into_iter().map(|e| e.id).collect::<Vec<_>>();
-        assert_eq!(
-            ids(store.holds(now)),
-            vec![live.id.clone(), old_block.id.clone()]
-        );
+        assert_eq!(ids(store.holds(now)), vec![live.id.clone()]);
 
         // Someone else's brief retires nothing; the issuer's retires its own.
         let worker = Addr::parse("worker").unwrap();
@@ -355,7 +340,31 @@ mod tests {
         assert_eq!(store.sweep_holds(now, hours(48)), 1);
         assert!(store.hold(&orphan.id).is_none());
         assert_eq!(store.sweep_holds(now, now), 2);
-        assert_eq!(ids(store.holds(now)), vec![live.id, old_block.id]);
+        assert_eq!(ids(store.holds(now)), vec![live.id]);
+    }
+
+    #[test]
+    fn a_block_from_an_older_version_reads_as_a_hold() {
+        let t = tempfile::tempdir().unwrap();
+        let store = Store::at(t.path());
+        let now = time::now().round(jiff::Unit::Second).unwrap();
+        let id = Id::parse("1001T000000-dddd").unwrap();
+        let e = Entry {
+            id: id.clone(),
+            kind: Some(Kind::Hold),
+            issuer: Addr::parse("boss").unwrap(),
+            to: Addr::parse("worker").unwrap(),
+            scope: None,
+            time: Some(now),
+            re: None,
+            expires: Some(time::after(now, std::time::Duration::from_hours(48))),
+            headline: "blocked on the vendor".into(),
+        };
+        store.put_hold(&e).unwrap();
+        let path = store.holds_dir().join(id.as_str());
+        let text = fs::read_to_string(&path).unwrap();
+        fs::write(&path, text.replace("kind: hold", "kind: block")).unwrap();
+        assert_eq!(store.holds(now), vec![e]);
     }
 
     #[test]

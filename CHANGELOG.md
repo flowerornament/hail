@@ -4,6 +4,24 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+**Upgrading:** send `ask` where you sent `ruling`, `go` or `nogo`, with the
+verdict first in the headline (`GO: land it, send the sha`); `announce` for
+`stop`; `hold --for <span>` for `block`. Tools that match on kind names need
+the new list.
+
+- **Breaking: five kinds.** The kinds are `ask`, `fyi`, `announce`, `hold`
+  and `release`. The kind now says whether the sender wants a reply, and
+  `--re` says what a message answers. `ruling`, `go` and `nogo` were
+  delivered exactly like `ask`, and were mostly sent as answers to one;
+  `stop` said what `announce` says; `block` was a longer hold. Sending a
+  removed kind fails with a usage error that names its replacement, and
+  writes nothing. Stored messages of those kinds are still listed, shown
+  and delivered as they were written. An `fyi --re` to a stored `ruling` or
+  `go` is still typed, and a stored `block` is still a hold. The design note
+  is docs/2026-10-19-five-kinds.md.
+- **A hold lasts 8h unless `--for` says otherwise,** at most 7d. The 7-day
+  default that `block` had is gone with it; brief's section is now
+  "holds on me".
 - **A busy Claude Code agent gets its mail at its next tool call.** `hail
   setup` now installs the `PostToolUse` hook for Claude Code as well as
   Codex, so a message reaches an agent mid-turn instead of waiting for the

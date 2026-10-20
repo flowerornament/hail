@@ -87,7 +87,7 @@ mod tests {
     #[test]
     fn sent_and_answered() {
         let s = screen(&format!(
-            "› [hail kind:ruling from:api-1a reply:api-1a {ID}] go\n• Working (3s • esc to interrupt)\n› Ask Codex to do anything\n"
+            "› [hail kind:ask from:api-1a reply:api-1a {ID}] go\n• Working (3s • esc to interrupt)\n› Ask Codex to do anything\n"
         ));
         assert_eq!(classify(&s, ID), Landed::Submitted);
     }
@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn left_in_the_composer_even_when_wrapped() {
         let s = screen(&format!(
-            "› [hail kind:ruling from:api-1a reply:api-1a\n  {ID}] a headline long enough to wrap\n"
+            "› [hail kind:ask from:api-1a reply:api-1a\n  {ID}] a headline long enough to wrap\n"
         ));
         assert_eq!(classify(&s, ID), Landed::Composer);
     }
@@ -108,7 +108,7 @@ mod tests {
             (QUEUED, Landed::Queued),
         ] {
             let s = screen(&format!(
-                "• Working (9s • esc to interrupt)\n{header}\n  ↳ [hail kind:ruling from:api-1a reply:api-1a {ID}] go\n› Ask Codex to do anything\n"
+                "• Working (9s • esc to interrupt)\n{header}\n  ↳ [hail kind:ask from:api-1a reply:api-1a {ID}] go\n› Ask Codex to do anything\n"
             ));
             assert_eq!(classify(&s, ID), want, "{header}");
         }
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn an_older_copy_in_the_transcript_does_not_hide_a_held_one() {
         let s = screen(&format!(
-            "› [hail kind:ruling from:api-1a reply:api-1a {ID}] go\n• ok\n{QUEUED}\n  ↳ [hail kind:ruling from:api-1a reply:api-1a {ID}] go\n› Ask Codex to do anything\n"
+            "› [hail kind:ask from:api-1a reply:api-1a {ID}] go\n• ok\n{QUEUED}\n  ↳ [hail kind:ask from:api-1a reply:api-1a {ID}] go\n› Ask Codex to do anything\n"
         ));
         assert_eq!(classify(&s, ID), Landed::Queued);
     }

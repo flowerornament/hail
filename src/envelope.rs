@@ -5,80 +5,97 @@ use std::fmt::Display;
 
 use crate::store::message::Message;
 
-/// What a message asks of its recipient. Control kinds are complete in the
-/// envelope and never sit behind a fetch (DESIGN.md principle 5).
+/// What a message asks of its recipient: whether the sender wants a reply
+/// (`ask`), needs nothing back (`fyi`), or sets or changes state at once
+/// (the control kinds). Control kinds are complete in the envelope and never
+/// sit behind a fetch (DESIGN.md principle 5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
-    Ruling,
-    Go,
-    Nogo,
     Ask,
     Fyi,
-    Stop,
-    Hold,
-    Block,
-    Release,
     Announce,
+    Hold,
+    Release,
 }
 
+/// Kinds that older versions sent, and what to send instead. A stored
+/// message of one is shown as it is; only a send refuses it.
+const REPLACED: [(&str, &str, &str); 6] = [
+    (
+        "ruling",
+        "0.7",
+        "ask, the ruling first in the headline ('RULING: …')",
+    ),
+    (
+        "go",
+        "0.7",
+        "ask, the verdict first in the headline ('GO: land it, send the sha')",
+    ),
+    (
+        "nogo",
+        "0.7",
+        "ask, the verdict first in the headline ('NOGO: …')",
+    ),
+    ("stop", "0.7", "announce"),
+    ("block", "0.7", "hold --for <span> (at most 7d)"),
+    ("done", "0.6", "fyi --re <id> for an outcome"),
+];
+
 impl Kind {
-    pub const ALL: [Self; 10] = [
-        Self::Ruling,
-        Self::Go,
-        Self::Nogo,
+    pub const ALL: [Self; 5] = [
         Self::Ask,
         Self::Fyi,
-        Self::Stop,
-        Self::Hold,
-        Self::Block,
-        Self::Release,
         Self::Announce,
+        Self::Hold,
+        Self::Release,
     ];
 
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Ruling => "ruling",
-            Self::Go => "go",
-            Self::Nogo => "nogo",
             Self::Ask => "ask",
             Self::Fyi => "fyi",
-            Self::Stop => "stop",
-            Self::Hold => "hold",
-            Self::Block => "block",
-            Self::Release => "release",
             Self::Announce => "announce",
+            Self::Hold => "hold",
+            Self::Release => "release",
         }
     }
 
     /// Lenient: `None` for a kind this version does not know, such as the
-    /// `done` older senders still write. Readers show such a message as it
+    /// `go` or `done` older senders wrote. Readers show such a message as it
     /// is stored; only a send refuses it ([`Kind::parse_sent`]).
     pub fn parse(s: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|k| k.as_str() == s)
     }
 
+    /// A stored kind as this version reads it: an older kind becomes the
+    /// one that replaced it (`go` is an `ask`, `block` a `hold`; `done` is
+    /// an `fyi`). For rules that read stored mail, not for display.
+    pub fn parse_stored(s: &str) -> Option<Self> {
+        Self::parse(s).or(match s {
+            "ruling" | "go" | "nogo" => Some(Self::Ask),
+            "stop" => Some(Self::Announce),
+            "block" => Some(Self::Hold),
+            "done" => Some(Self::Fyi),
+            _ => None,
+        })
+    }
+
     /// A kind to send, or the usage text that says what to use instead.
     pub fn parse_sent(s: &str) -> Result<Self, String> {
-        if s == "done" {
-            return Err(
-                "done is gone in 0.6: answer with any kind and --re <id> (fyi for an outcome)"
-                    .into(),
-            );
+        if let Some((_, version, instead)) = REPLACED.iter().find(|(old, ..)| *old == s) {
+            return Err(format!("{s} is gone in {version}: send {instead}"));
         }
         Self::parse(s).ok_or_else(|| format!("'{s}' is not a kind ({})", Self::list()))
     }
 
-    /// `ruling go nogo …`, for error messages.
+    /// `ask fyi announce …`, for error messages.
     pub fn list() -> String {
         Self::ALL.map(Self::as_str).join(" ")
     }
 
     /// Typed in full, no body, claimed (`inline`) at send.
     pub const fn is_control(self) -> bool {
-        matches!(
-            self,
-            Self::Stop | Self::Hold | Self::Block | Self::Release | Self::Announce
-        )
+        matches!(self, Self::Hold | Self::Release | Self::Announce)
     }
 
     /// Lifts another message, so `--re` is required.
@@ -88,12 +105,12 @@ impl Kind {
 
     /// Sets a hold in effect until a `release`.
     pub const fn is_hold(self) -> bool {
-        matches!(self, Self::Hold | Self::Block)
+        matches!(self, Self::Hold)
     }
 
     /// Its sender waits for the answer: any message with `--re` to it.
     pub const fn asks_for_reply(self) -> bool {
-        matches!(self, Self::Ruling | Self::Go | Self::Ask)
+        matches!(self, Self::Ask)
     }
 }
 
@@ -114,7 +131,7 @@ pub struct Head<'a> {
     pub for_: Option<&'a str>,
     pub re: Option<&'a str>,
     pub scope: Option<&'a str>,
-    /// When a hold or block lapses.
+    /// When a hold lapses.
     pub until: Option<&'a str>,
 }
 
@@ -344,7 +361,7 @@ mod tests {
     #[test]
     fn renders_the_envelope() {
         let head = Head {
-            kind: Kind::Ruling,
+            kind: Kind::Ask,
             from: "api-1a/%5",
             reply: "api-1a",
             id: "0905T171200-a3f1",
@@ -355,7 +372,7 @@ mod tests {
         };
         assert_eq!(
             render(&head, "convert at the receipt", true),
-            "[hail kind:ruling from:api-1a/%5 reply:api-1a id:0905T171200-a3f1 scope:commit] convert at the receipt — hail inbox"
+            "[hail kind:ask from:api-1a/%5 reply:api-1a id:0905T171200-a3f1 scope:commit] convert at the receipt — hail inbox"
         );
     }
 
@@ -399,11 +416,22 @@ mod tests {
     }
 
     #[test]
-    fn done_is_refused_to_send_but_read_leniently() {
-        let gone = Kind::parse_sent("done").unwrap_err();
-        assert!(gone.contains("--re <id>"), "{gone}");
-        assert!(!Kind::list().contains("done"));
-        assert_eq!(Kind::parse("done"), None);
+    fn removed_kinds_are_refused_to_send_but_read_leniently() {
+        assert_eq!(Kind::list(), "ask fyi announce hold release");
+        for (old, instead, stored) in [
+            ("done", "fyi --re <id>", Kind::Fyi),
+            ("ruling", "ask", Kind::Ask),
+            ("go", "'GO: land it", Kind::Ask),
+            ("nogo", "ask", Kind::Ask),
+            ("stop", "announce", Kind::Announce),
+            ("block", "hold --for", Kind::Hold),
+        ] {
+            let gone = Kind::parse_sent(old).unwrap_err();
+            assert!(gone.starts_with(&format!("{old} is gone in 0.")), "{gone}");
+            assert!(gone.contains(instead), "{gone}");
+            assert_eq!(Kind::parse(old), None);
+            assert_eq!(Kind::parse_stored(old), Some(stored));
+        }
         assert_eq!(Kind::parse_sent("ask"), Ok(Kind::Ask));
         assert!(Kind::parse_sent("nope").unwrap_err().contains("not a kind"));
     }

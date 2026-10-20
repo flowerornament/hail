@@ -314,7 +314,7 @@ fn an_ask_leaves_no_record_and_any_kind_with_re_answers_it() {
     assert_eq!(done.status.code(), Some(1));
     let err = String::from_utf8_lossy(&done.stderr);
     assert!(
-        err.contains("done is gone in 0.6") && err.contains("fyi '<outcome>' --re <id>"),
+        err.contains("done is gone in 0.6") && err.contains("fyi --re <id>"),
         "{err}"
     );
     let reply = w.run(
@@ -327,10 +327,35 @@ fn an_ask_leaves_no_record_and_any_kind_with_re_answers_it() {
         let o = w.run("boss", &["worker", kind, "x", "--for", "1d", "--no-wake"]);
         assert!(!o.status.success());
         assert!(
-            String::from_utf8_lossy(&o.stderr).contains("--for applies to hold and block"),
+            String::from_utf8_lossy(&o.stderr).contains("--for applies to hold,"),
             "{o:?}"
         );
     }
+}
+
+#[test]
+fn the_kinds_0_7_removed_are_refused_with_their_replacement() {
+    let w = World::new();
+    for (old, instead) in [
+        ("ruling", "send ask"),
+        ("go", "'GO: land it"),
+        ("nogo", "send ask"),
+        ("stop", "send announce"),
+        ("block", "send hold --for"),
+    ] {
+        let o = w.run("boss", &["worker", old, "x", "--no-wake"]);
+        assert_eq!(o.status.code(), Some(1), "{old}");
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert!(
+            err.contains(&format!("{old} is gone in 0.7")) && err.contains(instead),
+            "{err}"
+        );
+    }
+    let new = w.state().join("seats/worker/new");
+    assert!(
+        fs::read_dir(&new).map_or(true, |mut d| d.next().is_none()),
+        "nothing written"
+    );
 }
 
 #[test]
@@ -640,6 +665,19 @@ fn an_fyi_that_answers_a_question_is_typed() {
         !String::from_utf8_lossy(&out.stderr).contains("quiet:"),
         "{out:?}"
     );
+
+    // So is the answer to a go an older hail stored: go became an ask.
+    let go = id_of(&w.run("boss", &["worker", "ask", "GO: land it", "--no-wake"]));
+    let path = w.state().join("seats/worker/new").join(format!("{go}.md"));
+    let text = fs::read_to_string(&path)
+        .unwrap()
+        .replace("kind: ask", "kind: go");
+    fs::write(&path, text).unwrap();
+    let out = w.run(
+        "worker",
+        &["boss", "fyi", "landed", "--re", &go, "--no-wake"],
+    );
+    assert_eq!(out.status.code(), Some(5), "{out:?}");
 
     // A reply to an fyi stays quiet.
     let out = w.run(

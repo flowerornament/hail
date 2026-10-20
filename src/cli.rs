@@ -123,7 +123,7 @@ pub struct SendCli {
     /// Sign as a sub-agent of this seat: `<seat>/<name>`.
     #[arg(long = "as", value_name = "NAME")]
     pub as_name: Option<String>,
-    /// How long a hold or block lasts: `30m`, `8h`, `3d`.
+    /// How long a hold lasts: `30m`, `8h`, `3d`.
     #[arg(long = "for", value_name = "SPAN")]
     pub hold_for: Option<String>,
 }
@@ -221,11 +221,8 @@ impl SendCli {
         }
         let kind = match Kind::parse_sent(&kind) {
             Ok(k) => k,
-            Err(why) if kind == "done" => {
-                return Err(Error::Usage(format!(
-                    "{why}. Usage: hail {} fyi '<outcome>' --re <id>",
-                    self.target
-                )));
+            Err(why) if Kind::parse_stored(&kind).is_some() => {
+                return Err(Error::Usage(format!("{why} (hail help kinds)")));
             }
             Err(why) => {
                 return Err(Error::Usage(format!(
@@ -249,9 +246,7 @@ impl SendCli {
         }
         let hold_for = self.hold_for.as_deref().map(parse_hold_for).transpose()?;
         if hold_for.is_some() && !kind.is_hold() {
-            return Err(Error::Usage(format!(
-                "--for applies to hold and block, not {kind}"
-            )));
+            return Err(Error::Usage(format!("--for applies to hold, not {kind}")));
         }
         Ok(SendArgs {
             target: self.target,

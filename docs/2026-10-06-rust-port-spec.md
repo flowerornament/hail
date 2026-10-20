@@ -67,7 +67,7 @@ The canonical form:
 
 ```bash
 hail api-1b ask <<'EOF'
-Review src/auth.ts before the merge; reply done with your verdict
+Review src/auth.ts before the merge; reply with your verdict
 The refresh path is in auth/refresh.rs:40-120. Coverage report: /tmp/cov.txt
 EOF
 ```
@@ -92,7 +92,9 @@ EOF
 - The target is parsed at one boundary (`seat::Address`): `/` is split first, then `@`, and every part must name exactly one directory entry. An empty part, `.`, `..`, `/` or NUL is refused (exit 1).
 - An unknown seat is an error that lists the near names (exit 1). One whose prefix is a known seat plus `-`, `_` or `.` also suggests the sub-agent address: `send to web-1b/scout (its parent relays)`.
 
-**Quiet `fyi` (0.5, docs/2026-10-08-quiet-mail-design.md §1):** an `fyi` is not typed when the recipient mailbox's `hooked` file (touched by every `deliver`) is under 7 days old. It arrives with the recipient's next prompt, exits 0, prints `quiet: arrives with <seat>'s next prompt` on stderr, and writes no pending record. Every other kind types as before, and so does an `fyi` to a mailbox whose hooks have not run. *(Amended for 0.6.)* An `fyi` that answers a question is typed too: when its `--re` names a `ruling`, `go` or `ask` in one of the sender's own mailboxes, the asker is waiting for it. Before 0.6 that answer was a `done`, which was always typed. An `fyi --re` to any other kind stays quiet.
+**Quiet `fyi` (0.5, docs/2026-10-08-quiet-mail-design.md §1):** an `fyi` is not typed when the recipient mailbox's `hooked` file (touched by every `deliver`) is under 7 days old. It arrives with the recipient's next prompt, exits 0, prints `quiet: arrives with <seat>'s next prompt` on stderr, and writes no pending record. Every other kind types as before, and so does an `fyi` to a mailbox whose hooks have not run. *(Amended for 0.6.)* An `fyi` that answers a question is typed too: when its `--re` names a `ruling`, `go` or `ask` in one of the sender's own mailboxes, the asker is waiting for it. Before 0.6 that answer was a `done`, which was always typed. An `fyi --re` to any other kind stays quiet. *(Amended for 0.7, docs/2026-10-19-five-kinds.md.)* The kinds are `ask fyi announce hold release`. The typed `fyi` is the one whose `--re` names an `ask` in the sender's own mailboxes; a stored `ruling`, `go` or `nogo` from an older hail counts as an `ask` here, and a stored `stop` as an `announce`, a `block` as a `hold`, a `done` as an `fyi`.
+
+**Removed kinds (0.7):** a send of `ruling`, `go`, `nogo`, `stop` or `block` is refused (exit 1) with `<kind> is gone in 0.7: send <replacement>` and `(hail help kinds)`; nothing is written. `ruling`, `go` and `nogo` become an `ask` whose headline leads with the verdict (`GO: land it, send the sha`); `stop` becomes `announce`; `block` becomes `hold --for <span>`. A stored message of a removed kind is read as stored, as `done` is (§6.6).
 
 **Output:**
 - `id=<id>` on stdout, on exit 0 and on exit 5.
@@ -167,7 +169,7 @@ seats/<seat>/new/<id>.md               unread
 seats/<seat>/cur/<id>.<how>.md         claimed; how ∈ injected|read|inline; mtime = receipt time
 seats/<seat>/pending/<id>              my sends with no receipt yet (bounded, §6.5)
 seats/<seat>/owed/<id>                 open obligations on this seat (ruling, go, ask); gone in 0.6, §6.6
-holds/<id>                             holds and blocks in effect (global)
+holds/<id>                             holds in effect (global; `block` records from before 0.7 too)
 ids/<id> -> <seat>                     symlink, created exclusively; the id index
 archive/<yyyy-mm>/<seat>/...           gc'd messages
 ```
@@ -226,7 +228,7 @@ The semantics are unchanged: `ruling`, `go` and `ask` create `owed/<id>`; `done 
 
 New bounds, in `brief` only. Obligations never expire: hiding a live ruling by age would change what the protocol means.
 
-*(Amended for 0.5, docs/2026-10-08-quiet-mail-design.md §3.)* Holds and blocks do lapse, because tools now serialize what holds were used for (landing, installs, timing). `hold` and `block` take `--for <span>` (default 8h for a hold, 7d for a block, at most 7d); the record carries `expires:` and the envelope `until:`. A record without `expires:` lapses at `time:` plus its kind's default. Lapse is a read-time filter: every reader agrees and none deletes. The issuer's own `brief` moves its lapsed holds to `holds/lapsed/` and says so once; `release` finds a hold there and says it had lapsed. `gc` deletes holds that lapsed more than `--days` ago, and lapsed ones whose issuer has no mailbox.
+*(Amended for 0.5, docs/2026-10-08-quiet-mail-design.md §3.)* Holds and blocks do lapse, because tools now serialize what holds were used for (landing, installs, timing). `hold` and `block` take `--for <span>` (default 8h for a hold, 7d for a block, at most 7d); the record carries `expires:` and the envelope `until:`. A record without `expires:` lapses at `time:` plus its kind's default. *(Amended for 0.7.)* `block` is gone: a long hold is `hold --for <span>`, still at most 7d. A stored `block` record reads as a hold, and one without `expires:` lapses 8h after `time:`. Lapse is a read-time filter: every reader agrees and none deletes. The issuer's own `brief` moves its lapsed holds to `holds/lapsed/` and says so once; `release` finds a hold there and says it had lapsed. `gc` deletes holds that lapsed more than `--days` ago, and lapsed ones whose issuer has no mailbox.
 - `brief` shows at most 5 obligations and 5 holds, newest first, then `… N more, oldest Nd (hail brief --all)`.
 - Obligations keyed by pane id are artefacts of 0.3's identity bug. Migration moves them out of every live seat (§11.1).
 

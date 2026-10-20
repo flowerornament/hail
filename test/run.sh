@@ -121,14 +121,14 @@ scenario() { # scenario N "title" fn
 LONG_ASK='Ruling on issue 41: convert at the receipt, not the producer; the fan-in gate hashes checkout contents so scratch state must stay outside every repo tree, and the coordinator should not read panes for replies'
 ASK1='Ruling on issue 41: convert at the receipt, not the producer; scratch state stays outside every repo tree; do not read panes for replies'
 
-s1() { # from inside the sender pane via send-keys, a ruling with its body on stdin
+s1() { # from inside the sender pane via send-keys, an ask with its body on stdin
   printf 'line one of the body\nline two of the body\n' > "$SCRATCH/body1"
   local ok=0
   # The pane runs the script so TMUX_PANE comes from tmux itself, not from
   # the harness. A short typed line: readline stalls on lines past ~1 KB.
   cat > "$SCRATCH/s1.sh" <<EOS
 export HAIL_ENVELOPE_MAX='$HAIL_ENVELOPE_MAX' HAIL_SOCKET='$HAIL_SOCKET' XDG_STATE_HOME='$XDG_STATE_HOME' PATH='$PATH' HOME='$HOME' HAIL_AGENT_COMMANDS='$HAIL_AGENT_COMMANDS'
-'$HAIL' send worker ruling '$ASK1' <'$SCRATCH/body1' >'$SCRATCH/s1.out' 2>'$SCRATCH/s1.err'
+'$HAIL' send worker ask '$ASK1' <'$SCRATCH/body1' >'$SCRATCH/s1.out' 2>'$SCRATCH/s1.err'
 echo \$? >'$SCRATCH/s1.rc'
 EOS
   "${T[@]}" send-keys -t "$SENDER" -l -- ". '$SCRATCH/s1.sh'; clear"
@@ -141,7 +141,7 @@ EOS
   line=$(envelope_line "id:$id")
   expect "rc=0 (got $RC)" eq "$RC" 0 || ok=1
   expect "stdout is id=<id>" re "$OUT" '^id=[0-9]{4}T[0-9]{6}-[0-9a-f]{4}$' || ok=1
-  expect "envelope head" contains "$line" "[hail kind:ruling from:boss/$SENDER reply:boss id:$id]" || ok=1
+  expect "envelope head" contains "$line" "[hail kind:ask from:boss/$SENDER reply:boss id:$id]" || ok=1
   expect "fetch hint" contains "$line" "— hail inbox" || ok=1
   expect "headline typed in full" contains "$line" "] $ASK1 — hail inbox" || ok=1
   expect "not truncated" not_contains "$line" "…" || ok=1
@@ -192,10 +192,10 @@ s5() { # inbox writes receipts
 
 s6() { [[ "$(as "$SENDER" sent nope-0000)" == unknown ]]; }
 
-s7() { # a stop, 120 chars typed inline
+s7() { # an announce, 120 chars typed inline
   local ok=0 text line id
   text="STOP: red gate on master, do not land anything until the fan-in gate is green again; details on the bead, ask boss ok"
-  send "$SENDER" worker stop "$text"
+  send "$SENDER" worker announce "$text"
   id=$(last_id)
   line=$(envelope_line "id:$id")
   expect "rc=0" eq "$RC" 0 || ok=1
@@ -215,7 +215,7 @@ s7() { # a stop, 120 chars typed inline
 s9() { # the body on stdin from a file
   local ok=0 id line
   printf 'body from a file\n' > "$SCRATCH/body9"
-  send_body "$SCRATCH/body9" "$SENDER" worker ruling "ruling attached"
+  send_body "$SCRATCH/body9" "$SENDER" worker ask "ruling attached"
   id=$(last_id); line=$(envelope_line "id:$id")
   expect "rc=0" eq "$RC" 0 || ok=1
   expect "body from file" grep -qF "body from a file" "$(msgfile "$id")" || ok=1
@@ -227,7 +227,7 @@ s10() { # a kind that is not one
   local ok=0
   send "$SENDER" worker bogus "hello"
   expect "rc=1" eq "$RC" 1 || ok=1
-  expect "lists kinds" contains "$ERR" "ruling go nogo ask fyi stop hold block release announce" || ok=1
+  expect "lists kinds" contains "$ERR" "ask fyi announce hold release" || ok=1
   return "$ok"
 }
 
@@ -251,7 +251,7 @@ s14() { # version list doctor help
   expect "--version" eq "$("$HAIL" --version)" "hail $HAIL_VERSION" || ok=1
   expect "-V" eq "$("$HAIL" -V)" "hail $HAIL_VERSION" || ok=1
   expect "version --json" eq "$("$HAIL" version --json)" "{\"name\":\"hail\",\"version\":\"$HAIL_VERSION\"}" || ok=1
-  expect "help topic" contains "$("$HAIL" help kinds)" "ruling  go  ask" || ok=1
+  expect "help topic" contains "$("$HAIL" help kinds)" "ask " || ok=1
   expect "command --help" contains "$("$HAIL" send --help)" "--re <id>" || ok=1
   expect "unknown topic exits 1" eq "$("$HAIL" help bogus >/dev/null 2>&1; echo $?)" "1" || ok=1
   expect "no args prints the map" contains "$("$HAIL")" "hail — messages between coding agents" || ok=1
@@ -402,20 +402,20 @@ s23() { # deliver needs no tmux server and is fast; hook JSON on stdin is accept
 }
 
 s24() { # brief: silent when empty; inbox section; sends without receipt; disappears once read
-  # nogo: typed and pending like any mail
+  # an ask: typed and pending like any mail
   clear_state
   local ok=0 id out
   expect "brief silent when empty" empty "$(as "$RECV" brief)" || ok=1
-  send "$SENDER" worker nogo "brief me" --scope web/x; id=$(last_id)
+  send "$SENDER" worker ask "brief me" --scope web/x; id=$(last_id)
   out=$(as "$RECV" brief)
   expect "inbox header" contains "$out" "inbox (1 unread)" || ok=1
-  expect "envelope-style line" contains "$out" "[hail nogo from:boss id:$id scope:web/x] brief me" || ok=1
+  expect "envelope-style line" contains "$out" "[hail ask from:boss id:$id scope:web/x] brief me" || ok=1
   expect "no sends section on recipient" not_contains "$out" "my sends" || ok=1
   expect "sender brief: fresh send not listed" empty "$(as "$SENDER" brief)" || ok=1
   sed -i.bak "s/^epoch: .*/epoch: $(( $(date +%s) - 200 ))/" "$SEATS/boss/pending/$id" && rm -f "$SEATS/boss/pending/$id.bak"
   out=$(as "$SENDER" brief)
   expect "sends without receipt header" contains "$out" "my sends without receipt (1)" || ok=1
-  expect "sends line" contains "$out" "[hail nogo to:worker id:$id] brief me (3m, no receipt)" || ok=1
+  expect "sends line" contains "$out" "[hail ask to:worker id:$id] brief me (3m, no receipt)" || ok=1
   as "$RECV" inbox >/dev/null
   expect "sender brief empty after read" empty "$(as "$SENDER" brief)" || ok=1
   expect "recipient brief empty after read" empty "$(as "$RECV" brief)" || ok=1
@@ -423,7 +423,7 @@ s24() { # brief: silent when empty; inbox section; sends without receipt; disapp
   reset_recv; return "$ok"
 }
 
-s25() { # hold -> release by issuer / refused by another; block; envelope carries re: and scope:
+s25() { # hold -> release by issuer / refused by another; a long hold; envelope carries re: and scope:
   clear_state
   local ok=0 h b line out
   send "$SENDER" worker hold "HOLD landing until gate is green" --scope issue-41; h=$(last_id)
@@ -433,12 +433,12 @@ s25() { # hold -> release by issuer / refused by another; block; envelope carrie
   line=$(envelope_line "id:$h")
   expect "scope in envelope" contains "$line" "id:$h scope:issue-41 until:" || ok=1
   expect "hold typed in full, no hint" not_contains "$line" "hail inbox" || ok=1
-  send "$SENDER" worker block "BLOCK: anchor dirty"; b=$(last_id)
-  expect "block file" exists "$STATE/holds/$b" || ok=1
+  send "$SENDER" worker hold "BLOCKED: anchor dirty" --for 3d; b=$(last_id)
+  expect "long hold file" exists "$STATE/holds/$b" || ok=1
   out=$(as "$RECV" brief)
-  expect "brief lists holds (2)" contains "$out" "holds / blocks on me (2)" || ok=1
+  expect "brief lists holds (2)" contains "$out" "holds on me (2)" || ok=1
   expect "brief hold line" contains "$out" "[hail hold from:boss to:worker id:$h scope:issue-41] HOLD landing" || ok=1
-  expect "brief block line" contains "$out" "[hail block from:boss to:worker id:$b]" || ok=1
+  expect "brief long hold line" contains "$out" "[hail hold from:boss to:worker id:$b] BLOCKED" || ok=1
   reset_sender
   send "$SENDER" worker release "lifted"
   expect "release without --re refused" eq "$RC" 1 || ok=1
@@ -446,9 +446,9 @@ s25() { # hold -> release by issuer / refused by another; block; envelope carrie
   expect "release by issuer rc=0" eq "$RC" 0 || ok=1
   expect "re: in envelope" contains "$(envelope_line "id:$(last_id)")" " re:$h]" || ok=1
   expect "hold removed" missing "$STATE/holds/$h" || ok=1
-  expect "block survives" exists "$STATE/holds/$b" || ok=1
+  expect "long hold survives" exists "$STATE/holds/$b" || ok=1
   send "$SENDER" worker release "unblocked" --re "$b"
-  expect "block released" missing "$STATE/holds/$b" || ok=1
+  expect "long hold released" missing "$STATE/holds/$b" || ok=1
   expect "no holds section" not_contains "$(as "$RECV" brief)" "holds" || ok=1
   # Lapse: --for sets until:; past it, the hold is gone for every reader, the
   # issuer's brief says so once, and release still finds it.
@@ -468,11 +468,11 @@ s25() { # hold -> release by issuer / refused by another; block; envelope carrie
   reset_recv; return "$ok"
 }
 
-s26() { # go and ruling leave no record; any kind with --re answers; done is refused
+s26() { # an ask leaves no record; an fyi with --re answers; removed kinds are refused
   clear_state
   local ok=0 g out
-  send "$SENDER" worker go "GO commit on base abc123" --scope commit; g=$(last_id)
-  send "$SENDER" worker ruling "convert at the receipt"
+  send "$SENDER" worker ask "GO: commit on base abc123" --scope commit; g=$(last_id)
+  send "$SENDER" worker ask "RULING: convert at the receipt"
   expect "no record of what is owed" missing "$SEATS/worker/owed" || ok=1
   as "$RECV" inbox >/dev/null
   out=$(as "$RECV" brief)
@@ -480,20 +480,23 @@ s26() { # go and ruling leave no record; any kind with --re answers; done is ref
   expect "no inbox section" not_contains "$out" "inbox (" || ok=1
   send "$RECV" boss done "committed" --re "$g"
   expect "done refused rc=1" eq "$RC" 1 || ok=1
-  expect "says what to use instead" contains "$ERR" "done is gone in 0.6: answer with any kind and --re <id>" || ok=1
+  expect "says what to use instead" contains "$ERR" "done is gone in 0.6: send fyi --re <id>" || ok=1
+  send "$SENDER" worker go "GO: land it"
+  expect "go refused rc=1" eq "$RC" 1 || ok=1
+  expect "names ask instead" contains "$ERR" "go is gone in 0.7: send ask" || ok=1
   send "$RECV" boss fyi "committed" --re "$g" --scope commit
   expect "fyi --re rc=0" eq "$RC" 0 || ok=1
   expect "the answer carries re and scope" grep -q "^re: $g$" "$(msgfile "$(last_id)")" || ok=1
   expect "and scope" grep -q "^scope: commit$" "$(msgfile "$(last_id)")" || ok=1
-  send "$SENDER" worker go "for two days" --for 2d
-  expect "--for on a go refused" eq "$RC" 1 || ok=1
+  send "$SENDER" worker ask "for two days" --for 2d
+  expect "--for on an ask refused" eq "$RC" 1 || ok=1
   reset_sender; reset_recv; return "$ok"
 }
 
 s27() { # headline over the cap refused for a control kind, folded for others; missing kind refused
   local ok=0 text
   text="STOP: red gate on master, do not land anything until the fan-in gate is green again; this sentence is padded to be long enough to exceed the envelope budget by a comfortable margin ok"
-  send "$SENDER" worker stop "$text"
+  send "$SENDER" worker announce "$text"
   expect "rc=2" eq "$RC" 2 || ok=1
   expect "message names the cap" contains "$ERR" "headline is $(chars "$text") characters; the cap is 160" || ok=1
   expect "nothing typed" not_contains "$(pane_text "$RECV")" "STOP: red gate" || ok=1
@@ -506,7 +509,7 @@ s27() { # headline over the cap refused for a control kind, folded for others; m
   as "$RECV" inbox >/dev/null   # drain the folded message so later scenarios start clean
   send "$SENDER" worker
   expect "missing kind rc=1" eq "$RC" 1 || ok=1
-  expect "missing kind names the kinds" contains "$ERR" "(ruling go nogo ask fyi stop hold block release announce)" || ok=1
+  expect "missing kind names the kinds" contains "$ERR" "(ask fyi announce hold release)" || ok=1
   reset_sender; reset_recv; return "$ok"
 }
 
@@ -667,13 +670,13 @@ s51() { # a pane sending from another seat's directory is warned: replies would 
   reset_recv; return "$ok"
 }
 
-scenario 1  "send from inside the pane: ruling, body on stdin, submitted" s1
+scenario 1  "send from inside the pane: ask, body on stdin, submitted" s1
 scenario 2  "hail never runs bd; no bead: field" s2
 scenario 3  "sent before read -> delivered" s3
 scenario 4  "inbox --peek leaves no receipt" s4
 scenario 5  "inbox writes receipt; sent -> read; --all" s5
 scenario 6  "sent unknown id -> unknown" s6
-scenario 7  "stop typed inline in full; receipt pre-written as inline" s7
+scenario 7  "announce typed inline in full; receipt pre-written as inline" s7
 scenario 9  "body on stdin from a file" s9
 scenario 10 "a kind that is not one is rejected" s10
 scenario 11 "a pane id target resolves to its seat; from:/reply:" s11
@@ -687,8 +690,8 @@ scenario 21 "deliver: plain text, injected receipt, silent when empty, inbox --a
 scenario 22 "deliver --format codex / claude: hook JSON, escaping" s22
 scenario 23 "deliver without a tmux server, fast, stdin accepted" s23
 scenario 24 "brief: silent when empty, inbox, sends without receipt" s24
-scenario 25 "hold/block -> release; re:/scope:" s25
-scenario 26 "go/ruling leave no record; answer with --re; done refused" s26
+scenario 25 "hold -> release; re:/scope:" s25
+scenario 26 "an ask leaves no record; answer with --re; removed kinds refused" s26
 scenario 27 "headline over cap refused (control kind too); missing kind refused" s27
 scenario 28 "shared directory: sub-seats, bare seat refused, hooks keep mail apart" s28
 scenario 29 "bare-target send form; --kind names the form to use" s29

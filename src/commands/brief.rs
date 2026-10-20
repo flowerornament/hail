@@ -194,7 +194,7 @@ fn holds(ctx: &Ctx, me: &Addr, all: bool, now: Timestamp) -> (Section, usize) {
         .collect();
     (
         Section {
-            title: "holds / blocks on me",
+            title: "holds on me",
             unit: "",
             lines,
             oldest_days,

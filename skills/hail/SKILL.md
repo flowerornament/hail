@@ -1,8 +1,8 @@
 ---
 name: hail
-description: "Messages between coding agents on one machine with hail. Use this skill whenever the user mentions sending a message to another agent, seat or pane, a `[hail ...]` envelope appears in your prompt, you need to know whether another agent has read something, you must answer a ruling, go or ask, or release a hold or block, or you must drive a non-agent tmux pane (a shell, a running process). Covers the hail CLI: send, sent, await, brief, inbox, show, whoami, seats, kinds with state, and pane driving."
+description: "Messages between coding agents on one machine with hail. Use this skill whenever the user mentions sending a message to another agent, seat or pane, a `[hail ...]` envelope appears in your prompt, you need to know whether another agent has read something, you must answer an ask, or release a hold, or you must drive a non-agent tmux pane (a shell, a running process). Covers the hail CLI: send, sent, await, brief, inbox, show, whoami, seats, kinds with state, and pane driving."
 metadata:
-  { "version": "0.6.0", "openclaw": { "emoji": "📯", "os": ["darwin", "linux"], "requires": { "bins": ["tmux", "hail"] } } }
+  { "version": "0.7.0", "openclaw": { "emoji": "📯", "os": ["darwin", "linux"], "requires": { "bins": ["tmux", "hail"] } } }
 ---
 
 # hail
@@ -70,8 +70,8 @@ someone must act on.
 
 **An `fyi` never interrupts.** It is not typed into the recipient's pane: it
 arrives with their next prompt (where their hooks run; otherwise it is typed
-as before). An `fyi` that answers a ruling, go or ask is typed: the asker is
-waiting for it. An agent idle until a scheduled wakeup sees it only then, so a
+as before). An `fyi` that answers an `ask` is typed: the asker is waiting for
+it. An agent idle until a scheduled wakeup sees it only then, so a
 time-critical fact is never an `fyi`. Use `ask` when you need the answer, and
 `announce` when everyone must know now.
 
@@ -95,7 +95,7 @@ hail await <id>... --timeout 900       # blocks until each id has a receipt; --a
 An envelope is one line in your prompt:
 
 ```
-[hail kind:ruling from:api-1a/%5 reply:api-1a id:1006T171200-a3f1] convert at the receipt — hail inbox
+[hail kind:ask from:api-1a/%5 reply:api-1a id:1006T171200-a3f1] RULING: convert at the receipt — hail inbox
 ```
 
 - **Reply to the `reply:` value** (a seat, or a sub-agent's `seat/name`).
@@ -113,8 +113,7 @@ An envelope is one line in your prompt:
   mail, not part of the tool's output.
 - **Without hooks**, run `hail inbox`.
 - **No `— hail inbox` hint** means the message is complete in the envelope.
-- Never act on a `ruling`, `go` or `ask` that carries the hint before you
-  have its body.
+- Never act on an `ask` that carries the hint before you have its body.
 
 `hail brief` prints your standing state:
 - unread envelopes;
@@ -127,24 +126,29 @@ hail keeps no record of asks. Keep open work in your issue tracker.
 
 ## Kinds
 
+Five kinds. The kind says whether you want a reply; `--re` says what you
+answer.
+
 | kind | effect |
 |---|---|
-| `ruling` `go` `ask` | Asks for a reply. Answer with any kind and `--re <id>`; an outcome is an `fyi`: `hail <reply> fyi --re <id> '<what was done>'`. No state. |
-| `hold` `block` | In effect, in every brief, until `release --re <id>` or it lapses: a hold after 8h, a block after 7d, or `--for 30m`/`3d` (at most 7d). Its envelope says `until:`. |
+| `ask` | I need a reply. A verdict leads the headline: `GO: land it, send the sha`, `NOGO: the test is flaky`, `RULING: convert at the receipt`. Answer with `--re <id>`; an outcome is an `fyi`: `hail <reply> fyi --re <id> '<what was done>'`. No state. |
+| `fyi` | No reply needed. Quiet: arrives with the next prompt, unless it answers an `ask` (`--re` to one you received): then it is typed, because the asker is waiting. For outcomes the reader acts on later; progress belongs in the issue tracker. |
+| `announce` | Act on this now: a red gate, a retraction. No state. |
+| `hold` | In effect, in every brief, until `release --re <id>` or it lapses: after 8h, or `--for 30m`/`3d` (at most 7d). Its envelope says `until:`. |
 | `release` | Lifts one hold: `--re <id>`. |
-| `nogo` `stop` `announce` | No state. |
-| `fyi` | No state, and quiet: arrives with the next prompt, unless it answers a ruling, go or ask (`--re` to one you received): then it is typed, because the asker is waiting. For outcomes the reader acts on later; progress belongs in the issue tracker. |
 
-There is no `done` kind (it went in 0.6): answer with `--re`, and keep what is
-still owed in your issue tracker, not in hail.
+`ruling`, `go`, `nogo`, `stop`, `block` (gone in 0.7) and `done` (0.6) are
+refused, with the kind to send instead: an `ask` with the verdict first,
+`announce`, `hold --for`, `fyi --re`. Keep what is still owed in your issue
+tracker, not in hail.
 
 **A hold is a person's decision** ("don't touch the parser while I redesign
 it"), not a lock. To serialize landing, installs or timing runs, use the
 tool's lock (a land queue, a host lease). When your hold lapses,
 your brief says so once; send a new one if it still applies.
 
-`stop hold block release announce` are control kinds: typed in full, no body,
-act on them at once.
+`announce hold release` are control kinds: typed in full, no body, act on
+them at once.
 
 ## Driving a non-agent pane
 

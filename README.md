@@ -79,13 +79,14 @@ its commands cannot be told apart by pane.
 
 | kind | what it does |
 |---|---|
-| `ruling` `go` `ask` | Asks for a reply: any message with `--re <id>` (an `fyi` for an outcome). No state. |
-| `hold` `block` | In effect, and shown to the seats involved, until anyone sends `release --re <id>`. |
+| `ask` | Asks for a reply: any message with `--re <id>` (an `fyi` for an outcome). A verdict leads the headline: `GO: land it`. No state. |
+| `fyi` | Needs no reply; not typed where the recipient's hooks run. No state. |
+| `announce` | Act on it now. No state. |
+| `hold` | In effect, and shown to the seats involved, until anyone sends `release --re <id>` or it lapses (8h, or `--for` up to 7d). |
 | `release` | Lifts a hold. |
-| `fyi` `nogo` `stop` `announce` | No state. |
 
-`stop`, `hold`, `block`, `release` and `announce` are control kinds: typed in
-full, with no body, to act on at once.
+`announce`, `hold` and `release` are control kinds: typed in full, with no
+body, to act on at once. Why five: [docs/2026-10-19-five-kinds.md](docs/2026-10-19-five-kinds.md).
 
 ## Install
 
@@ -259,7 +260,7 @@ Everything lives under `$XDG_STATE_HOME/hail` (default
 | `seats/<seat>/new/<id>.md` | unread messages |
 | `seats/<seat>/cur/<id>.<how>.md` | claimed (`injected`, `read` or `inline`); the mtime is the receipt time |
 | `seats/<seat>/pending/<id>` | its sends with no receipt yet |
-| `holds/<id>` | holds and blocks in effect; delete one to lift it silently |
+| `holds/<id>` | holds in effect; delete one to lift it silently |
 | `ids/<id>` | the id index (a symlink to the seat) |
 | `archive/` | `hail gc` output and the 0.3 tree |
 

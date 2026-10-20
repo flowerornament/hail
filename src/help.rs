@@ -68,17 +68,17 @@ Options:
 
 The headline is capped at HAIL_ENVELOPE_MAX characters (400). A longer one is
 folded at a sentence boundary and the full text rides in the body; a control
-kind (stop hold block release announce) is refused instead (exit 2). Write
-plain sentences.
+kind (announce hold release) is refused instead (exit 2). Write plain
+sentences.
 
 Envelope typed into the recipient's pane:
   [hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [for:] [re:] [scope:] [until:]] <headline>[ — hail inbox]
 Reply to the reply: value. for:<name> marks mail for your sub-agent: relay it.
 
 An fyi is quiet: it is not typed, and arrives with the recipient's next prompt
-(typed as before where their hooks have never run). An fyi that answers a
-ruling, go or ask (--re to one you received) is typed: the asker is waiting.
-Progress belongs in your issue tracker, not in someone's prompt.
+(typed as before where their hooks have never run). An fyi that answers an
+ask (--re to one you received) is typed: the asker is waiting. Progress
+belongs in your issue tracker, not in someone's prompt.
 
 Exit: 0 typed and submitted, or a quiet fyi; 5 written to the inbox but not
 typed (no agent pane, or typing not confirmed): do NOT resend. It arrives on
@@ -90,24 +90,25 @@ permission dialog.
 pub const KINDS: &str = "\
 hail kinds — what each kind means and does
 
-  ruling  go  ask     Ask for a reply: any message with --re <id>, an fyi
-                      for an outcome. No state: hail keeps no record of
-                      what is owed; track open work in your issue tracker.
-  hold  block         In effect until 'release --re <id>', or until it lapses:
-                      a hold after 8h, a block after 7d, or --for 30m|8h|3d
-                      (at most 7d). For a person's decision, not a lock:
-                      landing and installs have their own locks.
-  release             Lift a hold: --re <id> required.
-  nogo  announce  stop
-                      No state.
-  fyi                 No state, and quiet: not typed; it arrives with the
-                      recipient's next prompt. Unless it answers a ruling,
-                      go or ask: then it is typed, because the asker is
-                      waiting. For outcomes read later; progress belongs in
-                      the issue tracker.
+  ask       I need a reply: any message with --re <id>, an fyi for an
+            outcome. A verdict leads the headline: 'GO: land it, send the
+            sha', 'NOGO: the test is flaky'. No state: hail keeps no record
+            of what is owed; track open work in your issue tracker.
+  fyi       No reply needed. Quiet: not typed; it arrives with the
+            recipient's next prompt. Unless it answers an ask (--re to one
+            you received): then it is typed, because the asker is waiting.
+            For outcomes read later; progress belongs in the issue tracker.
+  announce  Act on this now (a red gate, a retraction). No state.
+  hold      In effect until 'release --re <id>', or until it lapses: after
+            8h, or --for 30m|8h|3d (at most 7d). For a person's decision;
+            a hold is not a lock: give landing and installs their own.
+  release   Lift a hold: --re <id> required.
 
-stop hold block release announce are control kinds: typed in full, no body,
-act on them at once. A message with no body is complete in its envelope.
+announce hold release are control kinds: typed in full, no body, act on them
+at once. A message with no body is complete in its envelope.
+
+ruling, go and nogo are now an ask with the verdict first; stop is announce;
+block is hold --for; done is fyi --re. Sending one of them fails and says so.
 ";
 
 pub const RECEIVE: &str = "\

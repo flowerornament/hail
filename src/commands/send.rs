@@ -11,12 +11,12 @@ use crate::ctx::Ctx;
 use crate::envelope::{self, Head, Kind};
 use crate::error::{EXIT_NOT_WOKEN, Error, Result};
 use crate::input;
-use crate::policy::QUIET_HOOKS_SEEN;
+use crate::policy::{HOLD_DEFAULT, QUIET_HOOKS_SEEN};
 use crate::route::{self, Mail, Sender};
 use crate::seat::Addr;
 use crate::store::ids::{self, Id};
 use crate::store::message::Message;
-use crate::store::records::{Entry, Pending, hold_default};
+use crate::store::records::{Entry, Pending};
 use crate::time;
 use crate::transport::pane_map::PaneMap;
 use crate::transport::tmux::{Pane, Tmux};
@@ -35,7 +35,7 @@ pub struct SendArgs {
     /// `--as <name>`: a sub-agent signs as `<mailbox>/<name>`, so replies
     /// come back to its parent's mailbox marked for it.
     pub as_name: Option<String>,
-    /// `--for`: when a hold or block lapses; its kind's default otherwise.
+    /// `--for`: when a hold lapses; the default otherwise.
     pub hold_for: Option<std::time::Duration>,
     pub delivery: Delivery,
 }
@@ -158,7 +158,7 @@ fn decide<'a>(ctx: &Ctx, a: &SendArgs, r: &'a Route) -> Result<Plan<'a>> {
     })
 }
 
-/// `--re` names a ruling, go or ask that the sender received.
+/// `--re` names an ask that the sender received (or a kind an ask replaced).
 fn answers_a_question(ctx: &Ctx, a: &SendArgs, sender: &Sender) -> bool {
     let Some(re) = &a.re else {
         return false;
@@ -168,7 +168,7 @@ fn answers_a_question(ctx: &Ctx, a: &SendArgs, sender: &Sender) -> bool {
         .iter()
         .find_map(|b| ctx.store.mailbox(b).find(re))
         .and_then(|f| std::fs::read_to_string(f.path).ok())
-        .and_then(|text| Kind::parse(Message::parse(&text).get("kind")?))
+        .and_then(|text| Kind::parse_stored(Message::parse(&text).get("kind")?))
         .is_some_and(Kind::asks_for_reply)
 }
 
@@ -400,7 +400,7 @@ fn check_state(ctx: &Ctx, a: &SendArgs) -> Result<()> {
     match (a.kind, &a.re) {
         (Kind::Release, Some(re)) => match ctx.store.hold(re) {
             None => Err(Error::State(format!(
-                "no hold or block with id {re}; hail brief lists holds in effect"
+                "no hold with id {re}; hail brief lists holds in effect"
             ))),
             Some(h) => {
                 let at = h.lapses_at();
@@ -417,9 +417,9 @@ fn check_state(ctx: &Ctx, a: &SendArgs) -> Result<()> {
     }
 }
 
-/// When a hold or block sent now lapses.
+/// When a hold sent now lapses.
 fn expires_at(a: &SendArgs, now: Timestamp) -> Timestamp {
-    time::after(now, a.hold_for.unwrap_or_else(|| hold_default(a.kind)))
+    time::after(now, a.hold_for.unwrap_or(HOLD_DEFAULT))
 }
 
 fn record_state(

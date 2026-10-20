@@ -14,11 +14,11 @@
 //!   pane. Typing it is the **wake**. The body is fetched separately.
 //! - **claim**: a hook or `hail inbox` renames the message from `new/` to
 //!   `cur/`. That rename is the **receipt** `hail sent` and `hail await` read.
-//! - **kind**: what a message asks (`envelope::Kind`). **Control kinds**
-//!   (stop, hold, block, release, announce) are complete in the envelope.
-//!   ruling, go and ask ask for a reply, which is any message with
-//!   `--re <id>`; hail keeps no state for them. A **hold** or block stays in
-//!   effect until a `release` or until it lapses.
+//! - **kind**: what a message asks (`envelope::Kind`). An `ask` wants a
+//!   reply, which is any message with `--re <id>`; an `fyi` wants none;
+//!   hail keeps no state for either. **Control kinds** (announce, hold,
+//!   release) are complete in the envelope. A **hold** stays in effect until
+//!   a `release` or until it lapses.
 //! - **harness**: the agent program, Claude Code or Codex. Its **hooks** run
 //!   `hail deliver` and `hail brief` (`hooks/`).
 

@@ -41,8 +41,8 @@ and triageable.
 4. **Durable body, ephemeral prompt.** The body outlives the pane, the compaction,
    and the tmux server. hail talks to no other tool: an issue tracker is a
    moving target, and what belongs on an issue the agent posts there itself.
-5. **Stop-class messages are complete in the envelope.** `stop`, `hold`, `nogo`,
-   `announce` must never sit behind a fetch: a red gate or a hold-before-land has
+5. **Control messages are complete in the envelope.** `announce`, `hold` and
+   `release` must never sit behind a fetch: a red gate or a hold-before-land has
    to act even if the agent never runs `inbox` (both coordinators, same review).
 6. **Addresses are seats.** A seat is the workspace an agent works in: the jj
    workspace or git root, by name, or a `.hail-seat` file. It is derived from
@@ -159,18 +159,21 @@ hail read <pane|seat> [n] · type … · keys …                           non-
 hail setup · doctor · gc · help · version                             the tool
 ```
 
-`stop hold block release announce` type the full headline inline, with no body
-and no fetch hint. The other kinds type the envelope and keep the body in the
-inbox, except `fyi`: it is quiet wherever the recipient's hooks run, and
-arrives with their next prompt. An `fyi` that answers a ruling, go or ask is
-typed all the same, since the asker is waiting for it: its `--re` names one of
-those kinds in the sender's own mailboxes. A typed message costs its reader a turn, so
+There are five kinds, and the kind says one thing: whether the sender wants a
+reply (docs/2026-10-19-five-kinds.md). `ask` wants one; a verdict leads its
+headline (`GO: land it, send the sha`), because the headline carried it
+anyway and separate verdict kinds were near-synonyms that delivered alike.
+`fyi` wants none. `announce`, `hold` and `release` type the full headline
+inline, with no body and no fetch hint. An `ask` types the envelope and keeps
+the body in the inbox; an `fyi` is quiet wherever the recipient's hooks run,
+and arrives with their next prompt. An `fyi` that answers an `ask` is typed
+all the same, since the asker is waiting for it: its `--re` names an `ask` in
+the sender's own mailboxes. A typed message costs its reader a turn, so
 progress belongs in the issue tracker, which hail does not touch.
 
-Holds and blocks lapse (8h and 7d by default, `--for` up to 7d): a hold is a
-person's decision, and tools serialize landing, installs and timing runs.
-`ruling`, `go` and `ask` ask for a reply, which is any message with
-`--re <id>`; hail keeps no record of them. A record of what each seat owed,
+Holds lapse (8h by default, `--for` up to 7d): a hold is a person's decision,
+and tools serialize landing, installs and timing runs. An `ask` is answered by
+any message with `--re <id>`; hail keeps no record of it. A record of what each seat owed,
 closed by a `done`, became a second work tracker that agents rarely closed:
 seats carried hundreds of stale obligations, and a record left on a sub-seat
 whose pane had gone could not be closed at all. Whether work is done belongs

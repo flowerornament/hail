@@ -27,17 +27,17 @@ Options:
 
 The headline is capped at HAIL_ENVELOPE_MAX characters (400). A longer one is
 folded at a sentence boundary and the full text rides in the body; a control
-kind (stop hold block release announce) is refused instead (exit 2). Write
-plain sentences.
+kind (announce hold release) is refused instead (exit 2). Write plain
+sentences.
 
 Envelope typed into the recipient's pane:
   [hail kind:<k> from:<seat>/<pane> reply:<seat> id:<id> [for:] [re:] [scope:] [until:]] <headline>[ — hail inbox]
 Reply to the reply: value. for:<name> marks mail for your sub-agent: relay it.
 
 An fyi is quiet: it is not typed, and arrives with the recipient's next prompt
-(typed as before where their hooks have never run). An fyi that answers a
-ruling, go or ask (--re to one you received) is typed: the asker is waiting.
-Progress belongs in your issue tracker, not in someone's prompt.
+(typed as before where their hooks have never run). An fyi that answers an
+ask (--re to one you received) is typed: the asker is waiting. Progress
+belongs in your issue tracker, not in someone's prompt.
 
 Exit: 0 typed and submitted, or a quiet fyi; 5 written to the inbox but not
 typed (no agent pane, or typing not confirmed): do NOT resend. It arrives on
