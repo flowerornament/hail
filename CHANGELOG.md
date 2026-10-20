@@ -4,6 +4,13 @@ All notable changes to `hail` are documented in this file.
 
 ## Unreleased
 
+- **A busy Claude Code agent gets its mail at its next tool call.** `hail
+  setup` now installs the `PostToolUse` hook for Claude Code as well as
+  Codex, so a message reaches an agent mid-turn instead of waiting for the
+  typed envelope to be submitted when the turn ends. A sub-agent's tool calls
+  still never take their parent's mail: Claude Code marks them with
+  `agent_id`, as Codex does. Run `hail setup` to install it.
+
 ## v0.6.0 - 2026-10-18
 
 A breaking release that removes obligations and the 0.3 compatibility

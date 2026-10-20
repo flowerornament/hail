@@ -753,3 +753,42 @@ fn a_busy_agent_gets_its_mail_after_a_tool_call() {
     assert!(stdout(&w.run("boss", &["sent", &id])).starts_with("injected "));
     assert!(w.state().join("seats/worker/hooked").exists());
 }
+
+#[test]
+fn a_busy_claude_agent_gets_its_mail_after_a_tool_call_but_its_sub_agent_does_not() {
+    // Claude Code's payloads: a Task sub-agent's tool call carries agent_id
+    // and agent_type; the agent's own never does.
+    let w = World::new();
+    let id = w.send("while you work");
+    let post_tool_use = |payload: &str| {
+        let mut child = w
+            .hail("worker")
+            .args(["deliver", "--format", "claude", "--event", "PostToolUse"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    };
+    let sub = r#"{"session_id":"s","hook_event_name":"PostToolUse","tool_name":"Bash","agent_id":"a76a","agent_type":"general-purpose"}"#;
+    assert_eq!(stdout(&post_tool_use(sub)), "");
+    assert_eq!(stdout(&w.run("boss", &["sent", &id])).trim(), "delivered");
+
+    let own = r#"{"session_id":"s","hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"t"}"#;
+    let out = post_tool_use(own);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PostToolUse");
+    assert!(
+        v["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("id:{id}"))
+    );
+    assert!(stdout(&w.run("boss", &["sent", &id])).starts_with("injected "));
+}

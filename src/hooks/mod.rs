@@ -56,8 +56,9 @@ pub fn stdout_reaches_anyone() -> bool {
 }
 
 /// Whether a tool-call hook's payload comes from the agent itself, not one of
-/// its sub-agents. Codex runs `PostToolUse` for a sub-agent's tool calls with
-/// the parent's `session_id`; only `agent_id` (and `agent_type`) mark them.
+/// its sub-agents. Claude Code and Codex both run `PostToolUse` for a
+/// sub-agent's tool calls with the parent's `session_id`; only `agent_id`
+/// (and `agent_type`) mark them.
 /// Mail delivered there would be claimed into the sub-agent's context, so a
 /// missing or unreadable payload counts as not the agent: the next prompt
 /// still delivers.

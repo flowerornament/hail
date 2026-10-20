@@ -143,7 +143,7 @@ comments. The commands it installs:
 |---|---|
 | `SessionStart` | `hail brief --hook` |
 | `UserPromptSubmit` | `hail deliver --format claude` (or `codex`) |
-| `PostToolUse` (Codex only) | `hail deliver --format codex --event PostToolUse`: mail reaches a busy agent at its next tool call |
+| `PostToolUse` | `hail deliver --format claude --event PostToolUse` (or `codex`): mail reaches a busy agent at its next tool call |
 
 **Things to know about hooks:**
 - **Codex trust:** Codex runs a changed hook only after you trust it with

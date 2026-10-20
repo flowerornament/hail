@@ -10,26 +10,23 @@ use crate::error::{Error, Result};
 
 /// The hooks hail wants, per harness: (event, command).
 ///
-/// Codex also gets `PostToolUse`: an agent whose turn never ends (a goal
-/// starts the next turn at once) submits no prompt, and Codex can hold typed
-/// text until a turn ends, but every tool call runs this hook. Claude Code
-/// does not: its sub-agents' tool calls run `PostToolUse` too, and would take
-/// the parent's mail into the sub-agent's context.
+/// Both harnesses also get `PostToolUse`, so a busy agent gets its mail at
+/// its next tool call: an agent whose turn never ends (a goal starts the
+/// next turn at once) submits no prompt, and a harness can hold typed text
+/// until the turn ends. A sub-agent's tool calls run the hook too; `deliver`
+/// stays silent for them (`hooks::from_the_agent_itself`).
 pub fn wanted(harness: &str) -> Vec<(&'static str, String)> {
-    let mut hooks = vec![
+    vec![
         ("SessionStart", "hail brief --hook".to_string()),
         (
             "UserPromptSubmit",
             format!("hail deliver --format {harness}"),
         ),
-    ];
-    if harness == "codex" {
-        hooks.push((
+        (
             "PostToolUse",
             format!("hail deliver --format {harness} --event PostToolUse"),
-        ));
-    }
-    hooks
+        ),
+    ]
 }
 
 fn is_hail_command(cmd: &str) -> bool {
@@ -214,7 +211,7 @@ mod tests {
         let out = merge_claude(OLD_CLAUDE).unwrap();
         assert!(out.contains("\"hail brief --hook\""));
         assert!(out.contains("\"hail deliver --format claude\""));
-        assert!(!out.contains("PostToolUse"), "not for Claude Code");
+        assert!(out.contains("\"hail deliver --format claude --event PostToolUse\""));
         assert!(!out.contains("TMUX_PANE"));
         assert!(out.contains("other-tool"));
         assert!(out.find("\"model\"") < out.find("\"hooks\""));
@@ -224,7 +221,7 @@ mod tests {
     #[test]
     fn claude_from_nothing() {
         let out = merge_claude("").unwrap();
-        assert_eq!(out.matches("hail deliver").count(), 1);
+        assert_eq!(out.matches("hail deliver").count(), 2);
     }
 
     const OLD_CODEX: &str = r#"model = "gpt-5"
